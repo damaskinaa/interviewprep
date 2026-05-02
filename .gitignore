@@ -1,0 +1,14 @@
+.env
+.env.*
+*.env
+*.env.*
+__pycache__
+*.pyc
+.venv
+interview_prep_*.json
+interview_prep_*.md
+lua_brief_*.md
+product_brief_*.json
+cv.txt
+job_description.txt
+extra_context.txt
