@@ -57,19 +57,24 @@ def get_result(key):
     return results.get(key, "")
 
 
+
+
 def make_sandbox(stage_name):
+    if os.getenv("ENABLE_CHILD_SANDBOXES", "0") != "1":
+        log(0, f"Using current Daytona backend for {stage_name}. Child sandbox creation disabled.", "done")
+        return None
+
     if not daytona:
-        log(0, f"Daytona not configured. Running {stage_name} without sandbox.", "warning")
+        log(0, f"Daytona not configured. Running {stage_name} without child sandbox.", "warning")
         return None
 
     try:
         sandbox = daytona.create()
-        log(0, f"Daytona sandbox created for {stage_name}", "done")
+        log(0, f"Daytona child sandbox created for {stage_name}", "done")
         return sandbox
     except Exception as error:
-        log(0, f"Could not create Daytona sandbox for {stage_name}: {error}", "warning")
+        log(0, f"Could not create Daytona child sandbox for {stage_name}: {error}", "warning")
         return None
-
 
 def cleanup_sandbox(sandbox):
     if not sandbox:
@@ -180,6 +185,335 @@ def fetch_url(url):
     return ""
 
 
+
+
+
+
+# >>> NAILIT RESEARCH HELPERS
+
+RESEARCH_MAX_TOTAL_CHARS = 120000
+RESEARCH_MAX_SOURCE_CHARS = 9000
+RESEARCH_RESULT_LIMIT = 6
+
+BLOCKED_FETCH_DOMAINS = (
+    "youtube.com",
+    "youtu.be",
+    "tiktok.com",
+    "instagram.com",
+    "facebook.com",
+)
+
+def is_google(company_name):
+    return company_name.strip().lower() in {"google", "google cloud", "alphabet"}
+
+def source_key(url):
+    return (url or "").split("#")[0].split("?")[0].rstrip("/").lower()
+
+def company_seed_urls(company_name):
+    if is_google(company_name):
+        return [
+            {
+                "category": "official_company",
+                "url": "https://www.google.com/about/careers/applications/how-we-hire/",
+                "title": "Google Careers: How we hire",
+            },
+            {
+                "category": "official_company",
+                "url": "https://www.google.com/about/careers/applications/interview-tips",
+                "title": "Google Careers: Interviewing at Google",
+            },
+            {
+                "category": "official_company",
+                "url": "https://about.google/company-info/philosophy/",
+                "title": "About Google: Ten things we know to be true",
+            },
+            {
+                "category": "official_company",
+                "url": "https://about.google/company-info/commitments/",
+                "title": "About Google: Commitments",
+            },
+        ]
+
+    return []
+
+def company_official_domains(company_name):
+    if is_google(company_name):
+        return ["google.com", "about.google", "careers.google.com", "blog.google"]
+
+    clean = re.sub(r"[^a-z0-9]+", "", company_name.lower())
+    if clean:
+        return [f"{clean}.com"]
+
+    return []
+
+def build_research_queries(company_name, role_name):
+    company = company_name.strip()
+    role = role_name.strip()
+
+    official_domains = company_official_domains(company)
+
+    queries = [
+        {
+            "category": "official_company",
+            "query": f"{company} official careers interview process how we hire interview tips values mission",
+            "include_domains": official_domains,
+        },
+        {
+            "category": "official_company",
+            "query": f"{company} official company values principles culture hiring interview",
+            "include_domains": official_domains,
+        },
+        {
+            "category": "role_specific",
+            "query": f"{company} {role} interview process questions experience",
+            "include_domains": None,
+        },
+        {
+            "category": "role_specific",
+            "query": f"{company} {role} interview preparation rounds behavioral technical",
+            "include_domains": None,
+        },
+        {
+            "category": "public_candidate_experience",
+            "query": f"{company} {role} interview questions Glassdoor",
+            "include_domains": ["glassdoor.com", "glassdoor.co.uk", "glassdoor.ie"],
+        },
+        {
+            "category": "public_candidate_experience",
+            "query": f"site:reddit.com {company} {role} interview experience questions",
+            "include_domains": ["reddit.com"],
+        },
+        {
+            "category": "video_themes",
+            "query": f"site:youtube.com {company} {role} interview preparation questions",
+            "include_domains": ["youtube.com"],
+        },
+        {
+            "category": "role_requirements",
+            "query": f"{company} {role} responsibilities requirements competencies",
+            "include_domains": None,
+        },
+    ]
+
+    if is_google(company):
+        queries.extend(
+            [
+                {
+                    "category": "official_google",
+                    "query": "site:google.com/about/careers/applications Google interview tips how we hire",
+                    "include_domains": ["google.com"],
+                },
+                {
+                    "category": "official_google",
+                    "query": "site:about.google/company-info Google ten things we know to be true values",
+                    "include_domains": ["about.google"],
+                },
+                {
+                    "category": "google_program_manager",
+                    "query": "Google Program Manager interview process behavioral questions stakeholder management",
+                    "include_domains": None,
+                },
+                {
+                    "category": "google_program_manager",
+                    "query": "Google Program Manager interview experience process improvement stakeholder questions",
+                    "include_domains": None,
+                },
+            ]
+        )
+
+    return queries
+
+def tavily_search_once(query, include_domains=None, max_results=RESEARCH_RESULT_LIMIT):
+    kwargs = {
+        "max_results": max_results,
+        "search_depth": "advanced",
+        "include_answer": True,
+        "include_raw_content": True,
+    }
+
+    if include_domains:
+        kwargs["include_domains"] = include_domains
+
+    try:
+        return tavily.search(query, **kwargs)
+    except Exception as sdk_error:
+        log(1, f"Tavily SDK search failed for query: {query}. Error: {sdk_error}", "warning")
+
+    if not TAVILY_API_KEY:
+        return {"results": []}
+
+    try:
+        payload = dict(kwargs)
+        payload["query"] = query
+
+        response = requests.post(
+            "https://api.tavily.com/search",
+            headers={
+                "Authorization": f"Bearer {TAVILY_API_KEY}",
+                "Content-Type": "application/json",
+            },
+            json=payload,
+            timeout=30,
+        )
+
+        if response.ok:
+            return response.json()
+
+        log(1, f"Tavily REST search failed {response.status_code}: {response.text[:300]}", "warning")
+    except Exception as rest_error:
+        log(1, f"Tavily REST search error: {rest_error}", "warning")
+
+    return {"results": []}
+
+def score_source(category, url):
+    url_lower = (url or "").lower()
+
+    score = 0
+
+    if category.startswith("official"):
+        score += 100
+
+    if "google.com/about/careers" in url_lower or "about.google" in url_lower:
+        score += 80
+
+    if "glassdoor" in url_lower:
+        score += 35
+
+    if "reddit.com" in url_lower:
+        score += 25
+
+    if "youtube.com" in url_lower or "youtu.be" in url_lower:
+        score += 20
+
+    return score
+
+def collect_research_sources(company_name, role_name):
+    sources = []
+    seen = set()
+
+    for seed in company_seed_urls(company_name):
+        url = seed["url"]
+        key = source_key(url)
+
+        if key in seen:
+            continue
+
+        seen.add(key)
+        content = fetch_url(url)
+
+        if content:
+            sources.append(
+                {
+                    "category": seed["category"],
+                    "title": seed["title"],
+                    "url": url,
+                    "content": content[:RESEARCH_MAX_SOURCE_CHARS],
+                    "score": score_source(seed["category"], url),
+                }
+            )
+            log(1, f"Seed source loaded: {url}", "done")
+        else:
+            log(1, f"Seed source could not be read: {url}", "warning")
+
+    for item in build_research_queries(company_name, role_name):
+        query = item["query"]
+        category = item["category"]
+        include_domains = item.get("include_domains")
+
+        log(1, f"Searching {category}: {query}")
+
+        result = tavily_search_once(query, include_domains=include_domains)
+
+        answer = result.get("answer") or ""
+        if answer and len(answer) > 80:
+            pseudo_url = f"tavily_answer:{category}:{query}"
+            if pseudo_url not in seen:
+                seen.add(pseudo_url)
+                sources.append(
+                    {
+                        "category": category,
+                        "title": f"Tavily answer for {query}",
+                        "url": pseudo_url,
+                        "content": answer[:2500],
+                        "score": score_source(category, pseudo_url) + 10,
+                    }
+                )
+
+        for res in result.get("results", []):
+            url = res.get("url", "")
+            key = source_key(url)
+
+            if not url or key in seen:
+                continue
+
+            seen.add(key)
+
+            title = res.get("title", "") or url
+            content = res.get("raw_content") or res.get("content") or ""
+
+            if len(content) < 700 and not any(domain in url for domain in BLOCKED_FETCH_DOMAINS):
+                fetched = fetch_url(url)
+                if fetched and len(fetched) > len(content):
+                    content = fetched
+
+            if not content or len(content) < 100:
+                continue
+
+            sources.append(
+                {
+                    "category": category,
+                    "title": title,
+                    "url": url,
+                    "content": content[:RESEARCH_MAX_SOURCE_CHARS],
+                    "score": score_source(category, url),
+                }
+            )
+
+        time.sleep(0.25)
+
+    sources.sort(key=lambda x: x.get("score", 0), reverse=True)
+
+    return sources[:24]
+
+def format_sources_for_prompt(sources):
+    chunks = []
+    total = 0
+
+    for index, source in enumerate(sources, 1):
+        content = source["content"].strip()
+        chunk = f"""
+SOURCE {index}
+Category: {source["category"]}
+Title: {source["title"]}
+URL: {source["url"]}
+
+{content}
+""".strip()
+
+        if total + len(chunk) > RESEARCH_MAX_TOTAL_CHARS:
+            break
+
+        chunks.append(chunk)
+        total += len(chunk)
+
+    return "\n\n" + ("=" * 80) + "\n\n".join(chunks)
+
+def build_source_manifest(sources):
+    rows = []
+    for index, source in enumerate(sources, 1):
+        rows.append(
+            {
+                "id": index,
+                "category": source["category"],
+                "title": source["title"],
+                "url": source["url"],
+            }
+        )
+
+    return json.dumps(rows, indent=2)
+
+# <<< NAILIT RESEARCH HELPERS
+
 def save_output(company, role):
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     safe_company = company.replace(" ", "_").replace("/", "_")
@@ -253,118 +587,112 @@ Generated: {timestamp}
     return md_filename
 
 
+
+
 def research_company(company_name, role_name):
-    log(1, "Starting focused online research")
+    log(1, "Starting deep company and interview research")
 
     sandbox = make_sandbox("research")
 
-    queries = [
-        f"{company_name} {role_name} interview process",
-        f"{company_name} {role_name} interview questions",
-        f"{company_name} {role_name} interview experience",
-        f"{company_name} careers values interview",
-        f"{company_name} {role_name} job requirements",
-    ]
-
-    all_urls = []
-    snippets = []
-
     try:
-        for query in queries:
-            log(1, f"Searching: {query}")
-            try:
-                search_result = tavily.search(query, max_results=2)
+        sources = collect_research_sources(company_name, role_name)
+        set_result("source_manifest", build_source_manifest(sources))
 
-                for item in search_result.get("results", []):
-                    url = item.get("url", "")
-                    content = item.get("content", "")
+        log(1, f"Collected {len(sources)} usable research sources")
 
-                    if url and url not in all_urls:
-                        all_urls.append(url)
+        if not sources:
+            message = """
+RESEARCH STATUS: FAILED
 
-                    if content and len(content) > 80:
-                        snippets.append(f"Source snippet from {url}\n{content}")
+No usable online sources were collected. This is a system failure or search provider failure, not proof that sources do not exist.
 
-            except Exception as error:
-                log(1, f"Search error: {error}", "error")
-
-            time.sleep(0.2)
-
-        log(1, f"Found {len(all_urls)} URLs and {len(snippets)} snippets")
-
-        full_pages = []
-
-        for index, url in enumerate(all_urls[:8]):
-            log(1, f"Fetching source {index + 1} of {min(len(all_urls), 8)}")
-            content = fetch_url(url)
-
-            if content:
-                full_pages.append(f"Source {index + 1}: {url}\n{content}")
-                log(1, f"Fetched {len(content)} characters")
-            else:
-                log(1, "No readable content found")
-
-        source_text = "\n\n".join(full_pages + snippets)[:35000]
-
-        if not source_text.strip():
-            set_result("intel_report", "No useful online sources found. Use the job description and CV only.")
+Do not treat this as company intelligence.
+Do not produce generic company claims.
+Use only the job description, CV, and answer bank until research is fixed.
+""".strip()
+            set_result("intel_report", message)
+            log(1, "Research failed because zero usable sources were collected", "error")
             return
 
+        source_text = format_sources_for_prompt(sources)
+
         prompt = f"""
-You are an interview research assistant.
+You are Nailit's company intelligence researcher.
 
-Prepare a practical research summary for someone interviewing at {company_name} for the role of {role_name}.
+Your job is to prepare serious interview intelligence for a candidate interviewing at:
 
-Use only the source content below.
-If something is not found, write "not found in sources".
-Do not exaggerate.
-Do not give generic advice.
-Keep the output useful and concise.
+Company: {company_name}
+Role: {role_name}
 
-Return this structure:
+You must use the numbered sources below. Do not invent facts. If a point is only inferred from public candidate reports, label it as directional, not official.
 
-1. Company interview summary
-Give 5 useful bullets about what the candidate should expect.
+Important source rules:
+1. Official company pages are highest confidence.
+2. Glassdoor, Reddit, YouTube, blogs, and forums are directional candidate experience themes.
+3. If a source is a search answer or snippet, say it is a snippet based source.
+4. Every concrete company or interview claim must include source numbers in brackets, like [S1] or [S2, S5].
+5. If role specific interview data is thin, say that clearly and explain what is inferred from adjacent Program Manager interviews.
 
-2. Likely interview rounds
-List likely rounds. If exact structure is not found, say so.
+Return the report in this exact structure:
 
-3. What interviewers may test
-List skills, behaviours, values, and role signals.
+### Research status
+Say how many sources were used and whether official company sources were found.
 
-4. Likely questions
-Give 8 likely questions.
-Mark each question as HIGH SIGNAL or INFERRED.
+### Sources used
+List every useful source as:
+S1. Title, category, URL, one sentence on why it matters.
 
-5. Red flags to avoid
-List weak answers or mistakes to avoid.
+### Official company signal map
+Extract company values, principles, hiring philosophy, culture signals, and language the candidate should mirror.
 
-6. Strong answer strategy
-Explain how to answer well for this company and role.
+### Hiring and interview process intelligence
+Explain what the candidate should expect. Separate official information from public candidate experience.
 
-7. Source confidence
-Explain what seems well supported and what is only inferred.
+### Role specific interview intelligence
+Explain what is likely tested for this exact role. Include technical, operational, leadership, stakeholder, ambiguity, data, and process signals.
 
-Source content:
+### Public candidate experience themes
+Summarize recurring themes from Reddit, Glassdoor, YouTube, blogs, and interview prep pages. Mark them as directional.
+
+### What the candidate must prove
+Give 8 to 12 concrete things the candidate must prove in the interview.
+
+### Likely interview questions
+Give 15 likely questions. For each:
+Question
+Signal being tested
+Source basis as OFFICIAL, PUBLIC EXPERIENCE, JOB DESCRIPTION INFERENCE, or ROLE INFERENCE
+What a strong answer must prove
+
+### Red flags to avoid
+Give specific answer patterns that would weaken the candidate.
+
+### Company specific answer strategy
+Explain how to sound like a strong fit for this company and role without sounding generic.
+
+### Confidence notes
+Say what is well supported, what is directional, and what still needs manual checking.
+
+Numbered sources:
 {source_text}
 """
 
-        intel = ask_llm(prompt)
+        intel = ask_llm(prompt, retries=3)
         set_result("intel_report", intel)
-        log(1, "Research summary complete", "done")
+        log(1, "Deep research summary complete", "done")
 
     finally:
         cleanup_sandbox(sandbox)
 
 
 def analyse_role_and_cv(company_name, role_name, job_description, full_profile):
-    log(2, "Analysing job description and CV")
+    log(2, "Analysing role, CV, and answer bank")
 
     sandbox = make_sandbox("role and CV analysis")
 
     try:
         prompt = f"""
-You are an interview coach helping a job seeker prepare for a specific role.
+You are Nailit's candidate evidence analyst.
 
 Company:
 {company_name}
@@ -372,46 +700,68 @@ Company:
 Role:
 {role_name}
 
-Company research:
+Company intelligence:
 {get_result("intel_report")}
 
 Job description:
 {job_description}
 
-Candidate CV and context:
+Candidate CV plus answer bank:
 {full_profile}
 
-Create a practical analysis.
+Your job is to map the role to exact candidate evidence. Do not be generic. Do not invent experience.
 
-Return this structure:
+Return this exact structure:
 
-1. Role summary
-Explain what this job seems to require in plain English.
+### Role decoded
+Explain what this job is really asking for in practical language.
 
-2. Top competencies
-List the 6 most important skills or behaviours the candidate must show.
+### Role signal map
+Create a table with:
+Signal required
+Where it appears in the job description
+Why it matters
+How the candidate can prove it
 
-3. Candidate strengths
-List the strongest matches between the CV and the role.
+### Candidate evidence inventory
+Extract at least 12 concrete evidence points from the CV and answer bank.
+For each:
+Evidence
+Source area as CV or ANSWER BANK
+Competency proven
+Best interview use
 
-4. Candidate gaps
-List the biggest risks or missing evidence.
-For each gap, explain how the candidate can handle it honestly.
+### Strongest match areas
+Give the strongest 8 matches between the candidate and the role. Each must include evidence.
 
-5. Best stories to prepare
-Suggest 5 interview stories the candidate should prepare from their real experience.
-Do not invent details.
+### Risk areas
+Give the biggest gaps or risks.
+For each:
+Risk
+Why interviewers may care
+Honest positioning
+Story or evidence to reduce concern
 
-6. Positioning strategy
-Write a short strategy for how the candidate should present themselves.
+### Best stories to prepare
+Build a story bank with at least 10 stories from the candidate material.
+For each:
+Story name
+Best question types
+Competencies proven
+Evidence to include
+Metrics to include
+Weakness to avoid
 
-7. What the mock interview should test
-List the areas that should be tested hardest.
+### Google or company alignment
+Map candidate evidence to company signals from the research.
+
+### Mock interview pressure points
+List what the mock interviewer should test hardest.
 """
 
-        analysis = ask_llm(prompt)
+        analysis = ask_llm(prompt, retries=3)
         set_result("role_cv_analysis", analysis)
-        log(2, "Role and CV analysis complete", "done")
+        log(2, "Role, CV, and answer bank analysis complete", "done")
 
     finally:
         cleanup_sandbox(sandbox)
@@ -424,9 +774,9 @@ def create_final_prep_pack(company_name, role_name, job_description, full_profil
 
     try:
         prompt = f"""
-You are a practical interview coach.
+You are Nailit's senior interview strategist.
 
-Create a final interview prep pack for this candidate.
+Create a premium, detailed, evidence based interview prep pack.
 
 Company:
 {company_name}
@@ -437,57 +787,96 @@ Role:
 Job description:
 {job_description}
 
-Candidate CV and context:
+Candidate CV plus answer bank:
 {full_profile}
 
-Company research:
+Company intelligence:
 {get_result("intel_report")}
 
-Role and CV analysis:
+Role and candidate analysis:
 {get_result("role_cv_analysis")}
 
-The output must be clear, useful, and not too long.
-
-Return this structure:
-
-1. Interview strategy
-A short paragraph explaining how the candidate should position themselves.
-
-2. Top 5 things to highlight
-Each point should connect the candidate to the role.
-
-3. Top 5 risks to prepare for
-Each point should include how to answer if asked.
-
-4. Top 10 likely interview questions
-For each question include:
-Why they may ask it
-What a strong answer must include
-
-5. Story bank
-Give 5 story prompts the candidate should prepare using real experience.
-
-6. Questions to ask the interviewer
-Give 8 smart questions.
-
-7. Seven day prep plan
-Give a practical day by day plan.
-
 Rules:
-Do not invent candidate experience.
-Do not invent company facts.
-If evidence is weak, say so.
-Use plain English.
-Make it feel like something a real job seeker can use tonight.
+1. Do not write generic advice.
+2. Use exact evidence from the candidate material.
+3. Use company research where available.
+4. If research failed, say research failed instead of pretending sources do not exist.
+5. Distinguish official company signals from public candidate experience themes.
+6. Make the output detailed enough to actually prepare tonight.
+7. Do not dump JSON in this section.
+8. Do not invent candidate achievements or company facts.
+
+Return this exact structure:
+
+### Executive strategy
+A sharp positioning strategy for this exact candidate and role.
+
+### The interview is really testing
+Explain the hidden evaluation criteria behind this role.
+
+### Company signal translation
+Translate company values, hiring language, and public interview themes into practical answer strategy.
+
+### Candidate positioning statement
+Write a strong 45 second positioning statement.
+
+### Why this company answer
+Write a strong answer that uses company specific signals and does not sound generic.
+
+### Top strengths to lead with
+Give 8 strengths. Each must include:
+Candidate evidence
+Why it matters for this role
+How to say it in interview language
+
+### Top risks and repair strategy
+Give 8 risks. Each must include:
+The risk
+What the interviewer may worry about
+Best honest answer strategy
+Evidence to use
+
+### Story bank
+Give at least 10 stories from the CV or answer bank.
+Each story must include:
+Story title
+Best question match
+STAR outline
+Metrics
+Company or role signal it proves
+How to tighten the answer
+
+### Likely question bank
+Give at least 20 likely interview questions.
+For each:
+Question
+Why they ask
+Best story to use
+Must include
+Avoid saying
+
+### Technical or domain gap plan
+Explain how to handle gaps such as networking, infrastructure, data centers, cloud, or technical depth if relevant.
+
+### First 30, 60, and 90 day answer
+Create a role specific answer, not a generic plan.
+
+### Questions to ask the interviewer
+Give 12 smart questions tailored to the company, team, role, and candidate risks.
+
+### Seven day prep plan
+Give a serious day by day plan. Each day must include outputs the candidate should create.
+
+### Final interview checklist
+Give a concise checklist for the day before and morning of the interview.
 """
 
-        prep_pack = ask_llm(prompt)
+        prep_pack = ask_llm(prompt, retries=3)
         set_result("final_prep_pack", prep_pack)
         log(3, "Final prep pack complete", "done")
 
     finally:
         cleanup_sandbox(sandbox)
-
 
 def create_mock_interview(company_name, role_name):
     log(4, "Creating mock interview script")
@@ -550,6 +939,8 @@ Write how the interviewer ends the mock interview.
         cleanup_sandbox(sandbox)
 
 
+
+
 def create_product_brief(company_name, role_name):
     log(5, "Creating product ready JSON brief")
 
@@ -557,7 +948,7 @@ def create_product_brief(company_name, role_name):
 
     try:
         prompt = f"""
-You are creating structured data for an interview preparation product.
+You are creating structured data for Nailit, an interview preparation product.
 
 Use the research and analysis below to create a product ready JSON object.
 
@@ -567,8 +958,11 @@ Company:
 Role:
 {role_name}
 
-Company research:
+Company intelligence:
 {get_result("intel_report")}
+
+Source manifest:
+{get_result("source_manifest")}
 
 Role and CV analysis:
 {get_result("role_cv_analysis")}
@@ -588,6 +982,19 @@ Use this schema exactly:
 {{
   "company": "{company_name}",
   "role": "{role_name}",
+  "research_status": {{
+    "sources_used": [],
+    "official_sources_found": true,
+    "confidence": "",
+    "limitations": []
+  }},
+  "company_signal_map": [
+    {{
+      "signal": "",
+      "source_basis": "",
+      "how_to_show_it": ""
+    }}
+  ],
   "candidate_positioning": {{
     "summary": "",
     "strengths": [],
@@ -605,6 +1012,7 @@ Use this schema exactly:
       "question": "",
       "type": "behavioral",
       "why_it_matters": "",
+      "best_story_to_use": "",
       "strong_answer_must_include": [],
       "follow_up_questions": []
     }}
@@ -613,8 +1021,10 @@ Use this schema exactly:
     {{
       "story_name": "",
       "competency": "",
+      "source_area": "CV or ANSWER_BANK",
       "what_to_prepare": "",
-      "metrics_to_include": []
+      "metrics_to_include": [],
+      "risks_to_avoid": []
     }}
   ],
   "mock_interview_plan": {{
@@ -625,6 +1035,7 @@ Use this schema exactly:
       "structure",
       "role relevance",
       "evidence",
+      "company alignment",
       "confidence"
     ],
     "feedback_template": {{
@@ -639,14 +1050,13 @@ Use this schema exactly:
 }}
 """
 
-        product_brief_raw = ask_llm(prompt)
+        product_brief_raw = ask_llm(prompt, retries=3)
         product_brief = extract_json(product_brief_raw)
         set_result("product_brief", product_brief)
         log(5, "Product ready JSON brief complete", "done")
 
     finally:
         cleanup_sandbox(sandbox)
-
 
 def create_lua_brief(company_name, role_name):
     log(6, "Creating Lua mock interview brief")
