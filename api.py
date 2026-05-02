@@ -32,9 +32,9 @@ app.add_middleware(
 class PrepRequest(BaseModel):
     company_name: str = Field(min_length=1, max_length=120)
     role_name: str = Field(min_length=1, max_length=120)
-    job_description: str = Field(min_length=1, max_length=20000)
-    cv: str = Field(min_length=1, max_length=20000)
-    extra: str = Field(default="", max_length=8000)
+    job_description: str = Field(min_length=1, max_length=120000)
+    cv: str = Field(min_length=1, max_length=120000)
+    extra: str = Field(default="", max_length=120000)
 
 
 def require_app_key(x_app_key: str = Header(default="")):
