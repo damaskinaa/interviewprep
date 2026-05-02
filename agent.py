@@ -1117,6 +1117,93 @@ Do not invent candidate experience.
         cleanup_sandbox(sandbox)
 
 
+def extract_external_research(extra):
+    marker_start = "[NAILIT_EXTERNAL_RESEARCH]"
+    marker_end = "[/NAILIT_EXTERNAL_RESEARCH]"
+
+    if marker_start not in extra:
+        return ""
+
+    start = extra.find(marker_start)
+    end = extra.find(marker_end, start)
+
+    if end == -1:
+        return extra[start:].strip()
+
+    return extra[start:end + len(marker_end)].strip()
+
+
+def create_intel_from_external_research(company_name, role_name, external_research):
+    log(1, "Creating company intelligence from Vercel research")
+
+    prompt = f"""
+You are Nailit's company intelligence researcher.
+
+Company:
+{company_name}
+
+Role:
+{role_name}
+
+External research:
+{external_research}
+
+Create a serious company and interview intelligence report.
+
+Rules:
+1. Use the external research.
+2. Separate official sources from directional public candidate experience.
+3. Do not claim Reddit, Glassdoor, YouTube, or blogs are official.
+4. Include source titles and URLs when available.
+5. Do not be generic.
+6. If the research is thin, say exactly what is thin.
+
+Return this exact structure:
+
+### Research status
+Say that research was supplied by the Vercel research bridge and summarize source quality.
+
+### Sources used
+List useful source titles and URLs.
+
+### Official company signal map
+Extract official values, hiring philosophy, culture, and language to mirror.
+
+### Hiring and interview process intelligence
+Explain expected interview process. Separate official from public candidate themes.
+
+### Role specific interview intelligence
+Explain what is likely tested for this role.
+
+### Public candidate experience themes
+Summarize Reddit, Glassdoor, YouTube, blogs, and interview prep themes as directional.
+
+### What the candidate must prove
+Give 8 to 12 concrete proof points.
+
+### Likely interview questions
+Give 15 likely questions. For each include:
+Question
+Signal being tested
+Source basis
+What a strong answer must prove
+
+### Red flags to avoid
+Specific mistakes to avoid.
+
+### Company specific answer strategy
+How to sound tailored to this company and role.
+
+### Confidence notes
+What is well supported, directional, or needs manual checking.
+"""
+
+    intel = ask_llm(prompt, retries=3)
+    set_result("intel_report", intel)
+    set_result("source_manifest", external_research[:10000])
+    log(1, "External research intelligence complete", "done")
+
+
 def run_pipeline(job_description, cv, extra, company_name, role_name):
     results.clear()
     progress_log.clear()
@@ -1125,7 +1212,13 @@ def run_pipeline(job_description, cv, extra, company_name, role_name):
     if extra.strip():
         full_profile += f"\n\nAdditional context:\n{extra}"
 
-    research_company(company_name, role_name)
+    external_research = extract_external_research(extra)
+
+    if external_research:
+        create_intel_from_external_research(company_name, role_name, external_research)
+    else:
+        research_company(company_name, role_name)
+
     analyse_role_and_cv(company_name, role_name, job_description, full_profile)
     create_final_prep_pack(company_name, role_name, job_description, full_profile)
     create_mock_interview(company_name, role_name)
