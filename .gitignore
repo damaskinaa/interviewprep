@@ -5,3 +5,10 @@
 __pycache__
 *.pyc
 .venv
+cv.txt
+extra_context.txt
+job_description.txt
+interview_prep_*.json
+interview_prep_*.md
+product_brief_*.json
+lua_brief_*.md
