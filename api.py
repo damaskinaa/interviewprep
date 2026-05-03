@@ -6,7 +6,7 @@ from fastapi import Depends, FastAPI, Header, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
-from agent import run_pipeline
+from agent_v2 import run_pipeline
 
 
 APP_API_KEY = os.getenv("APP_API_KEY")
