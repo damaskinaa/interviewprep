@@ -12,3 +12,6 @@ interview_prep_*.json
 interview_prep_*.md
 product_brief_*.json
 lua_brief_*.md
+
+backend.log
+*.log
