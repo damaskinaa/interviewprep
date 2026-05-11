@@ -310,16 +310,40 @@ def collect_sources(company_name, role_name, job_description, extra):
     else:
         log(1, "No Vercel research bridge block found in request", "warning")
 
+    family_caps = {
+        "official_role_adjacent_google_jobs": 6,
+        "official_google_jobs": 3,
+        "official_google_careers": 5,
+        "official_google_cloud_blog": 3,
+        "reddit": 5,
+        "glassdoor": 5,
+        "youtube": 5,
+    }
+
     deduped = []
     seen = set()
-    for source in sorted(sources, key=lambda item: item["score"], reverse=True):
-        key = (source.get("url"), source.get("title"))
+    family_counts = {}
+
+    for source in sorted(sources, key=lambda item: (item["score"], len(item.get("content", ""))), reverse=True):
+        key = canonical_source_key(source.get("url", ""))
         if key in seen:
             continue
+
+        family = source.get("family") or source_family(source)
+        cap = family_caps.get(family, 8)
+
+        if family_counts.get(family, 0) >= cap:
+            continue
+
         seen.add(key)
+        family_counts[family] = family_counts.get(family, 0) + 1
         deduped.append(source)
 
-    final_sources = deduped[:60]
+    official = [s for s in deduped if s.get("source_type") == "Official company source"]
+    directional = [s for s in deduped if "directional" in s.get("source_type", "").lower() or s.get("source_type", "").lower().startswith("youtube")]
+    public = [s for s in deduped if s not in official and s not in directional]
+
+    final_sources = (official[:18] + public[:18] + directional[:18])[:54]
 
     manifest = []
     for index, source in enumerate(final_sources, start=1):
@@ -328,10 +352,17 @@ def collect_sources(company_name, role_name, job_description, extra):
             f"{source['title']} | {source['url']} | query: {source['query']}"
         )
 
+    source_mix = {
+        "official": len(official),
+        "public": len(public),
+        "directional": len(directional),
+        "families": family_counts,
+    }
+
+    set_result("source_mix", json.dumps(source_mix, indent=2))
     set_result("source_manifest", "\n".join(manifest) or "No sources collected.")
     log(1, f"Final source manifest contains {len(final_sources)} sources", "done")
     return final_sources
-
 
 def create_source_digest(company_name, role_name, sources):
     log(1, "Creating source digest", "running")
@@ -375,35 +406,40 @@ Role:
 Sources:
 {chr(10).join(blocks)}
 
-Create a compact but useful source digest.
+Create a compact executive source digest. Do not dump sources. Synthesize patterns.
 
 Return this exact structure:
 
 ### Source quality summary
-Count official sources, high signal public sources, directional sources, weak sources.
+Count source types. Explain whether the source set is strong, mixed, or weak.
 
 ### Official evidence
-Only company owned or clearly official facts. Include source title and URL.
+Use only company owned or clearly official sources. Group repeated job pages into role signal themes instead of listing every similar page.
+
+### Repeated role signals from official jobs
+Extract recurring requirements across official or adjacent role pages. Focus on execution, stakeholders, systems, metrics, ambiguity, domain, and leadership.
 
 ### Directional public interview themes
-Themes from public prep sites, Reddit, Glassdoor, YouTube, and candidate reports. Label as directional.
-
-### Role specific findings
-Findings about this role or similar roles.
+Use Reddit, Glassdoor, YouTube, LinkedIn, forums, and prep sites only as directional candidate experience themes.
 
 ### Interview process findings
-Likely stages, what is official, what is directional, what is unclear.
+Separate official evidence, repeated directional evidence, and unknowns. Do not invent exact rounds.
 
-### Signals to test
-What interviewers appear likely to assess.
+### Company signal map
+Translate sources into what the candidate must prove in interviews.
 
-### Rejected or weak evidence
-Mention weak source types and why not to over rely on them.
+### Evidence conflicts and weak evidence
+Say what is noisy, duplicated, stale, promotional, or too generic.
+
+### Source confidence notes
+Give precise confidence notes for official, public, and directional claims.
 
 Rules:
 Do not include fake URLs such as tavily_answer as sources.
 Do not claim directional sources are official.
 Do not invent exact interview rounds unless supported.
+Do not over list similar Google Careers job pages.
+Prefer synthesized signals over long source lists.
 """
 
     digest = ask_llm(prompt, model=MODEL_FAST, max_tokens=3600, retries=3)
