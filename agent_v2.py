@@ -968,6 +968,17 @@ def run_full_pipeline(company_name, role_name, job_description, cv, extra):
         qa_bank,
     )
 
+    lua_brief = build_lua_mock_interview_brief(
+        company_name,
+        role_name,
+        company_intel,
+        job_decode,
+        candidate_digest,
+        match_map,
+        story_bank,
+        qa_bank,
+    )
+
     log(0, "Pipeline complete", "done")
 
     return {
