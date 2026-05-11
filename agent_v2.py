@@ -6,6 +6,7 @@ from datetime import datetime
 from urllib.parse import urlparse
 from dotenv import load_dotenv
 from openai import OpenAI
+from pathlib import Path
 
 load_dotenv()
 
