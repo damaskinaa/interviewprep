@@ -7,6 +7,7 @@ from urllib.parse import urlparse
 from dotenv import load_dotenv
 from openai import OpenAI
 from pathlib import Path
+from lua_brief_builder import build_lua_mock_interview_brief
 
 load_dotenv()
 
