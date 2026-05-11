@@ -66,6 +66,23 @@ def classify_question(question, candidate_answer):
     return "general_behavioral"
 
 
+
+def scrub_unconfirmed_numbers(value):
+    if isinstance(value, dict):
+        return {k: scrub_unconfirmed_numbers(v) for k, v in value.items()}
+
+    if isinstance(value, list):
+        return [scrub_unconfirmed_numbers(v) for v in value]
+
+    if not isinstance(value, str):
+        return value
+
+    value = re.sub(r"\b\d+%\b", "[needs confirmation]", value)
+    value = re.sub(r"\b\d+\s*percent\b", "[needs confirmation]", value, flags=re.I)
+
+    return value
+
+
 def build_lua_coach_response(
     company,
     role,
@@ -192,6 +209,7 @@ Return only valid JSON with this exact schema:
         parsed.setdefault("missing_evidence", [])
         parsed.setdefault("next_drill", "")
         parsed.setdefault("adaptive_follow_up_question", "")
+        parsed = scrub_unconfirmed_numbers(parsed)
         return parsed
     except Exception:
         return {
