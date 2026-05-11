@@ -1057,6 +1057,12 @@ Generated: {timestamp}
 
     Path(md_filename).write_text(markdown)
 
+    lua_filename = f"lua_brief_{safe_company}_{timestamp}.json"
+    Path(lua_filename).write_text(
+        pipeline_result.get("lua_mock_interview_brief", "{}"),
+        encoding="utf8",
+    )
+
     return md_filename
 
 def run_pipeline(job_description, cv, extra, company_name, role_name):
@@ -1123,6 +1129,12 @@ Generated: {timestamp}
 
     Path(md_filename).write_text(markdown)
 
+    lua_filename = f"lua_brief_{safe_company}_{timestamp}.json"
+    Path(lua_filename).write_text(
+        pipeline_result.get("lua_mock_interview_brief", "{}"),
+        encoding="utf8",
+    )
+
     return md_filename
 
 def run_pipeline(job_description, cv, extra, company_name, role_name):
@@ -1188,5 +1200,11 @@ Generated: {timestamp}
 """
 
     Path(md_filename).write_text(markdown)
+
+    lua_filename = f"lua_brief_{safe_company}_{timestamp}.json"
+    Path(lua_filename).write_text(
+        pipeline_result.get("lua_mock_interview_brief", "{}"),
+        encoding="utf8",
+    )
 
     return md_filename
