@@ -195,6 +195,44 @@ def source_score(source_type, content):
     return 1
 
 
+
+def canonical_source_key(url):
+    url = normalize_text(url).lower()
+    url = re.sub(r"\?.*$", "", url)
+    url = re.sub(r"#.*$", "", url)
+    url = url.rstrip("/")
+    return url
+
+
+def source_family(source):
+    url = source.get("url", "")
+    title = source.get("title", "")
+    host = source_host(url)
+
+    if "careers.google.com/jobs/results" in url or "google.com/about/careers/applications/jobs/results" in url:
+        title_lower = title.lower()
+        if "network" in title_lower or "program manager" in title_lower or "delivery" in title_lower:
+            return "official_role_adjacent_google_jobs"
+        return "official_google_jobs"
+
+    if "google.com/about/careers" in url or "careers.google.com" in url:
+        return "official_google_careers"
+
+    if "cloud.google.com/blog" in url:
+        return "official_google_cloud_blog"
+
+    if "reddit.com" in host:
+        return "reddit"
+
+    if "glassdoor" in host:
+        return "glassdoor"
+
+    if "youtube.com" in host or "youtu.be" in host:
+        return "youtube"
+
+    return host or "unknown"
+
+
 def parse_external_sources(external_research, company_name):
     sources = []
     text = external_research or ""
