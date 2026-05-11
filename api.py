@@ -7,6 +7,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
 from agent_v2 import run_pipeline
+from lua_coach import build_lua_coach_response
 
 
 APP_API_KEY = os.getenv("APP_API_KEY")
@@ -82,3 +83,16 @@ def prepare(req: PrepRequest):
         "lua_brief_file": str(lua_brief_file) if lua_brief_file.exists() else None,
         "lua_mock_interview_brief": lua_mock_interview_brief,
     }
+
+
+@app.post("/lua-coach")
+async def lua_coach(payload: dict):
+    response = build_lua_coach_response(
+        company=payload.get("company", ""),
+        role=payload.get("role", ""),
+        question=payload.get("question", ""),
+        candidate_answer=payload.get("candidate_answer", ""),
+        lua_brief=payload.get("lua_brief", {}),
+    )
+    return response
+
