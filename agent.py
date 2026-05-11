@@ -8,6 +8,7 @@ from dotenv import load_dotenv
 from daytona import Daytona, DaytonaConfig
 from tavily import TavilyClient
 from openai import OpenAI
+from lua_brief_builder import build_lua_mock_interview_brief
 
 load_dotenv()
 
@@ -1059,62 +1060,22 @@ Use this schema exactly:
         cleanup_sandbox(sandbox)
 
 def create_lua_brief(company_name, role_name):
-    log(6, "Creating Lua mock interview brief")
+    log(6, "Creating Lua mock interview doctrine brief")
 
-    sandbox = make_sandbox("Lua brief")
+    lua_brief = build_lua_mock_interview_brief(
+        company_name,
+        role_name,
+        get_result("intel_report"),
+        get_result("role_cv_analysis"),
+        get_result("role_cv_analysis"),
+        get_result("final_prep_pack"),
+        get_result("final_prep_pack"),
+        get_result("product_brief"),
+    )
 
-    try:
-        prompt = f"""
-You are preparing a compact briefing for a live Lua mock interview agent.
-
-The live agent will use this brief to interview the candidate one question at a time.
-
-Company:
-{company_name}
-
-Role:
-{role_name}
-
-Product JSON brief:
-{get_result("product_brief")}
-
-Create a compact brief with this structure:
-
-1. Target role
-One sentence.
-
-2. Candidate positioning
-Three bullets.
-
-3. Main strengths to test
-Five bullets.
-
-4. Main risks to test
-Five bullets.
-
-5. Interview questions
-Ten questions in the exact order the mock interviewer should ask them.
-
-6. Scoring rules
-Explain what makes a strong answer for this role.
-
-7. Feedback rules
-Tell the mock interviewer to score each answer out of 10, explain what worked, explain what was weak, give a stronger version, identify the weakest skill shown, and choose the next question based on that weakness.
-
-8. Instruction for Lua agent
-Write a direct instruction the user can paste into Lua chat to start the mock interview.
-
-Keep this brief clear and compact.
-Do not include long explanations.
-Do not invent candidate experience.
-"""
-
-        lua_brief = ask_llm(prompt)
-        set_result("lua_brief", lua_brief)
-        log(6, "Lua mock interview brief complete", "done")
-
-    finally:
-        cleanup_sandbox(sandbox)
+    set_result("lua_brief", lua_brief)
+    log(6, "Lua mock interview doctrine brief complete", "done")
+    return lua_brief
 
 
 def extract_external_research(extra):
