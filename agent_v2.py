@@ -986,6 +986,7 @@ def run_full_pipeline(company_name, role_name, job_description, cv, extra):
         "HAS_BRIDGE": "Vercel" in source_digest or "external" in source_digest.lower(),
         "HAS_TOKEN_ERROR": "LLM error" in final_pack,
         "final_pack": final_pack,
+        "lua_mock_interview_brief": lua_brief,
     }
 
 
