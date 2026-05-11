@@ -847,12 +847,7 @@ def create_final_pack(company_name, role_name, company_intel, job_decode, candid
     log(7, "Creating final premium prep pack", "running")
 
     prompt = f"""
-You are Nailit, a private executive interview strategist.
-
-Your job is to create the CLIENT READY interview preparation pack.
-This is not a research dump.
-This is not generic career advice.
-This must feel like a senior interview strategist prepared it privately for a high stakes candidate.
+You are writing the final Nailit interview prep pack.
 
 Company:
 {company_name}
@@ -878,143 +873,36 @@ Story bank:
 Question and answer bank:
 {trim_text(qa_bank, 6500)}
 
-CRITICAL RULES:
-Do not invent candidate metrics.
-If a metric is not explicitly provided, write "metric to confirm" or "needs exact number".
-Do not invent interview rounds.
-Say "likely" or "directional" unless official evidence supports it.
-Do not repeat whole sections from earlier stages.
-Do not expose internal research plan.
-Do not make the pack long for the sake of length.
-Do not include weak source lists in the main pack.
-Do not use generic phrases like "show leadership" unless tied to a specific candidate story.
-Do not over focus on Google Cloud unless the JD or source evidence clearly requires it.
-Use precise, calm, premium language.
+Write a premium final prep pack. It should feel like an executive interview strategist prepared it.
 
-STYLE:
-Private strategist memo.
-Sharp.
-Specific.
-Practical.
-No fluff.
-No motivational filler.
-No corporate clichés.
+Rules:
+Do not be generic.
+Do not invent candidate evidence.
+Use concrete candidate stories where available.
+Separate official company evidence from directional public themes.
+Be honest about gaps.
+Make it practical for preparation tonight.
+Make it detailed but readable.
 
-Return exactly this structure:
+Return this exact structure:
 
-## Executive Brief
-Give a short strategic read. Include:
-Candidate positioning
-The strongest path to offer
-The biggest interview risk
-What must be proven in every round
-
-## Evidence Based Positioning
-Create 5 positioning pillars.
-For each:
-Pillar
-Candidate evidence
-Role signal it proves
-How to say it in interview
-Confidence level
-
-## Company And Role Signal Map
-Separate:
-Official company evidence
-Directional public themes
-Role specific signals
-Unclear or unverified claims
-
+## Executive Strategy
 ## Interview Process Map
-Do not claim certainty.
-Create likely round types only.
-For each:
-Round
-Likely purpose
-Signals tested
-Best candidate story
-Risk to avoid
-
-## Candidate Match Map
-Create a compact table:
-Requirement
-Candidate evidence
-Strength
-Risk
-Repair move
-
+## Company Signal Map
+## Role Signal Map
+## Candidate Fit Map
 ## Gap And Risk Repair Plan
-List only serious risks.
-For each:
-Risk
-Why it matters
-What to say
-What not to say
-Prep action before interview
-
 ## Story Bank
-Give 6 strongest stories only.
-For each:
-Story title
-Best question types
-Signals proven
-STAR outline
-Metrics to use only if provided
-Metric to confirm if missing
-Sharp opening sentence
-Weak version to avoid
-
-## Likely Questions By Round
-Give questions by likely round.
-For each question:
-Why they ask it
-Best story to use
-Answer angle
-Red flag answer
-
-## Strong Answer Outlines
-Give 8 high probability answer outlines.
-Each must include:
-Question
-Signal tested
-Use this story
-Answer structure
-Specific evidence to include
-Follow up trap
-One sentence closer
-
+## Likely Question Bank By Round
+## Best Answer Outlines
 ## Thirty Sixty Ninety Day Answer
-Make it role specific.
-Do not make it generic.
-Tie to stakeholders, operating rhythm, metrics, risks, and delivery.
-
-## Why This Company
-Write a polished answer.
-It must connect company signal, role signal, and candidate evidence.
-No generic admiration.
-
-## Why This Role
-Write a polished answer.
-It must connect the JD, candidate stories, and growth edge.
-
-## Questions To Ask
-Give 10 sharp interviewer questions.
-Group by:
-Role reality
-Stakeholders
-Success metrics
-Team operating model
-Risks
-
-## Seven Day Prep Plan
-Make it practical and prioritized.
-Every day must have a concrete output.
-
-## Final Readiness Checklist
-Make it blunt and useful.
+## Why This Company Answer
+## Why This Role Answer
+## Questions To Ask The Interviewer
+## Seven Day Preparation Plan
+## Final Interview Checklist
 """
-
-    output = ask_llm(prompt, model=MODEL_STRATEGY, max_tokens=6200, retries=3)
+    output = ask_llm(prompt, model=MODEL_STRATEGY, max_tokens=5200, retries=3)
     set_result("final_prep_pack", output)
     log(7, "Final premium prep pack complete", "done")
     return output
@@ -1109,8 +997,7 @@ def run_pipeline(job_description, cv, extra, company_name, role_name):
 
     md_filename = f"interview_prep_{safe_company}_{timestamp}.md"
 
-    markdown = f"""
-# NAILIT Interview Strategy Pack
+    markdown = f"""# Interview Prep Pack
 
 Company: {company_name}
 
@@ -1118,26 +1005,44 @@ Role: {role_name}
 
 Generated: {timestamp}
 
-{pipeline_result.get("final_pack", "")}
+## Research Plan
 
----
+{get_result("research_plan")}
 
-## Appendix: Research Confidence Notes
+## Source Manifest
 
-### Source Manifest
 {get_result("source_manifest")}
 
-### Source Digest
-{get_result("source_digest")}
+## Company Intelligence
 
-### Job Description Decode
-{get_result("job_decode")}
+{get_result("intel_report")}
 
-### Candidate Evidence Digest
-{get_result("candidate_digest")}
+## Candidate Evidence Digest
+
+{get_result("candidate_evidence_digest")}
+
+## Job Description Decode
+
+{get_result("job_description_decode")}
+
+## Match Gap Risk Map
+
+{get_result("match_gap_risk_map")}
+
+## Story Bank
+
+{get_result("story_bank")}
+
+## Question And Answer Bank
+
+{get_result("question_answer_bank")}
+
+## Final Prep Pack
+
+{get_result("final_prep_pack")}
 """
 
-Path(md_filename).write_text(markdown)
+    Path(md_filename).write_text(markdown)
 
     return md_filename
 
