@@ -418,7 +418,7 @@ Research failed before source extraction. Do not infer company facts from missin
         return digest
 
     blocks = []
-    for index, source in enumerate(sources[:35], start=1):
+    for index, source in enumerate(sources[:24], start=1):
         blocks.append(
             f"""
 SOURCE {index}
@@ -480,7 +480,7 @@ Do not over list similar Google Careers job pages.
 Prefer synthesized signals over long source lists.
 """
 
-    digest = ask_llm(prompt, model=MODEL_FAST, max_tokens=3600, retries=3)
+    digest = ask_llm(prompt, model=MODEL_FAST, max_tokens=2600, retries=3)
     set_result("source_digest", digest)
     log(1, "Source digest complete", "done")
     return digest
@@ -856,22 +856,22 @@ Role:
 {role_name}
 
 Company intelligence:
-{trim_text(company_intel, 8500)}
+{trim_text(company_intel, 6500)}
 
 Job description decode:
-{trim_text(job_decode, 8500)}
+{trim_text(job_decode, 6500)}
 
 Candidate evidence digest:
-{trim_text(candidate_digest, 8500)}
+{trim_text(candidate_digest, 6500)}
 
 Match gap risk map:
-{trim_text(match_gap_map, 8500)}
+{trim_text(match_gap_map, 6500)}
 
 Story bank:
-{trim_text(story_bank, 8500)}
+{trim_text(story_bank, 6500)}
 
 Question and answer bank:
-{trim_text(qa_bank, 8500)}
+{trim_text(qa_bank, 6500)}
 
 Write a premium final prep pack. It should feel like an executive interview strategist prepared it.
 
@@ -902,7 +902,7 @@ Return this exact structure:
 ## Seven Day Preparation Plan
 ## Final Interview Checklist
 """
-    output = ask_llm(prompt, model=MODEL_STRATEGY, max_tokens=7000, retries=3)
+    output = ask_llm(prompt, model=MODEL_STRATEGY, max_tokens=5200, retries=3)
     set_result("final_prep_pack", output)
     log(7, "Final premium prep pack complete", "done")
     return output
