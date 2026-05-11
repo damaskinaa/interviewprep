@@ -62,16 +62,23 @@ def prepare(req: PrepRequest):
     output_path = Path(output_file)
     markdown_file = output_path.with_suffix(".md")
     product_json_file = Path(str(output_path).replace("interview_prep_", "product_brief_"))
+    lua_brief_file = Path(str(output_path).replace("interview_prep_", "lua_brief_")).with_suffix(".json")
 
     markdown = markdown_file.read_text() if markdown_file.exists() else ""
     product_json = None
+    lua_mock_interview_brief = None
 
     if product_json_file.exists():
         product_json = json.loads(product_json_file.read_text())
+
+    if lua_brief_file.exists():
+        lua_mock_interview_brief = json.loads(lua_brief_file.read_text())
 
     return {
         "status": "done",
         "output_file": output_file,
         "markdown": markdown,
         "product_json": product_json,
+        "lua_brief_file": str(lua_brief_file) if lua_brief_file.exists() else None,
+        "lua_mock_interview_brief": lua_mock_interview_brief,
     }
