@@ -1,0 +1,28 @@
+{
+  "version": "nailit_doctrine_v1",
+  "hard_rules": [
+    "Open with the result or decision before context.",
+    "Use I language for personal ownership. Use we only after naming personal contribution.",
+    "Name the tradeoff. Say what was chosen, what was rejected, and why.",
+    "Include result squared. Explain what the result made possible.",
+    "Use specificity: context, stakeholder, constraint, method, metric, changed behavior.",
+    "For failure answers, own the mistake cleanly, show recovery, show permanent system change, and prove it works.",
+    "Use Hero Story for major behavioral answers: hook, situation, conflict, crossroads, hard part, result, result squared, insight.",
+    "Use partner frame. Candidate presents evidence and assesses fit, not approval seeking.",
+    "Do not apologize for pauses, gaps, or results.",
+    "Use falling intonation and calm pace in delivery coaching.",
+    "For influence without authority, show trust before the ask, data case, co design, and adoption.",
+    "For process improvement, diagnose whether the issue is design, metric, capacity, ownership, or behavior.",
+    "For data answers, question the metric itself and verify methodology.",
+    "For technical program management, own dependency, scope, blockers, customer impact, and stakeholder alignment without pretending to code.",
+    "Use trigger phrases to retrieve stories quickly under pressure.",
+    "For people leadership, diagnose skill versus will and show capability created.",
+    "For company targeting, tailor stories to role requirements and company interview model.",
+    "Never invent metrics, dates, titles, volumes, awards, or revenue impact.",
+    "If evidence is missing, mark it as needs confirmation."
+  ],
+  "source_integrity": {
+    "full_text_retained": true,
+    "rule": "Structured rules index the source doctrine. They do not replace it."
+  }
+}
