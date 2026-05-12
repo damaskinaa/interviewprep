@@ -1,4 +1,6 @@
 import json
+import sqlite3
+from datetime import datetime
 import os
 from pathlib import Path
 
@@ -20,6 +22,40 @@ if FRONTEND_ORIGIN:
 allowed_origins.append("http://localhost:3000")
 
 app = FastAPI()
+
+DB_PATH = Path("lua_sessions.db")
+
+def init_lua_db():
+    with sqlite3.connect(DB_PATH) as con:
+        con.execute("""
+            CREATE TABLE IF NOT EXISTS lua_turns (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                session_id TEXT NOT NULL,
+                role TEXT NOT NULL,
+                text TEXT NOT NULL,
+                created_at TEXT NOT NULL
+            )
+        """)
+        con.commit()
+
+def save_lua_turn(session_id, role, text):
+    init_lua_db()
+    with sqlite3.connect(DB_PATH) as con:
+        con.execute(
+            "INSERT INTO lua_turns (session_id, role, text, created_at) VALUES (?, ?, ?, ?)",
+            (session_id, role, text, datetime.now().isoformat()),
+        )
+        con.commit()
+
+def load_lua_session(session_id):
+    init_lua_db()
+    with sqlite3.connect(DB_PATH) as con:
+        rows = con.execute(
+            "SELECT role, text, created_at FROM lua_turns WHERE session_id = ? ORDER BY id ASC",
+            (session_id,),
+        ).fetchall()
+    return [{"role": r, "text": t, "created_at": c} for r, t, c in rows]
+
 
 app.add_middleware(
     CORSMiddleware,
@@ -96,3 +132,60 @@ async def lua_coach(payload: dict):
     )
     return response
 
+
+
+
+@app.post("/lua-session/save")
+async def lua_session_save(payload: dict):
+    session_id = payload.get("session_id") or "default"
+    role = payload.get("role") or "user"
+    text_value = payload.get("text") or ""
+    if text_value.strip():
+        save_lua_turn(session_id, role, text_value)
+    return {
+        "status": "saved",
+        "session_id": session_id,
+        "conversation": load_lua_session(session_id),
+    }
+
+
+@app.get("/lua-session/{session_id}")
+async def lua_session_get(session_id: str):
+    return {
+        "status": "found",
+        "session_id": session_id,
+        "conversation": load_lua_session(session_id),
+    }
+
+
+@app.post("/lua-coach-resume")
+async def lua_coach_resume(payload: dict):
+    session_id = payload.get("session_id") or "default"
+    question = payload.get("question") or ""
+    answer = payload.get("candidate_answer") or ""
+    is_final = bool(payload.get("is_final", False))
+
+    if answer.strip():
+        save_lua_turn(session_id, "user", answer)
+
+    if not is_final:
+        return {
+            "status": "listening",
+            "should_respond": False,
+            "message": "Saved. Waiting for final answer signal.",
+            "session_id": session_id,
+            "conversation": load_lua_session(session_id),
+        }
+
+    response = build_lua_coach_response(
+        company=payload.get("company", ""),
+        role=payload.get("role", ""),
+        question=question,
+        candidate_answer=answer,
+        lua_brief=payload.get("lua_brief", {}),
+    )
+
+    save_lua_turn(session_id, "coach", json.dumps(response, ensure_ascii=False))
+    response["session_id"] = session_id
+    response["conversation"] = load_lua_session(session_id)
+    return response
