@@ -13,6 +13,7 @@ from agent_v2 import run_pipeline
 from lua_coach import build_lua_coach_response
 from lua_benchmark_coach import build_benchmark_question, build_selected_answer_training_card, build_benchmark_practice_feedback
 from lua_benchmark_store import save_benchmark_event, load_benchmark_session
+from lua_memory_engine import add_coach_memory, get_coach_memory
 
 
 APP_API_KEY = os.getenv("APP_API_KEY")
@@ -318,3 +319,19 @@ async def lua_benchmark_session(session_id: str):
         "session_id": session_id,
         "events": load_benchmark_session(session_id),
     }
+
+
+@app.post("/lua-memory-add")
+async def lua_memory_add(payload: dict):
+    return add_coach_memory(
+        session_id=payload.get("session_id", "default"),
+        title=payload.get("title", "Untitled memory"),
+        content=payload.get("content", ""),
+        scope=payload.get("scope", "session"),
+        source_type=payload.get("source_type", "pasted_text"),
+    )
+
+
+@app.get("/lua-memory/{session_id}")
+async def lua_memory(session_id: str):
+    return get_coach_memory(session_id)
