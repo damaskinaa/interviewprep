@@ -11,6 +11,7 @@ from pydantic import BaseModel, Field
 
 from agent_v2 import run_pipeline
 from lua_coach import build_lua_coach_response
+from lua_benchmark_coach import build_benchmark_question, build_selected_answer_training_card
 
 
 APP_API_KEY = os.getenv("APP_API_KEY")
@@ -259,3 +260,25 @@ async def lua_call_session(session_id: str):
         "conversation": load_session(session_id),
         "transcript": transcript_text(session_id),
     }
+
+
+@app.post("/lua-benchmark-question")
+async def lua_benchmark_question(payload: dict):
+    return build_benchmark_question(
+        session_id=payload.get("session_id", "default"),
+        company=payload.get("company", ""),
+        role=payload.get("role", payload.get("role_name", "")),
+        question_number=int(payload.get("question_number", 1)),
+        nailit_pack=payload.get("nailit_pack", ""),
+        uploaded_memory=payload.get("uploaded_memory", ""),
+        focus_area=payload.get("focus_area", ""),
+    )
+
+
+@app.post("/lua-select-benchmark-answer")
+async def lua_select_benchmark_answer(payload: dict):
+    return build_selected_answer_training_card(
+        session_id=payload.get("session_id", "default"),
+        selected_answer=payload.get("selected_answer", {}),
+        user_choice=payload.get("user_choice", ""),
+    )
