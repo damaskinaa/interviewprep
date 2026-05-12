@@ -181,3 +181,66 @@ Return only valid JSON:
 """
     raw = ask_llm(prompt, max_tokens=2500, retries=3)
     return safe_json(raw)
+
+
+def build_benchmark_practice_feedback(
+    session_id,
+    selected_answer,
+    spoken_attempt,
+    chunk_name="full_answer",
+    is_final=True,
+):
+    if not is_final:
+        return {
+            "status": "saved_listening",
+            "should_respond": False,
+            "session_id": session_id,
+        }
+
+    prompt = f"""
+You are an elite interview delivery coach.
+
+Selected benchmark answer:
+{json.dumps(selected_answer, ensure_ascii=False)[:9000]}
+
+Chunk being practised:
+{chunk_name}
+
+User spoken attempt:
+{spoken_attempt}
+
+Score hard against meaning, structure, seniority, confidence, pace, tone, filler words, rambling, metrics, result first, STAR, and Hero Journey.
+
+Do not move on unless score is 8.5 or higher.
+Return only valid JSON.
+
+Schema:
+{{
+  "status": "practice_feedback",
+  "session_id": "{session_id}",
+  "should_respond": true,
+  "score_out_of_10": 0,
+  "move_on_allowed": false,
+  "verdict": "",
+  "what_matched": [],
+  "what_was_missing": [],
+  "wording_feedback": [],
+  "voice_feedback": {{
+    "pace": "",
+    "tone": "",
+    "confidence": "",
+    "filler_words": [],
+    "seniority": ""
+  }},
+  "improved_version": "",
+  "one_sentence_to_repeat": "",
+  "next_instruction": ""
+}}
+"""
+    raw = ask_llm(prompt, max_tokens=2800, retries=3)
+    data = safe_json(raw)
+    data.setdefault("status", "practice_feedback")
+    data.setdefault("session_id", session_id)
+    data.setdefault("should_respond", True)
+    data.setdefault("move_on_allowed", False)
+    return data
