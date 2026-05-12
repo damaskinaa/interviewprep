@@ -3,6 +3,7 @@ import sqlite3
 from datetime import datetime
 import os
 from pathlib import Path
+from lua_session_store import save_turn, load_session, transcript_text
 
 from fastapi import Depends, FastAPI, Header, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
@@ -189,3 +190,72 @@ async def lua_coach_resume(payload: dict):
     response["session_id"] = session_id
     response["conversation"] = load_lua_session(session_id)
     return response
+
+
+
+@app.post("/lua-call-turn")
+async def lua_call_turn(payload: dict):
+    session_id = payload.get("session_id") or "default"
+    role = payload.get("role") or "user"
+    text_value = payload.get("text") or ""
+    is_final = bool(payload.get("is_final", False))
+
+    if text_value.strip():
+        save_turn(
+            session_id=session_id,
+            role=role,
+            text=text_value,
+            meta={
+                "is_final": is_final,
+                "company": payload.get("company", ""),
+                "role_name": payload.get("role_name", ""),
+                "question": payload.get("question", ""),
+            },
+        )
+
+    if not is_final:
+        return {
+            "status": "saved_listening",
+            "should_respond": False,
+            "session_id": session_id,
+            "message": "Saved. Still listening.",
+            "conversation": load_session(session_id),
+        }
+
+    history = transcript_text(session_id)
+    answer_with_context = f"""
+Conversation so far:
+{history}
+
+Latest final answer:
+{text_value}
+"""
+
+    coach = build_lua_coach_response(
+        company=payload.get("company", ""),
+        role=payload.get("role_name", payload.get("role", "")),
+        question=payload.get("question", ""),
+        candidate_answer=answer_with_context,
+        lua_brief=payload.get("lua_brief", {}),
+    )
+
+    save_turn(
+        session_id=session_id,
+        role="coach",
+        text=json.dumps(coach, ensure_ascii=False),
+        meta={"type": "coach_feedback"},
+    )
+
+    coach["session_id"] = session_id
+    coach["conversation"] = load_session(session_id)
+    return coach
+
+
+@app.get("/lua-call-session/{session_id}")
+async def lua_call_session(session_id: str):
+    return {
+        "status": "found",
+        "session_id": session_id,
+        "conversation": load_session(session_id),
+        "transcript": transcript_text(session_id),
+    }
