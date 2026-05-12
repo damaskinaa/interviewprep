@@ -335,3 +335,18 @@ async def lua_memory_add(payload: dict):
 @app.get("/lua-memory/{session_id}")
 async def lua_memory(session_id: str):
     return get_coach_memory(session_id)
+
+
+@app.post("/lua-memory-upload-text")
+async def lua_memory_upload_text(payload: dict):
+    filename = payload.get("filename", "uploaded_document.txt")
+    content = payload.get("content", "")
+    title = payload.get("title") or filename
+
+    return add_coach_memory(
+        session_id=payload.get("session_id", "default"),
+        title=title,
+        content=content,
+        scope=payload.get("scope", "session"),
+        source_type=payload.get("source_type", "uploaded_text_file"),
+    )
