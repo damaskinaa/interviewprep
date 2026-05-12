@@ -1,6 +1,7 @@
 import json
 from agent_v2 import ask_llm, trim_text
 from doctrine_runtime import build_lua_doctrine_brief
+from lua_memory_store import memory_text
 
 
 def safe_json(text):
@@ -34,6 +35,7 @@ def build_benchmark_question(
     tradeoff metrics confidence senior communication {company} {role} {focus_area}
     """
     doctrine = build_lua_doctrine_brief(doctrine_query)
+    stored_memory = memory_text(session_id, limit=20)
 
     prompt = f"""
 You are an elite career coach and interview strategist.
@@ -62,8 +64,11 @@ Focus area:
 Nailit pack memory:
 {trim_text(nailit_pack, 9000)}
 
-Uploaded memory:
+Uploaded memory from request:
 {trim_text(uploaded_memory, 9000)}
+
+Stored coach memory for this session:
+{trim_text(stored_memory, 9000)}
 
 Doctrine:
 {json.dumps(doctrine, ensure_ascii=False)[:9000]}
@@ -72,11 +77,15 @@ Rules:
 1. Pick one high probability interview question.
 2. Give exactly three top 1 percent benchmark answers.
 3. Do not limit answers to the candidate CV.
-4. Use elite interview patterns from public candidate examples, hiring guides, company style, STAR, Hero Journey, result first, tradeoff, result squared, and senior tone.
-5. Each answer must include why it works, metrics used, structure, tone notes, and risk.
-6. Make answers specific, senior, and memorable.
-7. Do not say these are the candidate's real facts.
-8. Return only valid JSON.
+4. Use stored coach memory when it is relevant.
+5. If stored memory conflicts with the request, prefer the most specific and recent memory.
+6. If memory improves an answer, make that visible in why_it_works.
+7. Do not quote memory blindly. Convert it into elite answer strategy.
+8. Use elite interview patterns from public candidate examples, hiring guides, company style, STAR, Hero Journey, result first, tradeoff, result squared, and senior tone.
+9. Each answer must include why it works, metrics used, structure, tone notes, and risk.
+10. Make answers specific, senior, and memorable.
+11. Do not say these are the candidate's real facts.
+12. Return only valid JSON.
 
 Schema:
 {{
