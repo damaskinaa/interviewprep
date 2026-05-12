@@ -12,6 +12,7 @@ from pydantic import BaseModel, Field
 from agent_v2 import run_pipeline
 from lua_coach import build_lua_coach_response
 from lua_benchmark_coach import build_benchmark_question, build_selected_answer_training_card, build_benchmark_practice_feedback
+from lua_benchmark_store import save_benchmark_event, load_benchmark_session
 
 
 APP_API_KEY = os.getenv("APP_API_KEY")
@@ -264,7 +265,7 @@ async def lua_call_session(session_id: str):
 
 @app.post("/lua-benchmark-question")
 async def lua_benchmark_question(payload: dict):
-    return build_benchmark_question(
+    result = build_benchmark_question(
         session_id=payload.get("session_id", "default"),
         company=payload.get("company", ""),
         role=payload.get("role", payload.get("role_name", "")),
@@ -273,23 +274,47 @@ async def lua_benchmark_question(payload: dict):
         uploaded_memory=payload.get("uploaded_memory", ""),
         focus_area=payload.get("focus_area", ""),
     )
+    save_benchmark_event(payload.get("session_id", "default"), "benchmark_question", result)
+    return result
 
 
 @app.post("/lua-select-benchmark-answer")
 async def lua_select_benchmark_answer(payload: dict):
-    return build_selected_answer_training_card(
+    result = build_selected_answer_training_card(
         session_id=payload.get("session_id", "default"),
         selected_answer=payload.get("selected_answer", {}),
         user_choice=payload.get("user_choice", ""),
     )
+    save_benchmark_event(payload.get("session_id", "default"), "selected_answer", {
+        "user_choice": payload.get("user_choice", ""),
+        "selected_answer": payload.get("selected_answer", {}),
+        "training_card": result,
+    })
+    return result
 
 
 @app.post("/lua-practice-benchmark-turn")
 async def lua_practice_benchmark_turn(payload: dict):
-    return build_benchmark_practice_feedback(
+    result = build_benchmark_practice_feedback(
         session_id=payload.get("session_id", "default"),
         selected_answer=payload.get("selected_answer", {}),
         spoken_attempt=payload.get("spoken_attempt", payload.get("text", "")),
         chunk_name=payload.get("chunk_name", "full_answer"),
         is_final=bool(payload.get("is_final", True)),
     )
+    save_benchmark_event(payload.get("session_id", "default"), "practice_turn", {
+        "spoken_attempt": payload.get("spoken_attempt", payload.get("text", "")),
+        "chunk_name": payload.get("chunk_name", "full_answer"),
+        "is_final": bool(payload.get("is_final", True)),
+        "feedback": result,
+    })
+    return result
+
+
+@app.get("/lua-benchmark-session/{session_id}")
+async def lua_benchmark_session(session_id: str):
+    return {
+        "status": "found",
+        "session_id": session_id,
+        "events": load_benchmark_session(session_id),
+    }
