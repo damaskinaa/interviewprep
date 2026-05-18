@@ -13,6 +13,7 @@ from agent_v2 import run_pipeline
 from lua_coach import build_lua_coach_response
 from lua_benchmark_coach import build_benchmark_question, build_selected_answer_training_card, build_benchmark_practice_feedback
 from lua_benchmark_store import save_benchmark_event, load_benchmark_session
+from lua_mastery_store import update_mastery, get_mastery, question_key
 from lua_memory_engine import add_coach_memory, get_coach_memory, get_relevant_coach_memory
 
 
@@ -359,3 +360,8 @@ async def lua_memory_relevant(payload: dict):
         query=payload.get("query", ""),
         limit=int(payload.get("limit", 8)),
     )
+
+
+@app.get("/lua-mastery/{session_id}")
+async def lua_mastery(session_id: str):
+    return get_mastery(session_id)
