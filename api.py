@@ -17,6 +17,7 @@ from lua_mastery_store import update_mastery, get_mastery, question_key
 from lua_drill_engine import build_retry_drill
 from lua_escalation_engine import build_escalation_challenge
 from lua_state_engine import build_interview_state
+from lua_pressure_engine import build_pressure_response
 from lua_memory_engine import add_coach_memory, get_coach_memory, get_relevant_coach_memory
 
 
@@ -440,3 +441,14 @@ async def lua_state(session_id: str):
         events = session
 
     return build_interview_state(events)
+
+
+@app.post("/lua-pressure-response")
+async def lua_pressure_response(payload: dict):
+    return build_pressure_response(
+        company=payload.get("company", ""),
+        role=payload.get("role", ""),
+        focus_area=payload.get("focus_area", ""),
+        spoken_attempt=payload.get("spoken_attempt", payload.get("text", "")),
+        score=payload.get("score", 0),
+    )
