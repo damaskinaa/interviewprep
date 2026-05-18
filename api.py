@@ -16,6 +16,7 @@ from lua_benchmark_store import save_benchmark_event, load_benchmark_session
 from lua_mastery_store import update_mastery, get_mastery, question_key
 from lua_drill_engine import build_retry_drill
 from lua_escalation_engine import build_escalation_challenge
+from lua_state_engine import build_interview_state
 from lua_memory_engine import add_coach_memory, get_coach_memory, get_relevant_coach_memory
 
 
@@ -427,3 +428,10 @@ async def lua_health():
             "escalation": True
         }
     }
+
+
+@app.get("/lua-state/{session_id}")
+async def lua_state(session_id: str):
+    session = load_benchmark_session(session_id)
+    events = session.get("events", [])
+    return build_interview_state(events)
