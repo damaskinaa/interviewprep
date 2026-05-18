@@ -7,6 +7,7 @@ from lua_session_store import save_turn, load_session, transcript_text
 
 from fastapi import Depends, FastAPI, Header, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 
 from agent_v2 import run_pipeline
@@ -489,3 +490,8 @@ async def lua_pressure_repair(payload: dict):
     )
 
     return result
+
+
+@app.get("/lua-ui")
+async def lua_ui():
+    return FileResponse("lua_frontend.html")
