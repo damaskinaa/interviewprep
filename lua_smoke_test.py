@@ -90,6 +90,18 @@ status, escalation = post("/lua-escalation-challenge", {
 })
 checks["escalation"] = status == 200 and escalation.get("status") == "escalation_ready"
 
+
+status, repair = post("/lua-pressure-repair", {
+    "session_id": session_id,
+    "company": "Google",
+    "role": "Program Manager",
+    "focus_area": "failure ownership",
+    "original_answer": "I missed a deadline and fixed it later.",
+    "pressure_question": "What metrics did you use to measure the impact?",
+    "repair_answer": "The miss affected two dependent teams, so I owned the communication gap, created a weekly risk review, and tracked deadline risk earlier with clear owners."
+})
+checks["pressure_repair"] = status == 200 and repair.get("status") == "pressure_repair_feedback"
+
 status, state = get(f"/lua-state/{session_id}")
 checks["state"] = status == 200 and state.get("status") == "state_ready"
 
