@@ -70,6 +70,7 @@ for attempt in range(2):
     })
 
 checks["feedback"] = status == 200 and feedback.get("status") == "practice_feedback"
+checks["auto_pressure"] = bool(feedback.get("pressure_followup")) and feedback.get("pressure_followup", {}).get("status") == "pressure_ready"
 
 status, mastery = get(f"/lua-mastery/{session_id}")
 checks["mastery"] = status == 200
