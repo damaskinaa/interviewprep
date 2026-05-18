@@ -18,6 +18,7 @@ from lua_drill_engine import build_retry_drill
 from lua_escalation_engine import build_escalation_challenge
 from lua_state_engine import build_interview_state
 from lua_pressure_engine import build_pressure_response
+from lua_pressure_repair_engine import build_pressure_repair_feedback
 from lua_memory_engine import add_coach_memory, get_coach_memory, get_relevant_coach_memory
 
 
@@ -463,3 +464,28 @@ async def lua_pressure_response(payload: dict):
         spoken_attempt=payload.get("spoken_attempt", payload.get("text", "")),
         score=payload.get("score", 0),
     )
+
+
+@app.post("/lua-pressure-repair")
+async def lua_pressure_repair(payload: dict):
+    result = build_pressure_repair_feedback(
+        company=payload.get("company", ""),
+        role=payload.get("role", ""),
+        focus_area=payload.get("focus_area", ""),
+        original_answer=payload.get("original_answer", ""),
+        pressure_question=payload.get("pressure_question", ""),
+        repair_answer=payload.get("repair_answer", ""),
+    )
+
+    save_benchmark_event(
+        payload.get("session_id", "default"),
+        "pressure_repair",
+        {
+            "original_answer": payload.get("original_answer", ""),
+            "pressure_question": payload.get("pressure_question", ""),
+            "repair_answer": payload.get("repair_answer", ""),
+            "feedback": result,
+        },
+    )
+
+    return result
