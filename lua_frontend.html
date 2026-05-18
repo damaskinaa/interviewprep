@@ -1,0 +1,124 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>Lua Interview Coach</title>
+  <style>
+    body { font-family: Arial, sans-serif; max-width: 900px; margin: 40px auto; line-height: 1.5; }
+    textarea, input { width: 100%; padding: 10px; margin: 8px 0; }
+    button { padding: 10px 16px; margin: 8px 8px 8px 0; cursor: pointer; }
+    pre { background: #f4f4f4; padding: 14px; white-space: pre-wrap; }
+    .card { border: 1px solid #ddd; padding: 16px; margin: 16px 0; border-radius: 10px; }
+  </style>
+</head>
+<body>
+  <h1>Lua Interview Coach</h1>
+
+  <div class="card">
+    <label>Session ID</label>
+    <input id="sessionId" value="frontend-test" />
+
+    <label>Company</label>
+    <input id="company" value="Google" />
+
+    <label>Role</label>
+    <input id="role" value="Program Manager" />
+
+    <label>Focus Area</label>
+    <input id="focusArea" value="failure ownership" />
+
+    <button onclick="generateQuestion()">Generate Question</button>
+  </div>
+
+  <div class="card">
+    <h2>Question</h2>
+    <pre id="questionBox"></pre>
+    <button onclick="selectAnswer()">Select Answer A</button>
+  </div>
+
+  <div class="card">
+    <h2>Your Spoken Attempt</h2>
+    <textarea id="spokenAttempt" rows="5">I missed a deadline and fixed it later.</textarea>
+    <button onclick="submitPractice()">Submit Practice</button>
+  </div>
+
+  <div class="card">
+    <h2>Feedback</h2>
+    <pre id="feedbackBox"></pre>
+  </div>
+
+  <div class="card">
+    <h2>Pressure Repair</h2>
+    <textarea id="repairAnswer" rows="5">The miss affected two dependent teams, so I owned the communication gap, created a weekly risk review, and tracked deadline risk earlier with clear owners.</textarea>
+    <button onclick="submitRepair()">Submit Repair</button>
+    <pre id="repairBox"></pre>
+  </div>
+
+<script>
+const API = "http://127.0.0.1:8000";
+let selectedAnswer = null;
+let lastPressureQuestion = "";
+
+function values() {
+  return {
+    session_id: document.getElementById("sessionId").value,
+    company: document.getElementById("company").value,
+    role: document.getElementById("role").value,
+    focus_area: document.getElementById("focusArea").value
+  };
+}
+
+async function post(path, payload) {
+  const res = await fetch(API + path, {
+    method: "POST",
+    headers: {"Content-Type": "application/json"},
+    body: JSON.stringify(payload)
+  });
+  return await res.json();
+}
+
+async function generateQuestion() {
+  const v = values();
+  const data = await post("/lua-benchmark-question", {
+    ...v,
+    question_number: 1
+  });
+  selectedAnswer = data.answer_options?.[0];
+  document.getElementById("questionBox").textContent = JSON.stringify(data, null, 2);
+}
+
+async function selectAnswer() {
+  const v = values();
+  const data = await post("/lua-select-benchmark-answer", {
+    session_id: v.session_id,
+    user_choice: "A",
+    selected_answer: selectedAnswer
+  });
+  document.getElementById("questionBox").textContent = JSON.stringify(data, null, 2);
+}
+
+async function submitPractice() {
+  const v = values();
+  const data = await post("/lua-practice-benchmark-turn", {
+    ...v,
+    selected_answer: selectedAnswer,
+    spoken_attempt: document.getElementById("spokenAttempt").value,
+    is_final: true
+  });
+  lastPressureQuestion = data.pressure_followup?.pushback_question || "";
+  document.getElementById("feedbackBox").textContent = JSON.stringify(data, null, 2);
+}
+
+async function submitRepair() {
+  const v = values();
+  const data = await post("/lua-pressure-repair", {
+    ...v,
+    original_answer: document.getElementById("spokenAttempt").value,
+    pressure_question: lastPressureQuestion,
+    repair_answer: document.getElementById("repairAnswer").value
+  });
+  document.getElementById("repairBox").textContent = JSON.stringify(data, null, 2);
+}
+</script>
+</body>
+</html>
