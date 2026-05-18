@@ -321,6 +321,17 @@ async def lua_practice_benchmark_turn(payload: dict):
             focus_area=payload.get("focus_area", ""),
         )
 
+        score = result.get("score_out_of_10", 0) or 0
+
+        if score <= 4:
+            result["pressure_followup"] = build_pressure_response(
+                company=payload.get("company", ""),
+                role=payload.get("role", ""),
+                focus_area=payload.get("focus_area", ""),
+                spoken_attempt=spoken_attempt,
+                score=score,
+            )
+
         mastery_result = update_mastery(session_id, q_key, result)
         result["mastery"] = (
             mastery_result.get("mastery", [None])[0]
