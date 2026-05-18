@@ -169,6 +169,10 @@ Return only valid JSON.
 The memorisation_chunks array must contain exactly 5 chunks.
 Do not merge chunks. Do not return fewer than 5 chunks.
 
+Return only valid JSON.
+
+memory_used must contain at least one item whenever relevant coach memory exists.
+
 Return only valid JSON:
 {{
   "status": "training_ready",
@@ -214,6 +218,7 @@ def build_benchmark_practice_feedback(
     memory_query = f"{chunk_name} interview practice feedback delivery scoring"
     relevant_memory = get_relevant_coach_memory(session_id, memory_query, limit=5)
     relevant_memory_text = relevant_memory.get("memory_text", "")
+relevant_memory_items = relevant_memory.get("relevant_memory", [])
 
     prompt = f"""
 You are an elite interview delivery coach.
@@ -230,7 +235,22 @@ User spoken attempt:
 Relevant coach memory:
 {relevant_memory_text[:9000]}
 
+Relevant memory count:
+{len(relevant_memory_items)}
+
 Score hard against meaning, structure, seniority, confidence, pace, tone, filler words, rambling, metrics, result first, STAR, Hero Journey, and the relevant coach memory above.
+
+If relevant memory influenced scoring:
+1. Add it into memory_used
+2. Explain exactly how the answer violated or matched the memory
+3. Mention the specific missing executive behavior
+4. Never leave memory_used empty when relevant memory exists
+
+If relevant memory influenced scoring:
+1. Add it into memory_used
+2. Explain exactly how the answer violated or matched the memory
+3. Mention the specific missing executive behavior
+4. Never leave memory_used empty when relevant memory exists
 
 Do not move on unless score is 8.5 or higher.
 Return only valid JSON.
@@ -245,7 +265,12 @@ Schema:
   "verdict": "",
   "what_matched": [],
   "what_was_missing": [],
-  "memory_used": [],
+  "memory_used": [
+    {
+      "memory_title": "",
+      "how_it_was_applied": ""
+    }
+  ],
   "wording_feedback": [],
   "voice_feedback": {{
     "pace": "",
