@@ -164,6 +164,10 @@ Selected answer:
 
 Break it into a practice plan.
 
+Return only valid JSON.
+The memorisation_chunks array must contain exactly 5 chunks.
+Do not merge chunks. Do not return fewer than 5 chunks.
+
 Return only valid JSON:
 {{
   "status": "training_ready",
