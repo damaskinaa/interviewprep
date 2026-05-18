@@ -2,6 +2,7 @@ import json
 from agent_v2 import ask_llm, trim_text
 from doctrine_runtime import build_lua_doctrine_brief
 from lua_memory_store import memory_text
+from lua_memory_engine import get_relevant_coach_memory
 
 
 def safe_json(text):
@@ -210,6 +211,10 @@ def build_benchmark_practice_feedback(
             "session_id": session_id,
         }
 
+    memory_query = f"{chunk_name} interview practice feedback delivery scoring"
+    relevant_memory = get_relevant_coach_memory(session_id, memory_query, limit=5)
+    relevant_memory_text = relevant_memory.get("memory_text", "")
+
     prompt = f"""
 You are an elite interview delivery coach.
 
@@ -222,7 +227,10 @@ Chunk being practised:
 User spoken attempt:
 {spoken_attempt}
 
-Score hard against meaning, structure, seniority, confidence, pace, tone, filler words, rambling, metrics, result first, STAR, and Hero Journey.
+Relevant coach memory:
+{relevant_memory_text[:9000]}
+
+Score hard against meaning, structure, seniority, confidence, pace, tone, filler words, rambling, metrics, result first, STAR, Hero Journey, and the relevant coach memory above.
 
 Do not move on unless score is 8.5 or higher.
 Return only valid JSON.
@@ -237,6 +245,7 @@ Schema:
   "verdict": "",
   "what_matched": [],
   "what_was_missing": [],
+  "memory_used": [],
   "wording_feedback": [],
   "voice_feedback": {{
     "pace": "",
