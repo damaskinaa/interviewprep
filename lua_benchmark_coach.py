@@ -218,7 +218,7 @@ def build_benchmark_practice_feedback(
     memory_query = f"{chunk_name} interview practice feedback delivery scoring"
     relevant_memory = get_relevant_coach_memory(session_id, memory_query, limit=5)
     relevant_memory_text = relevant_memory.get("memory_text", "")
-relevant_memory_items = relevant_memory.get("relevant_memory", [])
+    relevant_memory_items = relevant_memory.get("relevant_memory", [])
 
     prompt = f"""
 You are an elite interview delivery coach.
