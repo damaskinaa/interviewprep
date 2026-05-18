@@ -79,6 +79,16 @@ status, drill = post("/lua-retry-drill", {
 })
 checks["drill"] = status == 200 and drill.get("status") == "drill_ready"
 
+
+status, escalation = post("/lua-escalation-challenge", {
+    "company": "Google",
+    "role": "Program Manager",
+    "focus_area": "failure ownership",
+    "previous_answer": "I missed a deadline and fixed it later.",
+    "score": 8
+})
+checks["escalation"] = status == 200 and escalation.get("status") == "escalation_ready"
+
 status, state = get(f"/lua-state/{session_id}")
 checks["state"] = status == 200 and state.get("status") == "state_ready"
 
