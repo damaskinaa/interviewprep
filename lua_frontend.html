@@ -35,12 +35,6 @@
       color: #d1d5db;
     }
 
-    .grid {
-      display: grid;
-      grid-template-columns: 1fr 1fr;
-      gap: 18px;
-    }
-
     .card {
       background: white;
       border: 1px solid #e5e7eb;
@@ -48,6 +42,12 @@
       padding: 20px;
       box-shadow: 0 8px 24px rgba(0,0,0,0.05);
       margin-bottom: 18px;
+    }
+
+    .grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 18px;
     }
 
     label {
@@ -88,17 +88,14 @@
       background: #374151;
     }
 
-    button:hover {
-      opacity: 0.92;
-    }
-
-    pre {
+    pre, .output {
       background: #f3f4f6;
       border-radius: 12px;
       padding: 14px;
       white-space: pre-wrap;
       min-height: 42px;
       overflow-x: auto;
+      font-size: 14px;
     }
 
     .small {
@@ -115,6 +112,21 @@
       font-weight: 700;
       font-size: 13px;
       margin-top: 10px;
+    }
+
+    .metric {
+      display: inline-block;
+      background: #eef2ff;
+      color: #3730a3;
+      padding: 8px 12px;
+      border-radius: 999px;
+      font-weight: 700;
+      margin: 6px 6px 10px 0;
+    }
+
+    .warning {
+      background: #fff7ed;
+      color: #9a3412;
     }
 
     @media (max-width: 760px) {
@@ -163,7 +175,7 @@
     <div class="card">
       <h2>Question</h2>
       <p class="small">Generate a benchmark question, then select Answer A for training chunks.</p>
-      <pre id="questionBox">No question generated yet.</pre>
+      <div id="questionBox" class="output">No question generated yet.</div>
       <button onclick="selectAnswer()" class="secondary">Select Answer A</button>
     </div>
 
@@ -175,7 +187,7 @@
 
     <div class="card">
       <h2>Feedback and Pressure</h2>
-      <pre id="feedbackBox">Feedback will appear here.</pre>
+      <div id="feedbackBox" class="output">Feedback will appear here.</div>
     </div>
 
     <div class="card">
@@ -183,7 +195,7 @@
       <p class="small">Answer the pressure follow up with a clearer, more senior repair.</p>
       <textarea id="repairAnswer">The miss affected two dependent teams, so I owned the communication gap, created a weekly risk review, and tracked deadline risk earlier with clear owners.</textarea>
       <button onclick="submitRepair()">Submit Repair</button>
-      <pre id="repairBox">Repair feedback will appear here.</pre>
+      <div id="repairBox" class="output">Repair feedback will appear here.</div>
     </div>
   </div>
 
@@ -215,8 +227,73 @@ async function post(path, payload) {
   return await res.json();
 }
 
-function show(id, data) {
-  document.getElementById(id).textContent = JSON.stringify(data, null, 2);
+function listText(value) {
+  if (!value) return "N/A";
+  if (Array.isArray(value)) return value.map(item => "• " + item).join("\\n");
+  return value;
+}
+
+function showQuestion(data) {
+  const option = data.answer_options?.[0] || {};
+  selectedAnswer = option;
+
+  document.getElementById("questionBox").textContent =
+`Mode: ${data.mode || "N/A"}
+
+Question:
+${data.question || option.question || "N/A"}
+
+Answer A:
+${option.answer || option.text || JSON.stringify(option, null, 2)}`;
+}
+
+function showTraining(data) {
+  const chunks = data.memorisation_chunks || [];
+  const chunkText = chunks.map(c => {
+    return `• ${c.chunk_name || "chunk"}: ${c.chunk_text || c.text || ""}`;
+  }).join("\\n\\n");
+
+  document.getElementById("questionBox").textContent =
+`Training ready.
+
+Chunks:
+${chunkText || "N/A"}`;
+}
+
+function showFeedback(data) {
+  const pressure = data.pressure_followup || {};
+  const missing = data.what_was_missing || data.weak_points || [];
+
+  lastPressureQuestion = pressure.pushback_question || "";
+
+  document.getElementById("feedbackBox").innerHTML = `
+    <div class="metric">Score: ${data.score_out_of_10 || "N/A"}/10</div>
+    <div class="metric warning">Pressure: ${pressure.pressure_level || "none"}</div>
+    <p><strong>Status:</strong> ${data.status || "N/A"}</p>
+    <p><strong>What was missing:</strong></p>
+    <pre>${listText(missing)}</pre>
+    <p><strong>Pressure follow up:</strong></p>
+    <pre>${pressure.pushback_question || "No pressure follow up."}</pre>
+    <p><strong>Repair instruction:</strong></p>
+    <pre>${pressure.candidate_repair_instruction || "N/A"}</pre>
+  `;
+}
+
+function showRepair(data) {
+  document.getElementById("repairBox").innerHTML = `
+    <div class="metric">Recovery score: ${data.recovery_score || "N/A"}/10</div>
+    <div class="metric">Recovered: ${data.recovered}</div>
+    <p><strong>Outcome:</strong></p>
+    <pre>${data.pressure_outcome || "N/A"}</pre>
+    <p><strong>What improved:</strong></p>
+    <pre>${listText(data.what_improved)}</pre>
+    <p><strong>Still missing:</strong></p>
+    <pre>${listText(data.still_missing)}</pre>
+    <p><strong>Next interviewer move:</strong></p>
+    <pre>${data.next_interviewer_move || "N/A"}</pre>
+    <p><strong>Escalate:</strong> ${data.should_escalate}</p>
+    <p><strong>Relax pressure:</strong> ${data.should_relax_pressure}</p>
+  `;
 }
 
 async function generateQuestion() {
@@ -226,8 +303,7 @@ async function generateQuestion() {
     question_number: 1
   });
 
-  selectedAnswer = data.answer_options?.[0];
-  show("questionBox", data);
+  showQuestion(data);
 }
 
 async function selectAnswer() {
@@ -243,7 +319,7 @@ async function selectAnswer() {
     selected_answer: selectedAnswer
   });
 
-  show("questionBox", data);
+  showTraining(data);
 }
 
 async function submitPractice() {
@@ -260,8 +336,7 @@ async function submitPractice() {
     is_final: true
   });
 
-  lastPressureQuestion = data.pressure_followup?.pushback_question || "";
-  show("feedbackBox", data);
+  showFeedback(data);
 }
 
 async function submitRepair() {
@@ -273,7 +348,7 @@ async function submitRepair() {
     repair_answer: document.getElementById("repairAnswer").value
   });
 
-  show("repairBox", data);
+  showRepair(data);
 }
 </script>
 </body>
