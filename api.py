@@ -15,6 +15,7 @@ from lua_benchmark_coach import build_benchmark_question, build_selected_answer_
 from lua_benchmark_store import save_benchmark_event, load_benchmark_session
 from lua_mastery_store import update_mastery, get_mastery, question_key
 from lua_drill_engine import build_retry_drill
+from lua_escalation_engine import build_escalation_challenge
 from lua_memory_engine import add_coach_memory, get_coach_memory, get_relevant_coach_memory
 
 
@@ -397,4 +398,15 @@ async def lua_retry_drill(payload: dict):
     return build_retry_drill(
         session_id=payload.get("session_id", "default"),
         question_key=payload.get("question_key"),
+    )
+
+
+@app.post("/lua-escalation-challenge")
+async def lua_escalation_challenge(payload: dict):
+    return build_escalation_challenge(
+        company=payload.get("company", ""),
+        role=payload.get("role", ""),
+        focus_area=payload.get("focus_area", ""),
+        previous_answer=payload.get("previous_answer", ""),
+        score=float(payload.get("score", 0)),
     )
