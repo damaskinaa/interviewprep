@@ -433,5 +433,10 @@ async def lua_health():
 @app.get("/lua-state/{session_id}")
 async def lua_state(session_id: str):
     session = load_benchmark_session(session_id)
-    events = session.get("events", [])
+
+    if isinstance(session, dict):
+        events = session.get("events", [])
+    else:
+        events = session
+
     return build_interview_state(events)
