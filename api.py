@@ -410,3 +410,20 @@ async def lua_escalation_challenge(payload: dict):
         previous_answer=payload.get("previous_answer", ""),
         score=float(payload.get("score", 0)),
     )
+
+
+@app.get("/lua-health")
+async def lua_health():
+    return {
+        "status": "ok",
+        "service": "lua-interview-coach",
+        "features": {
+            "benchmark": True,
+            "memory": True,
+            "memory_relevance": True,
+            "practice_feedback": True,
+            "mastery": True,
+            "retry_drill": True,
+            "escalation": True
+        }
+    }
