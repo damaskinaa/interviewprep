@@ -266,10 +266,10 @@ Schema:
   "what_matched": [],
   "what_was_missing": [],
   "memory_used": [
-    {
+    {{
       "memory_title": "",
       "how_it_was_applied": ""
-    }
+    }}
   ],
   "wording_feedback": [],
   "voice_feedback": {{
