@@ -297,21 +297,45 @@ async def lua_select_benchmark_answer(payload: dict):
 
 @app.post("/lua-practice-benchmark-turn")
 async def lua_practice_benchmark_turn(payload: dict):
+    session_id = payload.get("session_id", "default")
+    selected_answer = payload.get("selected_answer", {})
+    spoken_attempt = payload.get("spoken_attempt", payload.get("text", ""))
+
     result = build_benchmark_practice_feedback(
-        session_id=payload.get("session_id", "default"),
-        selected_answer=payload.get("selected_answer", {}),
-        spoken_attempt=payload.get("spoken_attempt", payload.get("text", "")),
+        session_id=session_id,
+        selected_answer=selected_answer,
+        spoken_attempt=spoken_attempt,
         chunk_name=payload.get("chunk_name", "full_answer"),
         is_final=bool(payload.get("is_final", True)),
     )
-    save_benchmark_event(payload.get("session_id", "default"), "practice_turn", {
-        "spoken_attempt": payload.get("spoken_attempt", payload.get("text", "")),
-        "chunk_name": payload.get("chunk_name", "full_answer"),
-        "is_final": bool(payload.get("is_final", True)),
-        "feedback": result,
-    })
-    return result
 
+    if result.get("status") != "saved_listening":
+        q_key = payload.get("question_key") or question_key(
+            company=payload.get("company", ""),
+            role=payload.get("role", ""),
+            question=selected_answer.get("question", payload.get("question", "")),
+            focus_area=payload.get("focus_area", ""),
+        )
+
+        mastery_result = update_mastery(session_id, q_key, result)
+        result["mastery"] = (
+            mastery_result.get("mastery", [None])[0]
+            if mastery_result.get("mastery")
+            else None
+        )
+
+        save_benchmark_event(
+            session_id,
+            "practice_turn",
+            {
+                "selected_answer": selected_answer,
+                "spoken_attempt": spoken_attempt,
+                "feedback": result,
+                "mastery": result.get("mastery"),
+            },
+        )
+
+    return result
 
 @app.get("/lua-benchmark-session/{session_id}")
 async def lua_benchmark_session(session_id: str):
