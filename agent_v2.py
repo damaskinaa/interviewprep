@@ -185,6 +185,7 @@ PACK_QUALITY_BANNED_STRINGS = [
     "placeholder",
     "name the execution tradeoff honestly",
     "connect the result to business",
+    "the key takeaway for you is",
 ]
 
 STAGE_QUALITY_INSTRUCTION = (
@@ -1573,12 +1574,13 @@ No generic questions.
 No new candidate stories or metrics.
 
 For best_answer_outlines:
-For each of the top 10 questions write a complete 150 to 200 word answer using only the candidate stories and metrics in candidate_profile.json. Do not write placeholders. Do not write story to use colon story name. Write the full answer as if the candidate is speaking it out loud in the interview. Include the situation in one sentence, the decision they made and why, the specific action they took personally, a realistic metric from the CV, the business result, and one tradeoff or difficulty they navigated. End with the interviewer takeaway. If a story does not exist for that question write story gap to prepare and explain what story the candidate needs to build.
+For each of the top 10 questions write a complete 150 to 200 word answer using only the candidate stories and metrics in candidate_profile.json. Do not write placeholders. Do not write story to use colon story name. Write the full answer as if the candidate is speaking it out loud in the interview. Include the situation in one sentence, the decision they made and why, the specific action they took personally, a realistic metric from the CV, the business result, and one tradeoff or difficulty they navigated. End with the business result or the interviewer signal. The last sentence of every answer must be the impact or the proof of fit, not a coaching note to the interviewer. Never write "The key takeaway for you is". If a story does not exist for that question write story gap to prepare and explain what story the candidate needs to build.
 The full_answer field is invalid if it is under 150 words. Count the words before output. Do not compress the answer into a summary.
 
 For section_strategy.company_signal_map:
 Read research.json carefully. Extract exactly 5 company specific signals that are true for this company and not generic to all companies. For each signal write: the signal itself, why it matters for this specific role, and one sentence on how the candidate should use it in their answer. If research is insufficient to produce 5 real signals say research insufficient and list what signals you could confirm versus what is missing. Never output no grounded item available. Never output a generic signal that could apply to any company.
 Each signal must be anchored in a specific Google source, public Google hiring signal, or Google People Operations relevant research item from research.json. Generic signals like collaboration, innovation, or data driven decision making are invalid unless tied to a specific Google source and People Operations implication.
+A signal is a specific insight about how this company operates, what it values, or what it tests in interviews. It is never a source title or a page name. For Google People Operations specifically the signals must be things like: how Google structures people operations service delivery, what Google measures in people operations quality, how Google approaches process improvement internally, what Google values in people managers, how Google runs its HR operations model. Research these from the sources available. If research does not contain enough to produce 5 real signals say research insufficient rather than inventing source titles as signals.
 """
     strategy = ask_json(prompt, model=MODEL_STRATEGY, max_tokens=9000, fallback={})
     strategy = normalize_interview_strategy(strategy, research=research)
@@ -1629,7 +1631,7 @@ def normalize_interview_strategy(strategy, research=None):
         if not str(full_answer).strip():
             full_answer = (
                 "Story gap to prepare: this question needs a specific candidate story from candidate_profile.json "
-                "with situation, decision, personal action, metric, result, difficulty, and interviewer takeaway."
+                "with situation, decision, personal action, metric, result, difficulty, and a final sentence that lands on impact or proof of fit."
             )
         normalized_outlines.append({
             "question": item.get("question", ""),
@@ -1646,7 +1648,7 @@ def normalize_interview_strategy(strategy, research=None):
             "full_answer": (
                 "Story gap to prepare: build a grounded spoken answer for this question using one verified candidate story, "
                 "one metric from candidate_profile.json, the decision made, the personal action taken, the difficulty navigated, "
-                "the result, and the interviewer takeaway. Do not claim unproven domain ownership."
+                "the result, and a final sentence that lands on impact or proof of fit. Do not claim unproven domain ownership."
             ),
             "evidence_used": [item.get("jd_signal", ""), item.get("candidate_gap", ""), item.get("research_signal", "")],
             "risk_boundary": "Do not claim unproven domain ownership, employers, titles, industries, credentials, stories, outcomes, or metrics.",
@@ -1654,32 +1656,11 @@ def normalize_interview_strategy(strategy, research=None):
     strategy["best_answer_outlines"] = normalized_outlines
     if len(strategy["section_strategy"]["company_signal_map"]) < 5:
         existing = strategy["section_strategy"]["company_signal_map"]
-        source_rows = []
-        if isinstance(research, dict):
-            source_rows = (
-                as_list(research.get("official_facts")) +
-                as_list(research.get("interview_signals")) +
-                as_list(research.get("public_themes"))
-            )
-        for source in source_rows:
-            if len(existing) >= 5:
-                break
-            if not isinstance(source, dict):
-                continue
-            title = source.get("title") or source.get("query") or source.get("url")
-            if not title:
-                continue
-            existing.append({
-                "signal": title,
-                "why_it_matters_for_this_role": "Use this as a company-specific context signal only where it connects directly to the JD responsibilities.",
-                "how_candidate_should_use_it": "Mirror the signal briefly, then connect it to a grounded candidate proof point instead of making a broad company claim.",
-                "confidence": source.get("confidence", "source-backed"),
-            })
         if len(existing) < 5:
             existing.append({
-                "signal": "Research insufficient to confirm five company-specific signals.",
-                "why_it_matters_for_this_role": "The candidate should avoid generic claims and rely on the JD plus verified candidate evidence.",
-                "how_candidate_should_use_it": "State only the company signals that were confirmed and ask targeted questions to fill the missing context.",
+                "signal": "Research insufficient to confirm five real company operating signals without relying on source titles.",
+                "why_it_matters_for_this_role": "The candidate should avoid generic company claims and rely on the JD plus verified candidate evidence until deeper People Operations research is available.",
+                "how_candidate_should_use_it": "State only confirmed Google hiring or operating signals, then ask targeted questions about People Operations service delivery, quality metrics, process improvement, and HR operations model.",
                 "confidence": "low",
             })
         strategy["section_strategy"]["company_signal_map"] = existing[:5]
@@ -1879,6 +1860,39 @@ def answer_outline_word_failures(section_text):
     return failures
 
 
+def research_source_titles(research):
+    titles = set()
+    if not isinstance(research, dict):
+        return titles
+    for key in ["official_facts", "interview_signals", "public_themes", "source_labels"]:
+        for item in as_list(research.get(key)):
+            if isinstance(item, dict):
+                title = normalize_text(item.get("title", "")).lower()
+                if title:
+                    titles.add(title)
+    return titles
+
+
+def company_signal_map_failures(section_text, research):
+    lowered = (section_text or "").lower()
+    if "research insufficient" in lowered:
+        return []
+    failures = []
+    signal_lines = [
+        line.strip()
+        for line in (section_text or "").splitlines()
+        if line.strip().lower().startswith("- signal:")
+    ]
+    if len(signal_lines) < 5:
+        failures.append(f"Company Signal Map has only {len(signal_lines)} signal lines")
+    source_titles = research_source_titles(research)
+    for line in signal_lines:
+        signal = line.split(":", 1)[1].split(";", 1)[0].strip().lower()
+        if signal in source_titles:
+            failures.append(f"Company Signal Map used source title as signal: {signal}")
+    return failures
+
+
 def count_words(text):
     return len(re.findall(r"\b\w+\b", text or ""))
 
@@ -1904,7 +1918,7 @@ research.json:
 gap_map.json:
 {trim_text(json_dumps(gap_map), 8000)}
 
-For this question write a complete 150 to 200 word answer using only the candidate stories and metrics in candidate_profile.json. Do not write placeholders. Do not write story to use colon story name. Write the full answer as if the candidate is speaking it out loud in the interview. Include the situation in one sentence, the decision they made and why, the specific action they took personally, a realistic metric from the CV, the business result, and one tradeoff or difficulty they navigated. End with the interviewer takeaway. If a story does not exist for that question write story gap to prepare and explain what story the candidate needs to build.
+For this question write a complete 150 to 200 word answer using only the candidate stories and metrics in candidate_profile.json. Do not write placeholders. Do not write story to use colon story name. Write the full answer as if the candidate is speaking it out loud in the interview. Include the situation in one sentence, the decision they made and why, the specific action they took personally, a realistic metric from the CV, the business result, and one tradeoff or difficulty they navigated. End with the business result or the interviewer signal. The last sentence must be the impact or the proof of fit, not a coaching note to the interviewer. Never write "The key takeaway for you is". If a story does not exist for that question write story gap to prepare and explain what story the candidate needs to build.
 
 The answer is invalid if it is under 150 words. Count before returning.
 """
@@ -1955,6 +1969,7 @@ def regenerate_pack_section(section_title, section_text, company_name, role_name
         specific_instruction = """
 Rewrite this section as the Company Signal Map body only.
 Read research.json carefully. Extract exactly 5 company specific signals that are true for this company and not generic to all companies. For each signal write: the signal itself, why it matters for this specific role, and one sentence on how the candidate should use it in their answer. If research is insufficient to produce 5 real signals say research insufficient and list what signals you could confirm versus what is missing. Never output no grounded item available. Never output a generic signal that could apply to any company.
+A signal is a specific insight about how this company operates, what it values, or what it tests in interviews. It is never a source title or a page name. For Google People Operations specifically the signals must be things like: how Google structures people operations service delivery, what Google measures in people operations quality, how Google approaches process improvement internally, what Google values in people managers, how Google runs its HR operations model. Research these from the sources available. If research does not contain enough to produce 5 real signals say research insufficient rather than inventing source titles as signals.
 """
     else:
         specific_instruction = "Rewrite this section body only with specific, useful content for this company, role, candidate, JD, and research."
@@ -2005,6 +2020,8 @@ def repair_pack_quality(pack, company_name, role_name, candidate_profile, jd_ana
             hits = failed_quality_strings(text)
             if title == "Best Answer Outlines":
                 hits.extend(answer_outline_word_failures(text))
+            if title == "Company Signal Map":
+                hits.extend(company_signal_map_failures(text, research))
             if hits:
                 failures.append((title, start, end, text, hits))
         if not failures:
@@ -2027,11 +2044,16 @@ def repair_pack_quality(pack, company_name, role_name, candidate_profile, jd_ana
             log(6, f"Regenerated visible section: {title}", "done")
     assert_no_banned_visible_strings(repaired)
     remaining_outline_failures = []
+    remaining_company_signal_failures = []
     for title, _start, _end, text in markdown_sections(repaired):
         if title == "Best Answer Outlines":
             remaining_outline_failures.extend(answer_outline_word_failures(text))
+        if title == "Company Signal Map":
+            remaining_company_signal_failures.extend(company_signal_map_failures(text, research))
     if remaining_outline_failures:
         raise ValueError(f"Best Answer Outlines failed word-count validation: {', '.join(remaining_outline_failures[:10])}")
+    if remaining_company_signal_failures:
+        raise ValueError(f"Company Signal Map failed validation: {', '.join(remaining_company_signal_failures[:10])}")
     return repaired
 
 
