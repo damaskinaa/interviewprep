@@ -33,6 +33,11 @@ def log(stage, message, status="running"):
     print(f"[Stage {stage}] {message}")
 
 
+def report_progress(progress_callback, stage, progress):
+    if progress_callback:
+        progress_callback(stage, progress)
+
+
 def set_result(key, value):
     results[key] = value
 
@@ -931,15 +936,23 @@ Return this exact structure:
     log(7, "Final premium prep pack complete", "done")
     return output
 
-def run_full_pipeline(company_name, role_name, job_description, cv, extra):
+def run_full_pipeline(company_name, role_name, job_description, cv, extra, progress_callback=None):
     log(0, "Starting full Nailit pipeline", "running")
+    report_progress(progress_callback, "Job created", 1)
 
     # Stage 1 — Research
+    report_progress(progress_callback, "Official company site and careers pages", 8)
     sources = collect_sources(company_name, role_name, job_description, extra)
+    report_progress(progress_callback, "Company values, culture, leadership principles", 16)
     source_digest = create_source_digest(company_name, role_name, sources)
+    report_progress(progress_callback, "Interview process and likely rounds", 24)
+    report_progress(progress_callback, "Role specific public signals", 32)
+    report_progress(progress_callback, "Directional themes only", 40)
+    report_progress(progress_callback, "Role signal synthesis", 48)
     company_intel = create_company_intelligence(company_name, role_name, source_digest)
 
     # Stage 2 — Candidate
+    report_progress(progress_callback, "Candidate evidence digest using CV, answer bank, company context", 58)
     candidate_digest = create_candidate_evidence_digest(
         company_name,
         role_name,
@@ -949,6 +962,7 @@ def run_full_pipeline(company_name, role_name, job_description, cv, extra):
     )
 
     # Stage 3 — Strategy
+    report_progress(progress_callback, "JD decode", 66)
     job_decode = decode_job_description(
         company_name,
         role_name,
@@ -956,6 +970,7 @@ def run_full_pipeline(company_name, role_name, job_description, cv, extra):
         company_intel,
     )
 
+    report_progress(progress_callback, "Match gap risk", 74)
     match_map = create_match_gap_risk_map(
         company_name,
         role_name,
@@ -964,6 +979,7 @@ def run_full_pipeline(company_name, role_name, job_description, cv, extra):
         company_intel,
     )
 
+    report_progress(progress_callback, "Story bank", 82)
     story_bank = create_story_bank(
         company_name,
         role_name,
@@ -971,6 +987,7 @@ def run_full_pipeline(company_name, role_name, job_description, cv, extra):
         match_map,
     )
 
+    report_progress(progress_callback, "Question bank by round", 90)
     qa_bank = create_question_and_answer_bank(
         company_name,
         role_name,
@@ -980,6 +997,7 @@ def run_full_pipeline(company_name, role_name, job_description, cv, extra):
         story_bank,
     )
 
+    report_progress(progress_callback, "Final prep pack", 96)
     final_pack = create_final_pack(
         company_name,
         role_name,
@@ -1003,6 +1021,7 @@ def run_full_pipeline(company_name, role_name, job_description, cv, extra):
     )
 
     log(0, "Pipeline complete", "done")
+    report_progress(progress_callback, "Final prep pack complete", 100)
 
     return {
         "HAS_FAILED": "RESEARCH STATUS: FAILED" in source_digest,
@@ -1016,7 +1035,7 @@ def run_full_pipeline(company_name, role_name, job_description, cv, extra):
 if __name__ == "__main__":
     print("agent_v2 ready")
 
-def run_pipeline(job_description, cv, extra, company_name, role_name):
+def run_pipeline(job_description, cv, extra, company_name, role_name, progress_callback=None):
     results.clear()
     progress_log.clear()
 
@@ -1026,6 +1045,7 @@ def run_pipeline(job_description, cv, extra, company_name, role_name):
         job_description=job_description,
         cv=cv,
         extra=extra,
+        progress_callback=progress_callback,
     )
 
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")

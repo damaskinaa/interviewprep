@@ -1,5 +1,7 @@
 import json
 import sqlite3
+import threading
+import uuid
 from datetime import datetime
 import os
 from pathlib import Path
@@ -10,7 +12,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 
-from agent_v2 import run_pipeline
+from agent_v2 import get_result, run_pipeline
+from job_store import create_job, get_job, update_job
 from lua_coach import build_lua_coach_response
 from lua_benchmark_coach import build_benchmark_question, build_selected_answer_training_card, build_benchmark_practice_feedback
 from lua_benchmark_store import save_benchmark_event, load_benchmark_session
@@ -130,6 +133,97 @@ def prepare(req: PrepRequest):
         "lua_brief_file": str(lua_brief_file) if lua_brief_file.exists() else None,
         "lua_mock_interview_brief": lua_mock_interview_brief,
     }
+
+
+def _payload_from_request(req: PrepRequest):
+    if hasattr(req, "model_dump"):
+        return req.model_dump()
+    return req.dict()
+
+
+def _read_pipeline_files(output_file):
+    output_path = Path(output_file)
+    markdown_file = output_path.with_suffix(".md")
+    product_json_file = Path(str(output_path).replace("interview_prep_", "product_brief_"))
+
+    markdown = markdown_file.read_text() if markdown_file.exists() else ""
+    product_json = None
+
+    if product_json_file.exists():
+        product_json = json.loads(product_json_file.read_text())
+
+    return markdown, product_json
+
+
+def _run_prepare_job(job_id, payload):
+    try:
+        update_job(job_id, status="running", stage="Job created", progress=1)
+
+        def progress_callback(stage, progress):
+            update_job(
+                job_id,
+                status="running",
+                stage=stage,
+                progress=progress,
+            )
+
+        output_file = run_pipeline(
+            job_description=payload.get("job_description", ""),
+            cv=payload.get("cv", ""),
+            extra=payload.get("extra", ""),
+            company_name=payload.get("company_name", ""),
+            role_name=payload.get("role_name", ""),
+            progress_callback=progress_callback,
+        )
+
+        markdown, product_json = _read_pipeline_files(output_file)
+        update_job(
+            job_id,
+            status="done",
+            stage="Final prep pack complete",
+            progress=100,
+            markdown_output=markdown,
+            product_json=product_json or {},
+            source_manifest=get_result("source_manifest"),
+            output_file=output_file,
+            error="",
+        )
+    except Exception as error:
+        update_job(
+            job_id,
+            status="failed",
+            stage="Failed",
+            error=str(error),
+        )
+
+
+@app.post("/prepare/start", dependencies=[Depends(require_app_key)])
+def prepare_start(req: PrepRequest):
+    payload = _payload_from_request(req)
+    job_id = "prep_" + datetime.now().strftime("%Y%m%d_%H%M%S_") + uuid.uuid4().hex[:8]
+    job = create_job(job_id, payload)
+
+    thread = threading.Thread(
+        target=_run_prepare_job,
+        args=(job_id, payload),
+        daemon=True,
+    )
+    thread.start()
+
+    return {
+        "job_id": job_id,
+        "status": job["status"],
+        "stage": job["stage"],
+        "progress": job["progress"],
+    }
+
+
+@app.get("/prepare/status/{job_id}", dependencies=[Depends(require_app_key)])
+def prepare_status(job_id: str):
+    job = get_job(job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
+    return job
 
 
 @app.post("/lua-coach")
