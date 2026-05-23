@@ -151,6 +151,23 @@ def extract_json(text):
         return json.dumps({"error": "Could not parse model output as valid JSON", "raw_output": text[:6000]}, indent=2)
 
 
+def parse_json_object(text, fallback=None):
+    try:
+        return json.loads(extract_json(text))
+    except Exception:
+        return fallback if fallback is not None else {}
+
+
+def json_dumps(data):
+    return json.dumps(data or {}, indent=2, ensure_ascii=False)
+
+
+def ask_json(prompt, model=None, max_tokens=3000, retries=3, fallback=None):
+    output = ask_llm(prompt, model=model, max_tokens=max_tokens, retries=retries)
+    parsed = parse_json_object(output, fallback=fallback if fallback is not None else {})
+    return parsed
+
+
 def strip_external_research(extra):
     extra = extra or ""
     start_marker = "[NAILIT_EXTERNAL_RESEARCH]"
@@ -1227,110 +1244,543 @@ Include the top 15 claims from the mandatory Evidence Ledger with claim, classif
     log(7, "Final premium prep pack complete", "done")
     return output
 
+
+def extract_answer_bank_and_guidance(extra):
+    clean_extra = strip_external_research(extra)
+    clean_extra = re.sub(r"\[YOUTUBE_TRANSCRIPTS\].*?\[/YOUTUBE_TRANSCRIPTS\]", "", clean_extra, flags=re.S)
+    answer_bank = normalize_text(extract_marked_block(clean_extra, "CANDIDATE_ANSWER_BANK"))
+    clean_extra = re.sub(r"\[CANDIDATE_ANSWER_BANK\].*?\[/CANDIDATE_ANSWER_BANK\]", "", clean_extra, flags=re.S)
+    company_context = normalize_text(extract_marked_block(clean_extra, "ADDITIONAL_COMPANY_CONTEXT"))
+    clean_extra = re.sub(r"\[ADDITIONAL_COMPANY_CONTEXT\].*?\[/ADDITIONAL_COMPANY_CONTEXT\]", "", clean_extra, flags=re.S)
+    return answer_bank, company_context, normalize_text(clean_extra)
+
+
+def create_candidate_profile(cv, extra):
+    log(2, "Stage 1 candidate extraction engine", "running")
+    answer_bank, _company_context, guidance = extract_answer_bank_and_guidance(extra)
+    prompt = f"""
+Create candidate truth only. Do not write interview content.
+
+Input CV:
+{trim_text(cv, 18000)}
+
+Interview Bible / Strategy Guide / user guidance:
+{trim_text(guidance, 12000) if guidance else "None supplied."}
+
+Answer bank:
+{trim_text(answer_bank, 12000) if answer_bank else "None supplied."}
+
+Return valid JSON only with this exact top-level structure:
+{{
+  "identity": {{"current_or_recent_roles": [], "seniority_signals": [], "industries_or_domains_proven": [], "domains_not_proven": []}},
+  "core_strengths": [],
+  "hard_evidence": [{{"claim": "", "basis": "CV | answer_bank | guidance", "metrics": []}}],
+  "career_risks": [],
+  "story_inventory": [{{"story_name": "", "source": "CV | answer_bank | guidance", "situation": "", "actions": [], "result": "", "metrics_provided": [], "competencies": []}}],
+  "story_gaps": [],
+  "leadership_themes": [],
+  "communication_style": [],
+  "top_proof_points": []
+}}
+
+Rules:
+Use only CV, Interview Bible / Strategy Guide, and answer bank.
+Never infer target-role domain experience.
+Never invent stories, employers, titles, industries, credentials, metrics, or outcomes.
+If a detail is missing, put it in story_gaps or career_risks.
+"""
+    profile = ask_json(prompt, model=MODEL_FAST, max_tokens=4200, fallback={})
+    set_result("candidate_profile_json", json_dumps(profile))
+    set_result("candidate_evidence_digest", json_dumps(profile))
+    log(2, "Candidate profile JSON complete", "done")
+    return profile
+
+
+def create_jd_analysis_json(job_description):
+    log(3, "Stage 2 JD analysis engine", "running")
+    prompt = f"""
+Analyze the job description only. Do not use candidate information, company research, or assumptions outside the JD.
+
+Job description:
+{trim_text(job_description, 20000)}
+
+Return valid JSON only with this exact top-level structure:
+{{
+  "top_responsibilities": [],
+  "hidden_expectations": [],
+  "likely_interviewer_concerns": [],
+  "required_competencies": [],
+  "likely_behavioral_themes": [],
+  "technical_expectations": [],
+  "success_profile": [],
+  "failure_profile": [],
+  "jd_signals": [{{"signal": "", "jd_evidence": "", "why_it_matters": ""}}]
+}}
+
+Rules:
+Do not add requirements not present in the JD.
+Do not mention the candidate.
+"""
+    analysis = ask_json(prompt, model=MODEL_FAST, max_tokens=3600, fallback={})
+    set_result("jd_analysis_json", json_dumps(analysis))
+    set_result("job_description_decode", json_dumps(analysis))
+    log(3, "JD analysis JSON complete", "done")
+    return analysis
+
+
+def source_record(source, index):
+    content = normalize_text(source.get("content", ""))
+    return {
+        "id": f"S{index}",
+        "title": source.get("title", ""),
+        "url": source.get("url", ""),
+        "source_type": source.get("source_type", ""),
+        "confidence": source.get("source_confidence", ""),
+        "query": source.get("query", ""),
+        "excerpt": trim_text(content, 650),
+    }
+
+
+def create_research_json(company_name, role_name, sources, youtube_transcripts=""):
+    log(1, "Stage 3 research engine", "running")
+    records = [source_record(source, index) for index, source in enumerate(sources[:60], start=1)]
+    official = [row for row in records if row["source_type"] == "Official company source"]
+    public = [row for row in records if row not in official]
+    interview = [
+        row for row in records
+        if any(term in f"{row['title']} {row['excerpt']} {row['query']}".lower() for term in ["interview", "hiring", "round", "recruiter", "candidate"])
+    ]
+    research = {
+        "company": company_name,
+        "role": role_name,
+        "official_facts": official[:20],
+        "public_themes": public[:25],
+        "interview_signals": interview[:20],
+        "confidence": {
+            "official_facts": "high when source_type is Official company source",
+            "public_themes": "medium or low; directional only",
+            "interview_signals": "directional unless official hiring source",
+        },
+        "source_labels": records,
+        "youtube_transcript_signal": trim_text(youtube_transcripts, 4000) if youtube_transcripts else "",
+    }
+    set_result("research_json", json_dumps(research))
+    set_result("source_digest", json_dumps(research))
+    log(1, "Research JSON complete", "done")
+    return research
+
+
+def create_gap_map_json(candidate_profile, jd_analysis, research):
+    log(4, "Stage 4 gap engine", "running")
+    prompt = f"""
+Create a gap map from structured objects only.
+
+Candidate profile JSON:
+{trim_text(json_dumps(candidate_profile), 14000)}
+
+JD analysis JSON:
+{trim_text(json_dumps(jd_analysis), 12000)}
+
+Research JSON:
+{trim_text(json_dumps(research), 12000)}
+
+Return valid JSON only:
+{{
+  "strength_matches": [{{"jd_signal": "", "candidate_evidence": "", "research_relevance": ""}}],
+  "missing_areas": [],
+  "transferable_experiences": [{{"candidate_evidence": "", "maps_to": "", "boundary": ""}}],
+  "high_risk_areas": [{{"risk": "", "why_it_matters": "", "evidence_gap": ""}}],
+  "repair_strategies": [{{"risk": "", "strategy": "", "prep_action": ""}}]
+}}
+
+Rules:
+Do not invent candidate evidence.
+If direct domain proof is missing, call it transferable or missing.
+"""
+    gap_map = ask_json(prompt, model=MODEL_STRATEGY, max_tokens=4200, fallback={})
+    set_result("gap_map_json", json_dumps(gap_map))
+    set_result("match_gap_risk_map", json_dumps(gap_map))
+    log(4, "Gap map JSON complete", "done")
+    return gap_map
+
+
+def create_interview_strategy_json(candidate_profile, jd_analysis, gap_map, research):
+    log(5, "Stage 5 interview strategist engine", "running")
+    prompt = f"""
+This is the only strategic thinking stage. Use only the structured objects below.
+
+Candidate profile JSON:
+{trim_text(json_dumps(candidate_profile), 12000)}
+
+JD analysis JSON:
+{trim_text(json_dumps(jd_analysis), 10000)}
+
+Gap map JSON:
+{trim_text(json_dumps(gap_map), 10000)}
+
+Research JSON:
+{trim_text(json_dumps(research), 12000)}
+
+Return valid JSON only:
+{{
+  "why_interviewer_might_hesitate": [],
+  "how_candidate_wins": [],
+  "must_emphasize": [],
+  "must_avoid": [],
+  "exact_positioning_strategy": "",
+  "top_10_likely_questions": [{{"question": "", "jd_signal": "", "candidate_gap": "", "research_signal": "", "answer_strategy": ""}}],
+  "top_10_dangerous_questions": [{{"question": "", "jd_signal": "", "candidate_gap": "", "research_signal": "", "answer_strategy": ""}}],
+  "question_strategy": [],
+  "section_strategy": {{
+    "executive_strategy": [],
+    "interview_process": [],
+    "company_signal_map": [],
+    "role_signal_map": [],
+    "candidate_fit": [],
+    "risk_repair": [],
+    "story_bank": [],
+    "prep_plan": []
+  }}
+}}
+
+Rules:
+Every question must connect to JD signal, candidate gap, and research signal.
+No generic questions.
+No new candidate stories or metrics.
+"""
+    strategy = ask_json(prompt, model=MODEL_STRATEGY, max_tokens=5200, fallback={})
+    set_result("interview_strategy_json", json_dumps(strategy))
+    log(5, "Interview strategy JSON complete", "done")
+    return strategy
+
+
+def as_list(value):
+    if value is None:
+        return []
+    if isinstance(value, list):
+        return value
+    return [value]
+
+
+def short_item(value):
+    if isinstance(value, dict):
+        parts = []
+        for key, item in value.items():
+            if item in ("", [], {}, None):
+                continue
+            parts.append(f"{key}: {item}")
+        return "; ".join(parts)
+    return str(value)
+
+
+def bullets(items, empty="No grounded item available."):
+    rows = [short_item(item) for item in as_list(items) if short_item(item).strip()]
+    if not rows:
+        return f"- {empty}"
+    return "\n".join(f"- {row}" for row in rows)
+
+
+def format_questions(items):
+    rows = []
+    for index, item in enumerate(as_list(items), start=1):
+        if not isinstance(item, dict):
+            rows.append(f"{index}. {item}")
+            continue
+        rows.append(
+            f"{index}. **{item.get('question', '')}**\n"
+            f"   - JD signal: {item.get('jd_signal', '')}\n"
+            f"   - Candidate gap: {item.get('candidate_gap', '')}\n"
+            f"   - Research signal: {item.get('research_signal', '')}\n"
+            f"   - Strategy: {item.get('answer_strategy', '')}"
+        )
+    return "\n".join(rows) if rows else "No grounded questions generated."
+
+
+def format_story_inventory(candidate_profile):
+    stories = as_list(candidate_profile.get("story_inventory"))
+    if not stories:
+        return "- No grounded stories found. Use Story gaps to prepare instead."
+    rows = []
+    seen = set()
+    for story in stories:
+        if not isinstance(story, dict):
+            continue
+        name = story.get("story_name", "Grounded story")
+        key = name.lower()
+        if key in seen:
+            continue
+        seen.add(key)
+        rows.append(
+            f"- **{name}**\n"
+            f"  - Source: {story.get('source', '')}\n"
+            f"  - Situation: {story.get('situation', '')}\n"
+            f"  - Actions: {', '.join(as_list(story.get('actions')))}\n"
+            f"  - Result: {story.get('result', '')}\n"
+            f"  - Metrics provided: {', '.join(as_list(story.get('metrics_provided')))}\n"
+            f"  - Competencies: {', '.join(as_list(story.get('competencies')))}"
+        )
+    return "\n".join(rows) if rows else "- No grounded stories found. Use Story gaps to prepare instead."
+
+
+def evidence_ledger_from_objects(candidate_profile, jd_analysis, research, gap_map):
+    claims = []
+    for item in as_list(research.get("official_facts"))[:5]:
+        claims.append({
+            "claim": item.get("title", "Official company signal"),
+            "classification": "officially_supported",
+            "confidence": item.get("confidence", "high"),
+            "basis": f"{item.get('title', '')} | {item.get('url', '')}",
+        })
+    for item in as_list(jd_analysis.get("jd_signals"))[:5]:
+        claims.append({
+            "claim": item.get("signal", "JD signal"),
+            "classification": "JD_supported",
+            "confidence": "high",
+            "basis": item.get("jd_evidence", "JD evidence"),
+        })
+    for item in as_list(candidate_profile.get("hard_evidence"))[:5]:
+        claims.append({
+            "claim": item.get("claim", "Candidate evidence"),
+            "classification": "CV_supported" if item.get("basis") == "CV" else "answer_bank_supported",
+            "confidence": "high",
+            "basis": item.get("basis", "candidate material"),
+        })
+    for item in as_list(gap_map.get("high_risk_areas"))[:3]:
+        claims.append({
+            "claim": item.get("risk", "Candidate risk"),
+            "classification": "inferred_from_gap_map",
+            "confidence": "medium",
+            "basis": item.get("evidence_gap", "gap map"),
+        })
+    lines = []
+    for claim in claims[:15]:
+        lines.append(
+            f"- Claim: {claim.get('claim')}\n"
+            f"  - Classification: {claim.get('classification')}\n"
+            f"  - Confidence: {claim.get('confidence')}\n"
+            f"  - Basis: {claim.get('basis')}"
+        )
+    return "\n".join(lines) if lines else "- No claims available."
+
+
+def build_pack_from_structured_objects(company_name, role_name, candidate_profile, jd_analysis, research, gap_map, strategy):
+    section_strategy = strategy.get("section_strategy", {}) if isinstance(strategy.get("section_strategy"), dict) else {}
+    likely_questions = strategy.get("top_10_likely_questions", [])
+    dangerous_questions = strategy.get("top_10_dangerous_questions", [])
+    evidence_ledger = evidence_ledger_from_objects(candidate_profile, jd_analysis, research, gap_map)
+
+    pack = f"""## Executive Strategy
+Company: {company_name}
+Role: {role_name}
+
+Exact positioning strategy:
+{strategy.get("exact_positioning_strategy", "Position the candidate through grounded evidence only.")}
+
+How candidate wins:
+{bullets(strategy.get("how_candidate_wins"))}
+
+Why interviewer might hesitate:
+{bullets(strategy.get("why_interviewer_might_hesitate"))}
+
+Must emphasize:
+{bullets(strategy.get("must_emphasize"))}
+
+Must avoid:
+{bullets(strategy.get("must_avoid"))}
+
+## Interview Process Map
+Likely interview areas, not confirmed rounds:
+{bullets(research.get("interview_signals"))}
+
+Confidence:
+{json_dumps(research.get("confidence", {}))}
+
+## Company Signal Map
+{bullets(section_strategy.get("company_signal_map"))}
+
+Official facts to mirror once:
+{bullets(research.get("official_facts")[:8] if isinstance(research.get("official_facts"), list) else [])}
+
+## Role Signal Map
+Top responsibilities:
+{bullets(jd_analysis.get("top_responsibilities"))}
+
+Required competencies:
+{bullets(jd_analysis.get("required_competencies"))}
+
+Hidden expectations:
+{bullets(jd_analysis.get("hidden_expectations"))}
+
+## Candidate Fit Map
+Strength matches:
+{bullets(gap_map.get("strength_matches"))}
+
+Transferable experiences:
+{bullets(gap_map.get("transferable_experiences"))}
+
+Top proof points:
+{bullets(candidate_profile.get("top_proof_points"))}
+
+## Gap And Risk Repair Plan
+High risk areas:
+{bullets(gap_map.get("high_risk_areas"))}
+
+Repair strategies:
+{bullets(gap_map.get("repair_strategies"))}
+
+## Story Bank
+Grounded story inventory only:
+{format_story_inventory(candidate_profile)}
+
+Story gaps to prepare:
+{bullets(candidate_profile.get("story_gaps"))}
+
+## Likely Question Bank By Round
+Likely interview areas, not confirmed rounds:
+{format_questions(likely_questions)}
+
+## Dangerous Question Bank
+{format_questions(dangerous_questions)}
+
+## Best Answer Outlines
+Use the question strategy below. Do not invent new candidate stories or metrics.
+{bullets(strategy.get("question_strategy"))}
+
+## Thirty Sixty Ninety Day Answer
+- 30 days: learn the operating model, clarify stakeholder map, understand current metrics, and identify risk review rhythms.
+- 60 days: tighten execution mechanisms, dashboard visibility, and escalation paths using the candidate's proven program management strengths.
+- 90 days: show measurable operating improvement with evidence agreed by the team. Metrics must be prepared from real candidate experience or future-role goals, not invented past claims.
+
+## Why This Company Answer
+Use the official company signals above and a grounded motivation. Avoid restating the source list or claiming direct domain background unless candidate_profile proves it.
+
+## Why This Role Answer
+Connect JD responsibilities to candidate proof points and named gaps:
+{bullets(jd_analysis.get("top_responsibilities")[:6] if isinstance(jd_analysis.get("top_responsibilities"), list) else [])}
+
+## Questions To Ask The Interviewer
+- Which operating rhythms matter most for success in this role in the first 90 days?
+- Which cross-functional partners are hardest to align, and why?
+- What metrics best reflect quality execution in this team?
+- Where do candidates most often underestimate the role?
+- What would excellent stakeholder trust look like six months in?
+
+## Seven Day Preparation Plan
+- Day 1: tighten the three strongest grounded stories.
+- Day 2: prepare metrics honestly; mark missing metrics as future prep, not past claims.
+- Day 3: rehearse high-risk questions from the dangerous question list.
+- Day 4: map company signals to story hooks.
+- Day 5: prepare concise gap repair language.
+- Day 6: run a timed mock using the likely question list.
+- Day 7: polish delivery, pacing, and executive-level concision.
+
+## Evidence Ledger
+{evidence_ledger}
+
+## Final Interview Checklist
+- Target company lock: {company_name}
+- Target role lock: {role_name}
+- No unsupported employer, title, industry, credential, domain, story, or metric claims.
+- Every question connects to JD signal, candidate gap, and research signal.
+- Use grounded stories only; put missing evidence in gaps to prepare.
+"""
+    return pack.strip()
+
+
+def validate_pack(company_name, role_name, pack, candidate_profile, strategy):
+    lowered = pack.lower()
+    issues = []
+    if company_name.lower() not in lowered:
+        issues.append("wrong company")
+    role_terms = [term for term in re.split(r"[^a-z0-9]+", role_name.lower()) if len(term) >= 4]
+    if role_terms and not any(term in lowered for term in role_terms):
+        issues.append("wrong role")
+    if "no grounded questions generated" in lowered:
+        issues.append("generic questions")
+    story_names = [
+        story.get("story_name", "").lower()
+        for story in as_list(candidate_profile.get("story_inventory"))
+        if isinstance(story, dict) and story.get("story_name")
+    ]
+    if len(story_names) != len(set(story_names)):
+        issues.append("repeated evidence")
+    for question in as_list(strategy.get("top_10_likely_questions")) + as_list(strategy.get("top_10_dangerous_questions")):
+        if not isinstance(question, dict):
+            issues.append("generic questions")
+            continue
+        if not question.get("jd_signal") or not question.get("candidate_gap") or not question.get("research_signal"):
+            issues.append("generic questions")
+    return sorted(set(issues))
+
+
 def run_full_pipeline(company_name, role_name, job_description, cv, extra, progress_callback=None):
     log(0, "Starting full Nailit pipeline", "running")
     report_progress(progress_callback, "Job created", 1)
 
-    # Stage 1 — Research
-    report_progress(progress_callback, "Official company site and careers pages", 8)
+    # Stage 1 — Candidate truth
+    report_progress(progress_callback, "Candidate extraction engine", 8)
+    candidate_profile = create_candidate_profile(cv, extra)
+
+    # Stage 2 — JD truth
+    report_progress(progress_callback, "JD analysis engine", 18)
+    jd_analysis = create_jd_analysis_json(job_description)
+
+    # Stage 3 — Research truth
+    report_progress(progress_callback, "Research engine source collection", 28)
     sources = collect_sources(company_name, role_name, job_description, extra)
     youtube_transcripts = extract_youtube_transcripts(extra)
-    report_progress(progress_callback, "Company values, culture, leadership principles", 16)
-    source_digest = create_source_digest(company_name, role_name, sources, youtube_transcripts=youtube_transcripts)
-    report_progress(progress_callback, "Interview process and likely rounds", 24)
-    report_progress(progress_callback, "Role specific public signals", 32)
-    report_progress(progress_callback, "Directional themes only", 40)
-    report_progress(progress_callback, "Role signal synthesis", 48)
-    company_intel = create_company_intelligence(company_name, role_name, source_digest)
+    research = create_research_json(company_name, role_name, sources, youtube_transcripts=youtube_transcripts)
 
-    # Stage 2 — Candidate
-    report_progress(progress_callback, "Candidate evidence digest using CV, answer bank, company context", 58)
-    candidate_digest = create_candidate_evidence_digest(
+    # Stage 4 — Gap map
+    report_progress(progress_callback, "Gap engine", 52)
+    gap_map = create_gap_map_json(candidate_profile, jd_analysis, research)
+
+    # Stage 5 — Strategy
+    report_progress(progress_callback, "Interview strategist engine", 74)
+    strategy = create_interview_strategy_json(candidate_profile, jd_analysis, gap_map, research)
+
+    # Stage 6 — Assembly only
+    report_progress(progress_callback, "Pack generation and validation", 92)
+    final_pack = build_pack_from_structured_objects(
         company_name,
         role_name,
-        job_description,
-        cv,
-        extra,
+        candidate_profile,
+        jd_analysis,
+        research,
+        gap_map,
+        strategy,
     )
-
-    # Stage 3 — Strategy
-    report_progress(progress_callback, "JD decode", 66)
-    job_decode = decode_job_description(
-        company_name,
-        role_name,
-        job_description,
-        company_intel,
-    )
-
-    report_progress(progress_callback, "Match gap risk", 74)
-    match_map = create_match_gap_risk_map(
-        company_name,
-        role_name,
-        job_decode,
-        candidate_digest,
-        company_intel,
-    )
-
-    report_progress(progress_callback, "Story bank", 82)
-    story_bank = create_story_bank(
-        company_name,
-        role_name,
-        candidate_digest,
-        match_map,
-    )
-
-    report_progress(progress_callback, "Question bank by round", 90)
-    qa_bank = create_question_and_answer_bank(
-        company_name,
-        role_name,
-        company_intel,
-        job_decode,
-        match_map,
-        story_bank,
-    )
-
-    report_progress(progress_callback, "Evidence ledger", 94)
-    evidence_ledger = create_evidence_ledger(
-        company_name,
-        role_name,
-        source_digest,
-        company_intel,
-        job_decode,
-        candidate_digest,
-        match_map,
-        qa_bank,
-    )
-
-    report_progress(progress_callback, "Final prep pack", 96)
-    final_pack = create_final_pack(
-        company_name,
-        role_name,
-        company_intel,
-        job_decode,
-        candidate_digest,
-        match_map,
-        story_bank,
-        qa_bank,
-        evidence_ledger,
-    )
+    validation_issues = validate_pack(company_name, role_name, final_pack, candidate_profile, strategy)
+    validation = {
+        "target_lock_company": company_name,
+        "target_lock_role": role_name,
+        "issues": validation_issues,
+        "status": "pass" if not validation_issues else "review_required",
+    }
+    set_result("pack_validation_json", json_dumps(validation))
+    set_result("final_prep_pack", final_pack)
+    set_result("story_bank", format_story_inventory(candidate_profile))
+    set_result("question_answer_bank", format_questions(strategy.get("top_10_likely_questions")) + "\n\n### Dangerous questions\n" + format_questions(strategy.get("top_10_dangerous_questions")))
+    set_result("evidence_ledger", evidence_ledger_from_objects(candidate_profile, jd_analysis, research, gap_map))
+    set_result("intel_report", json_dumps(research))
 
     lua_brief = build_lua_mock_interview_brief(
         company_name,
         role_name,
-        company_intel,
-        job_decode,
-        candidate_digest,
-        match_map,
-        story_bank,
-        qa_bank,
+        json_dumps(research),
+        json_dumps(jd_analysis),
+        json_dumps(candidate_profile),
+        json_dumps(gap_map),
+        get_result("story_bank"),
+        get_result("question_answer_bank"),
     )
 
     log(0, "Pipeline complete", "done")
     report_progress(progress_callback, "Final prep pack complete", 100)
 
     return {
-        "HAS_FAILED": "RESEARCH STATUS: FAILED" in source_digest,
-        "HAS_BRIDGE": "Vercel" in source_digest or "external" in source_digest.lower(),
+        "HAS_FAILED": bool(validation_issues),
+        "HAS_BRIDGE": bool(sources),
         "HAS_TOKEN_ERROR": "LLM error" in final_pack,
         "final_pack": final_pack,
         "lua_mock_interview_brief": lua_brief,
@@ -1383,9 +1833,33 @@ Job ID: {safe_job_id}
 
 {get_result("intel_report")}
 
-## Candidate Evidence Digest
+        ## Candidate Evidence Digest
 
 {get_result("candidate_evidence_digest")}
+
+## Candidate Profile JSON
+
+{get_result("candidate_profile_json")}
+
+## JD Analysis JSON
+
+{get_result("jd_analysis_json")}
+
+## Research JSON
+
+{get_result("research_json")}
+
+## Gap Map JSON
+
+{get_result("gap_map_json")}
+
+## Interview Strategy JSON
+
+{get_result("interview_strategy_json")}
+
+## Pack Validation JSON
+
+{get_result("pack_validation_json")}
 
 ## Job Description Decode
 
@@ -1417,6 +1891,12 @@ Job ID: {safe_job_id}
             "source_manifest.txt": get_result("source_manifest"),
             "source_mix.json": get_result("source_mix"),
             "source_digest.txt": get_result("source_digest"),
+            "candidate_profile.json": get_result("candidate_profile_json"),
+            "jd_analysis.json": get_result("jd_analysis_json"),
+            "research.json": get_result("research_json"),
+            "gap_map.json": get_result("gap_map_json"),
+            "interview_strategy.json": get_result("interview_strategy_json"),
+            "pack_validation.json": get_result("pack_validation_json"),
             "company_intelligence.txt": get_result("intel_report"),
             "candidate_digest.txt": get_result("candidate_evidence_digest"),
             "job_description_decode.txt": get_result("job_description_decode"),
