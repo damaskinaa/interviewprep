@@ -100,6 +100,17 @@ def home():
     return {"status": "running", "message": "Interview Intel API is live"}
 
 
+def _product_json_path(output_path):
+    legacy_path = Path(str(output_path).replace("interview_prep_", "product_brief_"))
+    workspace_path = output_path.parent / "product_brief.json"
+
+    if legacy_path != output_path and legacy_path.exists():
+        return legacy_path
+    if workspace_path.exists():
+        return workspace_path
+    return None
+
+
 @app.post("/prepare", dependencies=[Depends(require_app_key)])
 def prepare(req: PrepRequest):
     output_file = run_pipeline(
@@ -112,14 +123,14 @@ def prepare(req: PrepRequest):
 
     output_path = Path(output_file)
     markdown_file = output_path.with_suffix(".md")
-    product_json_file = Path(str(output_path).replace("interview_prep_", "product_brief_"))
+    product_json_file = _product_json_path(output_path)
     lua_brief_file = output_path.parent / "lua_brief.json"
 
     markdown = markdown_file.read_text() if markdown_file.exists() else ""
     product_json = None
     lua_mock_interview_brief = None
 
-    if product_json_file.exists():
+    if product_json_file:
         product_json = json.loads(product_json_file.read_text())
 
     if lua_brief_file.exists():
@@ -144,14 +155,14 @@ def _payload_from_request(req: PrepRequest):
 def _read_pipeline_files(output_file):
     output_path = Path(output_file)
     markdown_file = output_path.with_suffix(".md")
-    product_json_file = Path(str(output_path).replace("interview_prep_", "product_brief_"))
+    product_json_file = _product_json_path(output_path)
     source_manifest_file = output_path.parent / "source_manifest.txt"
 
     markdown = markdown_file.read_text() if markdown_file.exists() else ""
     product_json = None
     source_manifest = source_manifest_file.read_text() if source_manifest_file.exists() else ""
 
-    if product_json_file.exists():
+    if product_json_file:
         product_json = json.loads(product_json_file.read_text())
 
     return markdown, product_json, source_manifest
