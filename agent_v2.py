@@ -1879,15 +1879,79 @@ def answer_outline_word_failures(section_text):
     return failures
 
 
+def count_words(text):
+    return len(re.findall(r"\b\w+\b", text or ""))
+
+
+def regenerate_single_answer_outline(question, candidate_profile, jd_analysis, research, gap_map):
+    prompt = f"""
+{STAGE_QUALITY_INSTRUCTION}
+
+Write one interview answer only. Do not use markdown. Do not include labels.
+
+Question:
+{json_dumps(question)}
+
+candidate_profile.json:
+{trim_text(json_dumps(candidate_profile), 12000)}
+
+jd_analysis.json:
+{trim_text(json_dumps(jd_analysis), 8000)}
+
+research.json:
+{trim_text(json_dumps(research), 8000)}
+
+gap_map.json:
+{trim_text(json_dumps(gap_map), 8000)}
+
+For this question write a complete 150 to 200 word answer using only the candidate stories and metrics in candidate_profile.json. Do not write placeholders. Do not write story to use colon story name. Write the full answer as if the candidate is speaking it out loud in the interview. Include the situation in one sentence, the decision they made and why, the specific action they took personally, a realistic metric from the CV, the business result, and one tradeoff or difficulty they navigated. End with the interviewer takeaway. If a story does not exist for that question write story gap to prepare and explain what story the candidate needs to build.
+
+The answer is invalid if it is under 150 words. Count before returning.
+"""
+    answer = ask_llm(prompt, model=MODEL_STRATEGY, max_tokens=1400, retries=2).strip()
+    if count_words(answer) < 150:
+        expand_prompt = f"""
+{STAGE_QUALITY_INSTRUCTION}
+
+The answer below is too short. Expand it to 150 to 200 words.
+Use only the same grounded candidate evidence. Keep it spoken, first person, and interview-ready.
+Do not add labels. Do not add unsupported stories, employers, titles, industries, credentials, or metrics.
+
+Question:
+{json_dumps(question)}
+
+Current answer:
+{answer}
+
+candidate_profile.json:
+{trim_text(json_dumps(candidate_profile), 9000)}
+"""
+        answer = ask_llm(expand_prompt, model=MODEL_STRATEGY, max_tokens=1400, retries=2).strip()
+    return answer
+
+
+def regenerate_best_answer_outlines_section(candidate_profile, jd_analysis, research, gap_map, strategy):
+    questions = [
+        item for item in as_list(strategy.get("top_10_likely_questions"))
+        if isinstance(item, dict) and item.get("question")
+    ][:10]
+    rows = []
+    for index, question in enumerate(questions, start=1):
+        answer = regenerate_single_answer_outline(question, candidate_profile, jd_analysis, research, gap_map)
+        rows.append(
+            f"{index}. **{question.get('question', '')}**\n"
+            f"{answer}\n"
+            f"   - Evidence used: Candidate profile evidence only\n"
+            f"   - Risk boundary: Do not claim unsupported background."
+        )
+    return "\n".join(rows)
+
+
 def regenerate_pack_section(section_title, section_text, company_name, role_name, candidate_profile, jd_analysis, research, gap_map, strategy):
     banned = ", ".join(PACK_QUALITY_BANNED_STRINGS)
     if section_title == "Best Answer Outlines":
-        specific_instruction = """
-Rewrite this section as the Best Answer Outlines body only.
-For each of the top 10 questions write a complete 150 to 200 word answer using only the candidate stories and metrics in candidate_profile.json. Do not write placeholders. Do not write story to use colon story name. Write the full answer as if the candidate is speaking it out loud in the interview. Include the situation in one sentence, the decision they made and why, the specific action they took personally, a realistic metric from the CV, the business result, and one tradeoff or difficulty they navigated. End with the interviewer takeaway. If a story does not exist for that question write story gap to prepare and explain what story the candidate needs to build.
-Every answer must be at least 150 words and no more than 200 words. Count words before returning the section.
-"""
-    elif section_title == "Company Signal Map":
+        return regenerate_best_answer_outlines_section(candidate_profile, jd_analysis, research, gap_map, strategy)
+    if section_title == "Company Signal Map":
         specific_instruction = """
 Rewrite this section as the Company Signal Map body only.
 Read research.json carefully. Extract exactly 5 company specific signals that are true for this company and not generic to all companies. For each signal write: the signal itself, why it matters for this specific role, and one sentence on how the candidate should use it in their answer. If research is insufficient to produce 5 real signals say research insufficient and list what signals you could confirm versus what is missing. Never output no grounded item available. Never output a generic signal that could apply to any company.
