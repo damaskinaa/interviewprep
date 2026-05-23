@@ -260,6 +260,46 @@ def source_score(source_type, content):
     return 1
 
 
+def important_role_terms(role_name, job_description=""):
+    text = f"{role_name} {job_description}".lower()
+    stop = {
+        "manager", "program", "product", "role", "senior", "lead", "global",
+        "team", "work", "with", "and", "the", "for", "this", "that"
+    }
+    terms = []
+    for token in re.split(r"[^a-z0-9]+", text):
+        if len(token) >= 4 and token not in stop and token not in terms:
+            terms.append(token)
+    return terms[:12]
+
+
+def source_matches_target(source, company_name, role_name, job_description):
+    source_type = source.get("source_type", "")
+    if source_type == "Official company source":
+        return True
+
+    company_slug = re.sub(r"[^a-z0-9]+", "", (company_name or "").lower())
+    text = " ".join([
+        source.get("title", ""),
+        source.get("url", ""),
+        source.get("content", "")[:1200],
+    ]).lower()
+    text_slug = re.sub(r"[^a-z0-9]+", "", text)
+    has_company = bool(company_slug and company_slug in text_slug)
+    role_terms = important_role_terms(role_name, job_description)
+    has_role = not role_terms or any(term in text for term in role_terms)
+    has_interview_process = any(term in text for term in ["interview", "hiring", "how we hire", "recruit"])
+
+    if "directional" in source_type.lower() or source_type in {
+        "Public prep or candidate experience",
+        "YouTube public theme",
+        "High signal public source",
+    }:
+        return has_company and (has_role or has_interview_process)
+
+    return has_company and (has_role or has_interview_process)
+
+
 
 def canonical_source_key(url):
     url = normalize_text(url).lower()
@@ -428,6 +468,10 @@ def collect_sources(company_name, role_name, job_description, extra):
 
     if external_research:
         sources = parse_external_sources(external_research, company_name)
+        sources = [
+            source for source in sources
+            if source_matches_target(source, company_name, role_name, job_description)
+        ]
         log(1, f"Parsed {len(sources)} sources from Vercel research bridge", "done")
     else:
         log(1, "No Vercel research bridge block found in request", "warning")
@@ -488,6 +532,23 @@ def collect_sources(company_name, role_name, job_description, extra):
     log(1, f"Final source manifest contains {len(final_sources)} sources", "done")
     return final_sources
 
+
+def build_source_reference_index(sources, limit=45):
+    if not sources:
+        return "No reliable web sources were available."
+
+    rows = []
+    for index, source in enumerate(sources[:limit], start=1):
+        rows.append(
+            f"{index}. Title: {source.get('title', '')}\n"
+            f"   URL: {source.get('url', '')}\n"
+            f"   Type: {source.get('source_type', '')}\n"
+            f"   Confidence: {source.get('source_confidence', '')}\n"
+            f"   Query: {source.get('query', '')}"
+        )
+    return "\n".join(rows)
+
+
 def create_source_digest(company_name, role_name, sources, youtube_transcripts=""):
     log(1, "Creating source digest", "running")
 
@@ -530,6 +591,9 @@ Role:
 Sources:
 {chr(10).join(blocks) if blocks else "No extracted web sources."}
 
+Source reference index:
+{build_source_reference_index(sources)}
+
 YouTube transcripts supplied by user:
 {trim_text(youtube_transcripts, 18000) if youtube_transcripts else "No YouTube transcripts supplied."}
 
@@ -570,9 +634,11 @@ Do not claim directional sources are official.
 Do not state exact interview rounds as fact unless official sources confirm them. If public sources disagree, give an observed range and confidence.
 Do not over list similar Google Careers job pages.
 Prefer synthesized signals over long source lists.
+Every web-supported claim must preserve enough title and URL detail for the Evidence Ledger.
 """
 
     digest = ask_llm(prompt, model=MODEL_FAST, max_tokens=2600, retries=3)
+    digest = f"{digest}\n\n### Source reference index\n{build_source_reference_index(sources)}"
     set_result("source_digest", digest)
     log(1, "Source digest complete", "done")
     return digest
@@ -601,7 +667,7 @@ Return this exact structure:
 Explain whether research came from the Vercel bridge, fallback search, or both. Explain source quality honestly.
 
 ### Sources used
-List only real source titles and URLs from the digest. Do not list tavily_answer or search_summary as URLs.
+List only real source titles and URLs from the digest/source reference index. Do not list tavily_answer or search_summary as URLs.
 
 ### Official company signal map
 Official values, hiring language, culture, and answer signals. Only use official evidence.
@@ -610,7 +676,7 @@ Official values, hiring language, culture, and answer signals. Only use official
 Candidate experience themes from public sources. Label as directional.
 
 ### Interview process map
-Describe likely stages using calibrated language. Separate officially supported, repeated public theme, transcript signal, directional only, inferred, and unknown. State observed ranges with confidence. Never state exact rounds as fact unless official sources confirm them.
+Describe likely interview areas using calibrated language. Separate officially supported, repeated public theme, transcript signal, directional only, inferred, and unknown. State observed public patterns with confidence. Never present an exact round count or sequence as fact unless official sources confirm it.
 
 ### Role specific evaluation criteria
 What this role is likely to test. Go beyond generic program management.
@@ -631,6 +697,8 @@ Rules:
 Google must not sound like Stripe. Every section must be company specific.
 Do not invent source URLs.
 Do not present Reddit, Glassdoor, Blind, YouTube, blogs, forums, or prep sites as official.
+Do not let adjacent sources from unrelated companies shape company-specific claims. If an adjacent source is retained, label it low-confidence adjacent pattern.
+Every major section must include a specific company signal, role signal, candidate risk/action, and confidence note.
 """
 
     intel = ask_llm(prompt, model=MODEL_STRATEGY, max_tokens=4300, retries=3)
@@ -693,6 +761,10 @@ Candidate material chunk {index}:
 
 Extract only grounded evidence. Do not give advice yet.
 
+Critical evidence boundary:
+Never transform the target role domain into candidate background. If the role is Trust and Safety but the CV only proves program management, operations, launch readiness, dashboards, risk, and stakeholder work, write exactly that: transferable program management experience, not direct proven Trust and Safety experience.
+Do not invent projects, teams, employers, domains, credentials, tools, metrics, or outcomes that are not in the CV, answer bank, or extra context.
+
 Return this structure:
 
 ### Candidate facts found
@@ -716,6 +788,9 @@ Execution, planning, prioritization, stakeholder management, risk, ambiguity, ch
 ### Technical or domain evidence
 Systems, workflows, automation, data, analytics, cloud, operations, technical learning.
 
+### Domain boundary
+State which target-role domains are directly proven, transferable only, or not proven by the candidate material.
+
 ### Gaps or weak evidence
 Missing details, vague claims, inconsistencies, risks.
 
@@ -738,6 +813,11 @@ Evidence notes:
 
 Create a compact but rich evidence digest.
 
+Critical rules:
+Use only CV, answer bank, and user-provided context as candidate evidence.
+Do not infer direct domain experience from the target role. If Trust and Safety is not proven in candidate material, mark it as a transferable gap, not candidate experience.
+Do not invent stories, metrics, teams, tools, or outcomes.
+
 Return this exact structure:
 
 ### Candidate evidence summary
@@ -746,6 +826,7 @@ Return this exact structure:
 For each story include competency, evidence, metric, and best question types.
 ### Story to competency map
 ### Candidate gaps and repair angles
+### Domain boundary and transferable experience
 ### Strong exact phrases to reuse
 ### Evidence not to lose
 ### Candidate positioning
@@ -825,7 +906,7 @@ Candidate evidence digest:
 Return this structure:
 
 ### Fit verdict
-Direct, honest, no generic praise.
+Direct, honest, no generic praise. Explicitly separate direct proven experience from transferable experience.
 
 ### Candidate fit map
 Create a table:
@@ -843,6 +924,10 @@ For each risk include why it matters, honest answer strategy, repair evidence.
 ### Candidate narrative to lead with
 ### What not to say
 ### What to prepare before the interview
+
+Rules:
+Never convert the target domain into candidate experience. If the CV does not prove Trust and Safety, say the candidate has transferable program management, operations, launch readiness, dashboarding, risk, and stakeholder experience, not direct proven Trust and Safety experience.
+Do not invent metrics, projects, teams, industries, credentials, employers, or outcomes.
 """
     output = ask_llm(prompt, model=MODEL_STRATEGY, max_tokens=4500, retries=3)
     set_result("match_gap_risk_map", output)
@@ -870,10 +955,16 @@ Match gap risk map:
 
 Create a story bank that uses only real candidate evidence.
 
+Critical Story Bank rules:
+Only use stories that are directly supported by CV, answer bank, or user context.
+Do not invent new projects, domains, teams, training programs, automation initiatives, conflict-resolution cases, satisfaction scores, alignment scores, incident reductions, or any metric not present in the candidate evidence.
+You may sharpen wording, but metrics must be listed only if already supplied. If a useful metric is missing, write "metric to prepare" rather than inventing a number.
+If there are fewer than 10 supported stories, create fewer stories. Put missing coverage in "Story gaps to prepare."
+
 Return this structure:
 
 ### Core story portfolio
-Create 10 to 14 stories. For each:
+Create only the stories directly supported by evidence. For each:
 Story name
 Best interview question types
 Competencies proven
@@ -881,7 +972,7 @@ Situation
 Task
 Actions
 Result
-Metrics to include
+Metrics to include if already provided
 Company or role signal it supports
 Risk it repairs
 Sharper version of the story
@@ -890,6 +981,8 @@ Weak version to avoid
 ### Story coverage map
 Show which required competencies are covered and which are weak.
 
+### Story gaps to prepare
+List needed stories or metrics the user should prepare because the evidence is missing. Do not fabricate the stories.
 ### Stories to strengthen before interview
 ### One sentence story hooks
 """
@@ -923,7 +1016,7 @@ Match gap risk map:
 Story bank:
 {trim_text(story_bank, 10000)}
 
-Create a serious interview question bank by likely round. Use the JD as the targeting core. If interview rounds are not official, label them as likely/observed/directional rather than factual.
+Create a serious interview question bank by likely interview area. Use the JD as the targeting core. If interview rounds are not official, label them as likely interview areas, observed public patterns, or possible round types rather than factual rounds.
 
 For Google or similar companies, include these round types if relevant:
 Recruiter screen
@@ -957,6 +1050,11 @@ Use candidate evidence, not generic advice.
 ### Questions that target candidate risks
 ### Questions to ask the interviewer
 ### Mock interview order
+
+Rules:
+Do not present an exact number or sequence of rounds unless official sources confirm it.
+Use candidate evidence only for answer outlines. If direct domain evidence is missing, frame the answer outline around transferable program management evidence and name the domain gap honestly.
+Do not invent candidate metrics or stories.
 """
     output = ask_llm(prompt, model=MODEL_STRATEGY, max_tokens=6500, retries=3)
     set_result("question_answer_bank", output)
@@ -979,6 +1077,9 @@ Role:
 Source digest:
 {trim_text(source_digest, 9000)}
 
+Source manifest with titles and URLs:
+{trim_text(get_result("source_manifest"), 7000)}
+
 Company intelligence:
 {trim_text(company_intel, 7000)}
 
@@ -1000,16 +1101,18 @@ For every claim include:
 - claim text
 - source classification: officially_supported, repeated_public_theme, directional_only, JD_inferred, transcript_signal, CV_supported, answer_bank_supported
 - confidence: high, medium, low
-- basis: source titles/URLs where available, or JD/CV/answer bank/transcript basis
+- basis: source title plus URL for web-supported claims, or precise JD/CV/answer bank/transcript basis for candidate-supported claims
 - calibrated language to use
 - language to avoid
 
 Rules:
 No unsupported claims.
 No invented source URLs.
+Do not use vague basis labels such as "Source 1" unless they are accompanied by title and URL.
 Do not call Reddit, Glassdoor, Blind, YouTube, blogs, forums, or prep sites official.
 Do not state exact interview rounds as fact unless official source confirms them.
 Do not invent candidate employers, titles, industries, credentials, degrees, domain expertise, or authority.
+Do not transform the target role domain into candidate background. If direct domain evidence is absent, classify it as a gap or transferable evidence.
 If public process reports conflict, write observed range + most common + confidence.
 
 Return this exact structure:
@@ -1062,11 +1165,15 @@ Question and answer bank:
 Mandatory Evidence Ledger:
 {trim_text(evidence_ledger, 9000)}
 
+Source manifest with titles and URLs:
+{trim_text(get_result("source_manifest"), 7000)}
+
 Write a premium final prep pack. It should feel like an executive interview strategist prepared it.
 
 Rules:
 Do not be generic.
 Do not invent candidate evidence.
+Never transform target role domain into candidate experience. If the CV does not prove direct Trust and Safety experience, say the candidate has transferable program management experience, not direct proven Trust and Safety experience.
 Use concrete candidate stories where available.
 Separate official company evidence from directional public themes.
 Use official sources as high confidence facts.
@@ -1077,10 +1184,13 @@ Make every section company specific. Google must not sound like Stripe.
 Use JD as the core targeting material for question bank and risk map.
 Be honest about gaps.
 Make it practical for preparation tonight.
-Make it detailed but readable.
+Shorten and sharpen. Avoid repetition. Every major section must include a specific company signal, specific role signal, specific candidate evidence, and specific risk or action.
 No unsupported claims.
 No invented source URLs.
 No invented candidate background.
+No unsupported metrics. Story Bank can only use CV and answer bank stories; missing stories belong in "story gaps to prepare."
+Interview process must use "likely interview areas," "observed public pattern," "possible round type," confidence level, and what it tests. Do not list a fixed sequence or exact number as expected unless official sources confirm it.
+Evidence Ledger basis must include source title plus URL for web claims, or JD/CV/answer bank/transcript basis for candidate claims.
 
 Return this exact structure:
 
