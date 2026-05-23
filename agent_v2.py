@@ -177,6 +177,22 @@ BANNED_VISIBLE_STRINGS = [
     "source_type:",
 ]
 
+PACK_QUALITY_BANNED_STRINGS = [
+    "no specific grounded item was produced",
+    "story to use colon",
+    "story to use:",
+    "use the closest grounded story",
+    "placeholder",
+    "name the execution tradeoff honestly",
+    "connect the result to business",
+]
+
+STAGE_QUALITY_INSTRUCTION = (
+    "Think carefully and thoroughly before producing output. Do not rush. "
+    "You must produce substantive specific content for this candidate and this role. "
+    "Generic content is a failure."
+)
+
 
 def write_json_checkpoint(workspace, filename, data):
     if workspace is None:
@@ -203,8 +219,9 @@ def checkpoint_json(workspace, filename, data):
 def assert_no_banned_visible_strings(markdown):
     found = []
     for line_number, line in enumerate((markdown or "").splitlines(), start=1):
-        for needle in BANNED_VISIBLE_STRINGS:
-            if needle in line:
+        lowered = line.lower()
+        for needle in BANNED_VISIBLE_STRINGS + PACK_QUALITY_BANNED_STRINGS:
+            if needle.lower() in lowered:
                 found.append(f"{needle} on line {line_number}")
     if found:
         raise ValueError(f"Visible prep pack contains banned internal strings: {', '.join(found[:20])}")
@@ -1301,6 +1318,8 @@ def create_candidate_profile(cv, extra):
     log(2, "Stage 1 candidate extraction engine", "running")
     answer_bank, _company_context, guidance = extract_answer_bank_and_guidance(extra)
     prompt = f"""
+{STAGE_QUALITY_INSTRUCTION}
+
 Create candidate truth only. Do not write interview content.
 
 Input CV:
@@ -1397,6 +1416,8 @@ def normalize_candidate_profile(profile):
 def create_jd_analysis_json(job_description):
     log(3, "Stage 2 JD analysis engine", "running")
     prompt = f"""
+{STAGE_QUALITY_INSTRUCTION}
+
 Analyze the job description only. Do not use candidate information, company research, or assumptions outside the JD.
 
 Job description:
@@ -1471,6 +1492,8 @@ def create_research_json(company_name, role_name, sources, youtube_transcripts="
 def create_gap_map_json(candidate_profile, jd_analysis, research):
     log(4, "Stage 4 gap engine", "running")
     prompt = f"""
+{STAGE_QUALITY_INSTRUCTION}
+
 Create a gap map from structured objects only.
 
 Candidate profile JSON:
@@ -1505,6 +1528,8 @@ If direct domain proof is missing, call it transferable or missing.
 def create_interview_strategy_json(candidate_profile, jd_analysis, gap_map, research):
     log(5, "Stage 5 interview strategist engine", "running")
     prompt = f"""
+{STAGE_QUALITY_INSTRUCTION}
+
 This is the only strategic thinking stage. Use only the structured objects below.
 
 Candidate profile JSON:
@@ -1529,11 +1554,11 @@ Return valid JSON only:
   "top_10_likely_questions": [{{"question": "", "jd_signal": "", "candidate_gap": "", "research_signal": "", "answer_strategy": ""}}],
   "top_10_dangerous_questions": [{{"question": "", "jd_signal": "", "candidate_gap": "", "research_signal": "", "answer_strategy": ""}}],
   "question_strategy": [{{"question": "", "strategy": "", "evidence_to_use": "", "risk_to_avoid": ""}}],
-  "best_answer_outlines": [{{"question": "", "direct_answer": "", "story_to_use": "", "decision_to_emphasize": "", "tradeoff_to_name": "", "metric_to_use": "", "result_squared": "", "what_not_to_say": ""}}],
+  "best_answer_outlines": [{{"question": "", "full_answer": "", "evidence_used": [], "risk_boundary": ""}}],
   "section_strategy": {{
     "executive_strategy": [],
     "interview_process": [],
-    "company_signal_map": [],
+    "company_signal_map": [{{"signal": "", "why_it_matters_for_this_role": "", "how_candidate_should_use_it": "", "confidence": ""}}],
     "role_signal_map": [],
     "candidate_fit": [],
     "risk_repair": [],
@@ -1546,16 +1571,21 @@ Rules:
 Every question must connect to JD signal, candidate gap, and research signal.
 No generic questions.
 No new candidate stories or metrics.
-best_answer_outlines must contain at least 8 populated outlines, using only grounded candidate evidence or clearly marked story gaps.
+
+For best_answer_outlines:
+For each of the top 10 questions write a complete 150 to 200 word answer using only the candidate stories and metrics in candidate_profile.json. Do not write placeholders. Do not write story to use colon story name. Write the full answer as if the candidate is speaking it out loud in the interview. Include the situation in one sentence, the decision they made and why, the specific action they took personally, a realistic metric from the CV, the business result, and one tradeoff or difficulty they navigated. End with the interviewer takeaway. If a story does not exist for that question write story gap to prepare and explain what story the candidate needs to build.
+
+For section_strategy.company_signal_map:
+Read research.json carefully. Extract exactly 5 company specific signals that are true for this company and not generic to all companies. For each signal write: the signal itself, why it matters for this specific role, and one sentence on how the candidate should use it in their answer. If research is insufficient to produce 5 real signals say research insufficient and list what signals you could confirm versus what is missing. Never output no grounded item available. Never output a generic signal that could apply to any company.
 """
-    strategy = ask_json(prompt, model=MODEL_STRATEGY, max_tokens=5200, fallback={})
-    strategy = normalize_interview_strategy(strategy)
+    strategy = ask_json(prompt, model=MODEL_STRATEGY, max_tokens=9000, fallback={})
+    strategy = normalize_interview_strategy(strategy, research=research)
     set_result("interview_strategy_json", json_dumps(strategy))
     log(5, "Interview strategy JSON complete", "done")
     return strategy
 
 
-def normalize_interview_strategy(strategy):
+def normalize_interview_strategy(strategy, research=None):
     strategy = strategy if isinstance(strategy, dict) else {}
     for key in [
         "why_interviewer_might_hesitate",
@@ -1572,6 +1602,8 @@ def normalize_interview_strategy(strategy):
     if not isinstance(strategy.get("section_strategy"), dict):
         strategy["section_strategy"] = {}
     strategy.setdefault("exact_positioning_strategy", "Position through grounded evidence and explicit gap repair.")
+    if not isinstance(strategy["section_strategy"].get("company_signal_map"), list):
+        strategy["section_strategy"]["company_signal_map"] = []
 
     all_questions = [
         item for item in strategy.get("top_10_likely_questions", []) + strategy.get("top_10_dangerous_questions", [])
@@ -1583,7 +1615,7 @@ def normalize_interview_strategy(strategy):
             strategy["question_strategy"].append({
                 "question": item.get("question", ""),
                 "strategy": item.get("answer_strategy", "Answer with grounded evidence, a clear decision, and a named tradeoff."),
-                "evidence_to_use": item.get("candidate_gap", "Use the strongest matching candidate proof point or mark the story gap."),
+                "evidence_to_use": item.get("candidate_gap", "Use a specific proof point from candidate_profile.json or mark the story gap."),
                 "risk_to_avoid": "Do not claim unproven employer, title, industry, credential, domain, story, outcome, or metric.",
             })
 
@@ -1591,31 +1623,64 @@ def normalize_interview_strategy(strategy):
     for item in as_list(strategy.get("best_answer_outlines")):
         if not isinstance(item, dict) or not item.get("question"):
             continue
+        full_answer = item.get("full_answer") or item.get("answer") or item.get("direct_answer") or ""
+        if not str(full_answer).strip():
+            full_answer = (
+                "Story gap to prepare: this question needs a specific candidate story from candidate_profile.json "
+                "with situation, decision, personal action, metric, result, difficulty, and interviewer takeaway."
+            )
         normalized_outlines.append({
             "question": item.get("question", ""),
-            "direct_answer": item.get("direct_answer") or "Answer directly, then prove it with one grounded story.",
-            "story_to_use": item.get("story_to_use") or "Use the closest grounded story from candidate_profile.json; if missing, mark as a story gap to prepare.",
-            "decision_to_emphasize": item.get("decision_to_emphasize") or item.get("jd_signal") or "The operating decision the interviewer is testing.",
-            "tradeoff_to_name": item.get("tradeoff_to_name") or "Name the execution tradeoff honestly.",
-            "metric_to_use": item.get("metric_to_use") or "Use only metrics already present in the CV or answer bank; otherwise state the metric to prepare.",
-            "result_squared": item.get("result_squared") or "Connect the result to business, stakeholder, delivery, or risk impact.",
-            "what_not_to_say": item.get("what_not_to_say") or "Do not claim unproven domain experience, stories, titles, employers, credentials, or metrics.",
+            "full_answer": str(full_answer).strip(),
+            "evidence_used": as_list(item.get("evidence_used")),
+            "risk_boundary": item.get("risk_boundary") or item.get("what_not_to_say") or "Do not claim unproven domain experience, stories, titles, employers, credentials, or metrics.",
         })
 
     for item in all_questions:
-        if len(normalized_outlines) >= 8:
+        if len(normalized_outlines) >= 10:
             break
         normalized_outlines.append({
             "question": item.get("question", ""),
-            "direct_answer": "Lead with the decision or operating principle, then prove it with grounded candidate evidence.",
-            "story_to_use": item.get("answer_strategy", "Use the strongest matching grounded story; if no story exists, mark this as a story gap to prepare."),
-            "decision_to_emphasize": item.get("jd_signal", "JD signal to address."),
-            "tradeoff_to_name": item.get("candidate_gap", "Candidate gap or risk to name honestly."),
-            "metric_to_use": "Use only metrics present in candidate_profile.json; otherwise say which metric must be prepared.",
-            "result_squared": item.get("research_signal", "Tie the result to the company or role signal."),
-            "what_not_to_say": "Do not claim unproven domain ownership, employers, titles, industries, credentials, stories, outcomes, or metrics.",
+            "full_answer": (
+                "Story gap to prepare: build a grounded spoken answer for this question using one verified candidate story, "
+                "one metric from candidate_profile.json, the decision made, the personal action taken, the difficulty navigated, "
+                "the result, and the interviewer takeaway. Do not claim unproven domain ownership."
+            ),
+            "evidence_used": [item.get("jd_signal", ""), item.get("candidate_gap", ""), item.get("research_signal", "")],
+            "risk_boundary": "Do not claim unproven domain ownership, employers, titles, industries, credentials, stories, outcomes, or metrics.",
         })
     strategy["best_answer_outlines"] = normalized_outlines
+    if len(strategy["section_strategy"]["company_signal_map"]) < 5:
+        existing = strategy["section_strategy"]["company_signal_map"]
+        source_rows = []
+        if isinstance(research, dict):
+            source_rows = (
+                as_list(research.get("official_facts")) +
+                as_list(research.get("interview_signals")) +
+                as_list(research.get("public_themes"))
+            )
+        for source in source_rows:
+            if len(existing) >= 5:
+                break
+            if not isinstance(source, dict):
+                continue
+            title = source.get("title") or source.get("query") or source.get("url")
+            if not title:
+                continue
+            existing.append({
+                "signal": title,
+                "why_it_matters_for_this_role": "Use this as a company-specific context signal only where it connects directly to the JD responsibilities.",
+                "how_candidate_should_use_it": "Mirror the signal briefly, then connect it to a grounded candidate proof point instead of making a broad company claim.",
+                "confidence": source.get("confidence", "source-backed"),
+            })
+        if len(existing) < 5:
+            existing.append({
+                "signal": "Research insufficient to confirm five company-specific signals.",
+                "why_it_matters_for_this_role": "The candidate should avoid generic claims and rely on the JD plus verified candidate evidence.",
+                "how_candidate_should_use_it": "State only the company signals that were confirmed and ask targeted questions to fill the missing context.",
+                "confidence": "low",
+            })
+        strategy["section_strategy"]["company_signal_map"] = existing[:5]
     return strategy
 
 
@@ -1644,7 +1709,7 @@ def short_item(value):
     return str(value)
 
 
-def bullets(items, empty="No specific grounded item was produced in this artifact."):
+def bullets(items, empty="This section needs more specific evidence from the saved artifacts."):
     rows = [short_item(item) for item in as_list(items) if short_item(item).strip()]
     if not rows:
         return f"- {empty}"
@@ -1699,15 +1764,16 @@ def format_answer_outlines(outlines):
         question = item.get("question", "").strip()
         if not question:
             continue
+        full_answer = (item.get("full_answer") or item.get("answer") or item.get("direct_answer") or "").strip()
+        if not full_answer:
+            full_answer = "Story gap to prepare: build a specific answer from verified candidate evidence before practicing this question."
+        evidence = ", ".join(str(entry) for entry in as_list(item.get("evidence_used")) if str(entry).strip())
+        risk_boundary = item.get("risk_boundary", "")
         rows.append(
             f"{index}. **{question}**\n"
-            f"   - Direct answer: {item.get('direct_answer', '')}\n"
-            f"   - Story to use: {item.get('story_to_use', '')}\n"
-            f"   - Decision to emphasize: {item.get('decision_to_emphasize', '')}\n"
-            f"   - Tradeoff to name: {item.get('tradeoff_to_name', '')}\n"
-            f"   - Metric to use: {item.get('metric_to_use', '')}\n"
-            f"   - Result squared: {item.get('result_squared', '')}\n"
-            f"   - What not to say: {item.get('what_not_to_say', '')}"
+            f"{full_answer}\n"
+            f"   - Evidence used: {evidence or 'Candidate profile evidence only'}\n"
+            f"   - Risk boundary: {risk_boundary or 'Do not claim unsupported background.'}"
         )
     return "\n".join(rows) if rows else "- Best answer outlines were not produced; rerun the strategy stage."
 
@@ -1777,6 +1843,105 @@ def evidence_ledger_from_objects(candidate_profile, jd_analysis, research, gap_m
             f"  - Basis: {claim.get('basis')}"
         )
     return "\n".join(lines) if lines else "- No claims available."
+
+
+def markdown_sections(markdown):
+    matches = list(re.finditer(r"^## .+$", markdown or "", flags=re.M))
+    sections = []
+    for index, match in enumerate(matches):
+        start = match.start()
+        end = matches[index + 1].start() if index + 1 < len(matches) else len(markdown)
+        title = match.group(0).replace("##", "", 1).strip()
+        sections.append((title, start, end, markdown[start:end]))
+    return sections
+
+
+def failed_quality_strings(text):
+    lowered = (text or "").lower()
+    return [needle for needle in PACK_QUALITY_BANNED_STRINGS if needle in lowered]
+
+
+def regenerate_pack_section(section_title, section_text, company_name, role_name, candidate_profile, jd_analysis, research, gap_map, strategy):
+    banned = ", ".join(PACK_QUALITY_BANNED_STRINGS)
+    if section_title == "Best Answer Outlines":
+        specific_instruction = """
+Rewrite this section as the Best Answer Outlines body only.
+For each of the top 10 questions write a complete 150 to 200 word answer using only the candidate stories and metrics in candidate_profile.json. Do not write placeholders. Do not write story to use colon story name. Write the full answer as if the candidate is speaking it out loud in the interview. Include the situation in one sentence, the decision they made and why, the specific action they took personally, a realistic metric from the CV, the business result, and one tradeoff or difficulty they navigated. End with the interviewer takeaway. If a story does not exist for that question write story gap to prepare and explain what story the candidate needs to build.
+"""
+    elif section_title == "Company Signal Map":
+        specific_instruction = """
+Rewrite this section as the Company Signal Map body only.
+Read research.json carefully. Extract exactly 5 company specific signals that are true for this company and not generic to all companies. For each signal write: the signal itself, why it matters for this specific role, and one sentence on how the candidate should use it in their answer. If research is insufficient to produce 5 real signals say research insufficient and list what signals you could confirm versus what is missing. Never output no grounded item available. Never output a generic signal that could apply to any company.
+"""
+    else:
+        specific_instruction = "Rewrite this section body only with specific, useful content for this company, role, candidate, JD, and research."
+
+    prompt = f"""
+{STAGE_QUALITY_INSTRUCTION}
+
+The visible prep pack section below failed quality validation because it contained template or placeholder language.
+Regenerate only the body for this markdown section. Do not include the ## heading.
+Do not use any of these banned strings or close variants: {banned}
+
+Section title:
+{section_title}
+
+Company: {company_name}
+Role: {role_name}
+
+Instruction:
+{specific_instruction}
+
+candidate_profile.json:
+{trim_text(json_dumps(candidate_profile), 10000)}
+
+jd_analysis.json:
+{trim_text(json_dumps(jd_analysis), 8000)}
+
+research.json:
+{trim_text(json_dumps(research), 10000)}
+
+gap_map.json:
+{trim_text(json_dumps(gap_map), 8000)}
+
+interview_strategy.json:
+{trim_text(json_dumps(strategy), 10000)}
+
+Current failed section:
+{trim_text(section_text, 6000)}
+"""
+    return ask_llm(prompt, model=MODEL_STRATEGY, max_tokens=4500, retries=2).strip()
+
+
+def repair_pack_quality(pack, company_name, role_name, candidate_profile, jd_analysis, research, gap_map, strategy):
+    repaired = pack
+    for _attempt in range(2):
+        sections = markdown_sections(repaired)
+        failures = []
+        for title, start, end, text in sections:
+            hits = failed_quality_strings(text)
+            if hits:
+                failures.append((title, start, end, text, hits))
+        if not failures:
+            return repaired
+        for title, start, end, text, hits in reversed(failures):
+            log(6, f"Pack quality validation failed in {title}; regenerating section. Banned strings: {', '.join(hits)}", "running")
+            replacement_body = regenerate_pack_section(
+                title,
+                text,
+                company_name,
+                role_name,
+                candidate_profile,
+                jd_analysis,
+                research,
+                gap_map,
+                strategy,
+            )
+            replacement = f"## {title}\n{replacement_body.strip()}\n\n"
+            repaired = repaired[:start] + replacement + repaired[end:]
+            log(6, f"Regenerated visible section: {title}", "done")
+    assert_no_banned_visible_strings(repaired)
+    return repaired
 
 
 def build_pack_from_structured_objects(company_name, role_name, candidate_profile, jd_analysis, research, gap_map, strategy):
@@ -1900,6 +2065,17 @@ Connect JD responsibilities to candidate proof points and named gaps:
 - Every question connects to JD signal, candidate gap, and research signal.
 - Use grounded stories only; put missing evidence in gaps to prepare.
 """
+    pack = repair_pack_quality(
+        pack.strip(),
+        company_name,
+        role_name,
+        candidate_profile,
+        jd_analysis,
+        research,
+        gap_map,
+        strategy,
+    )
+    assert_no_banned_visible_strings(pack)
     return pack.strip()
 
 
