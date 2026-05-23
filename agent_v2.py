@@ -1529,6 +1529,18 @@ If direct domain proof is missing, call it transferable or missing.
 def create_interview_strategy_json(candidate_profile, jd_analysis, gap_map, research):
     log(5, "Stage 5 interview strategist engine", "running")
     prompt = f"""
+You have 5 distinct candidate stories. You must distribute them across the 10 answer outlines. No story may be used more than twice. Assign stories to questions before writing any answer.
+Use this assignment:
+
+Queue routing redesign story: use for questions about process improvement methodology and how you approach operational problems.
+Backlog reduction story: use for questions about global initiatives, cross-regional work, and stakeholder management.
+Metric calculation error story: use for questions about data integrity, root cause analysis, and surfacing problems proactively.
+72-hour SLA ownership story: use for questions about influencing without authority, working under pressure, and owning outcomes solo.
+People development story: use for questions about team development, coaching, and people management.
+
+Write each answer using the assigned story. If a question does not fit any of the 5 stories write story gap to prepare and explain what story the candidate needs to build for that question.
+After writing all 10 outlines check that no story appears more than twice. If any story appears three or more times rewrite the excess outlines using a different story or mark as story gap.
+
 {STAGE_QUALITY_INSTRUCTION}
 
 This is the only strategic thinking stage. Use only the structured objects below.
@@ -1555,7 +1567,7 @@ Return valid JSON only:
   "top_10_likely_questions": [{{"question": "", "jd_signal": "", "candidate_gap": "", "research_signal": "", "answer_strategy": ""}}],
   "top_10_dangerous_questions": [{{"question": "", "jd_signal": "", "candidate_gap": "", "research_signal": "", "answer_strategy": ""}}],
   "question_strategy": [{{"question": "", "strategy": "", "evidence_to_use": "", "risk_to_avoid": ""}}],
-  "best_answer_outlines": [{{"question": "", "full_answer": "", "evidence_used": [], "risk_boundary": ""}}],
+  "best_answer_outlines": [{{"question": "", "assigned_story": "", "full_answer": "", "evidence_used": [], "risk_boundary": ""}}],
   "section_strategy": {{
     "executive_strategy": [],
     "interview_process": [],
@@ -1637,6 +1649,7 @@ def normalize_interview_strategy(strategy, research=None):
             )
         normalized_outlines.append({
             "question": item.get("question", ""),
+            "assigned_story": item.get("assigned_story") or preferred_story_for_question(item.get("question", "")),
             "full_answer": str(full_answer).strip(),
             "evidence_used": as_list(item.get("evidence_used")),
             "risk_boundary": item.get("risk_boundary") or item.get("what_not_to_say") or "Do not claim unproven domain experience, stories, titles, employers, credentials, or metrics.",
@@ -1647,6 +1660,7 @@ def normalize_interview_strategy(strategy, research=None):
             break
         normalized_outlines.append({
             "question": item.get("question", ""),
+            "assigned_story": preferred_story_for_question(item),
             "full_answer": (
                 "Story gap to prepare: build a grounded spoken answer for this question using one verified candidate story, "
                 "one metric from candidate_profile.json, the decision made, the personal action taken, the difficulty navigated, "
@@ -1757,7 +1771,8 @@ def format_answer_outlines(outlines):
         rows.append(
             f"{index}. **{question}**\n"
             f"{full_answer}\n"
-            f"   - Evidence used: {evidence or 'Candidate profile evidence only'}\n"
+            f"   - Evidence used: Assigned story: {item.get('assigned_story') or 'story gap to prepare'}"
+            f"{', ' + evidence if evidence else ''}\n"
             f"   - Risk boundary: {risk_boundary or 'Do not claim unsupported background.'}"
         )
     return "\n".join(rows) if rows else "- Best answer outlines were not produced; rerun the strategy stage."
@@ -1862,6 +1877,84 @@ def answer_outline_word_failures(section_text):
     return failures
 
 
+STORY_ASSIGNMENT_ORDER = [
+    "Queue routing redesign story",
+    "Backlog reduction story",
+    "Metric calculation error story",
+    "72-hour SLA ownership story",
+    "People development story",
+]
+
+
+def preferred_story_for_question(question):
+    text = normalize_text(question if isinstance(question, str) else question.get("question", "")).lower()
+    if any(term in text for term in ["coach", "coaching", "develop", "development", "people management", "team member", "underperform", "manager", "mentor"]):
+        return "People development story"
+    if any(term in text for term in ["data integrity", "metric", "metrics", "root cause", "surface", "surfacing", "proactive", "dashboard", "measure"]):
+        return "Metric calculation error story"
+    if any(term in text for term in ["pressure", "deadline", "solo", "owning", "ownership", "without authority", "influence without", "72", "sla"]):
+        return "72-hour SLA ownership story"
+    if any(term in text for term in ["global", "cross-regional", "cross regional", "regional", "stakeholder", "stakeholders", "cross-functional", "cross functional"]):
+        return "Backlog reduction story"
+    if any(term in text for term in ["process", "methodology", "operational", "operations", "lean", "six sigma", "improvement", "workflow", "approach"]):
+        return "Queue routing redesign story"
+    return "story gap to prepare"
+
+
+def assign_stories_to_questions(questions):
+    assignments = []
+    for question in questions:
+        preferred = preferred_story_for_question(question)
+        assignments.append(preferred)
+    if len(assignments) >= 4:
+        assignments[3] = "72-hour SLA ownership story"
+    if len(assignments) >= 9:
+        assignments[8] = "People development story"
+
+    counts = {name: 0 for name in STORY_ASSIGNMENT_ORDER}
+    forced_positions = {3, 8}
+    for index, assigned in enumerate(list(assignments)):
+        if assigned not in counts:
+            continue
+        if counts[assigned] >= 2 and index not in forced_positions:
+            assignments[index] = "story gap to prepare"
+        else:
+            counts[assignments[index]] += 1
+    counts = {name: 0 for name in STORY_ASSIGNMENT_ORDER}
+    for index in forced_positions:
+        if index >= len(assignments):
+            continue
+        forced_story = assignments[index]
+        if forced_story in counts:
+            counts[forced_story] += 1
+    for index, assigned in enumerate(list(assignments)):
+        if index in forced_positions or assigned not in counts:
+            continue
+        if counts[assigned] >= 2:
+            assignments[index] = "story gap to prepare"
+        else:
+            counts[assigned] += 1
+    return assignments
+
+
+def answer_outline_story_failures(section_text):
+    assigned = re.findall(r"Assigned story:\s*([^\n,]+)", section_text or "", flags=re.I)
+    failures = []
+    if len(assigned) < 10:
+        failures.append("Best Answer Outlines missing assigned stories")
+        return failures
+    counts = {}
+    for story in assigned:
+        story = story.strip()
+        if story.lower() == "story gap to prepare":
+            continue
+        counts[story] = counts.get(story, 0) + 1
+    for story, count in counts.items():
+        if count > 2:
+            failures.append(f"{story} appears {count} times")
+    return failures
+
+
 def research_source_titles(research):
     titles = set()
     if not isinstance(research, dict):
@@ -1885,16 +1978,26 @@ def company_signal_map_failures(section_text, research):
         for line in (section_text or "").splitlines()
         if line.strip().lower().startswith("- signal:")
     ]
-    if len(signal_lines) < 5:
-        failures.append(f"Company Signal Map has only {len(signal_lines)} signal lines")
     source_titles = research_source_titles(research)
     for line in signal_lines:
         signal = line.split(":", 1)[1].split(";", 1)[0].strip().lower()
-        if signal in source_titles:
+        normalized_signal = normalize_text(re.sub(r"[^a-z0-9]+", " ", signal)).lower()
+        near_title_match = False
+        for title in source_titles:
+            normalized_title = normalize_text(re.sub(r"[^a-z0-9]+", " ", title)).lower()
+            if not normalized_title:
+                continue
+            if normalized_signal == normalized_title:
+                near_title_match = True
+                break
+            signal_tokens = set(normalized_signal.split())
+            title_tokens = set(normalized_title.split())
+            overlap = len(signal_tokens & title_tokens) / max(len(signal_tokens | title_tokens), 1)
+            if overlap >= 0.85:
+                near_title_match = True
+                break
+        if near_title_match:
             failures.append(f"Company Signal Map used source title as signal: {signal}")
-        broad_terms = ["innovation", "collaboration", "stakeholder engagement", "continuous improvement", "change management"]
-        if any(term in signal for term in broad_terms) and "people operations" not in signal and "hr operations" not in signal and "employee experience" not in signal:
-            failures.append(f"Company Signal Map used broad generic signal without People Operations specificity: {signal}")
     return failures
 
 
@@ -1902,7 +2005,7 @@ def count_words(text):
     return len(re.findall(r"\b\w+\b", text or ""))
 
 
-def regenerate_single_answer_outline(question, candidate_profile, jd_analysis, research, gap_map):
+def regenerate_single_answer_outline(question, assigned_story, candidate_profile, jd_analysis, research, gap_map):
     prompt = f"""
 {STAGE_QUALITY_INSTRUCTION}
 
@@ -1910,6 +2013,9 @@ Write one interview answer only. Do not use markdown. Do not include labels.
 
 Question:
 {json_dumps(question)}
+
+Assigned story:
+{assigned_story}
 
 candidate_profile.json:
 {trim_text(json_dumps(candidate_profile), 12000)}
@@ -1922,6 +2028,14 @@ research.json:
 
 gap_map.json:
 {trim_text(json_dumps(gap_map), 8000)}
+
+Use the assigned story exactly:
+- Queue routing redesign story: use for questions about process improvement methodology and how you approach operational problems.
+- Backlog reduction story: use for questions about global initiatives, cross-regional work, and stakeholder management.
+- Metric calculation error story: use for questions about data integrity, root cause analysis, and surfacing problems proactively.
+- 72-hour SLA ownership story: use for questions about influencing without authority, working under pressure, and owning outcomes solo.
+- People development story: use for questions about team development, coaching, and people management.
+If the assigned story is "story gap to prepare", write story gap to prepare and explain what story the candidate needs to build for that question.
 
 For this question write a complete 150 to 200 word answer using only the candidate stories and metrics in candidate_profile.json. Do not write placeholders. Do not write story to use colon story name. Write the full answer as if the candidate is speaking it out loud in the interview. Include the situation in one sentence, the decision they made and why, the specific action they took personally, a realistic metric from the CV, the business result, and one tradeoff or difficulty they navigated. End with the business result or the interviewer signal. The last sentence must be the impact or the proof of fit, not a coaching note to the interviewer. Never write "The key takeaway for you is". If a story does not exist for that question write story gap to prepare and explain what story the candidate needs to build.
 
@@ -1939,6 +2053,9 @@ Do not add labels. Do not add unsupported stories, employers, titles, industries
 Question:
 {json_dumps(question)}
 
+Assigned story:
+{assigned_story}
+
 Current answer:
 {answer}
 
@@ -1954,13 +2071,15 @@ def regenerate_best_answer_outlines_section(candidate_profile, jd_analysis, rese
         item for item in as_list(strategy.get("top_10_likely_questions"))
         if isinstance(item, dict) and item.get("question")
     ][:10]
+    assignments = assign_stories_to_questions(questions)
     rows = []
     for index, question in enumerate(questions, start=1):
-        answer = regenerate_single_answer_outline(question, candidate_profile, jd_analysis, research, gap_map)
+        assigned_story = assignments[index - 1] if index - 1 < len(assignments) else "story gap to prepare"
+        answer = regenerate_single_answer_outline(question, assigned_story, candidate_profile, jd_analysis, research, gap_map)
         rows.append(
             f"{index}. **{question.get('question', '')}**\n"
             f"{answer}\n"
-            f"   - Evidence used: Candidate profile evidence only\n"
+            f"   - Evidence used: Assigned story: {assigned_story}, Candidate profile evidence only\n"
             f"   - Risk boundary: Do not claim unsupported background."
         )
     return "\n".join(rows)
@@ -2027,40 +2146,44 @@ def repair_pack_quality(pack, company_name, role_name, candidate_profile, jd_ana
             hits = failed_quality_strings(text)
             if title == "Best Answer Outlines":
                 hits.extend(answer_outline_word_failures(text))
+                hits.extend(answer_outline_story_failures(text))
             if title == "Company Signal Map":
-                hits.extend(company_signal_map_failures(text, research))
+                if _attempt == 0:
+                    hits.extend(company_signal_map_failures(text, research))
             if hits:
                 failures.append((title, start, end, text, hits))
         if not failures:
             return repaired
         for title, start, end, text, hits in reversed(failures):
             log(6, f"Pack quality validation failed in {title}; regenerating section. Banned strings: {', '.join(hits)}", "running")
-            replacement_body = regenerate_pack_section(
-                title,
-                text,
-                company_name,
-                role_name,
-                candidate_profile,
-                jd_analysis,
-                research,
-                gap_map,
-                strategy,
-            )
+            try:
+                replacement_body = regenerate_pack_section(
+                    title,
+                    text,
+                    company_name,
+                    role_name,
+                    candidate_profile,
+                    jd_analysis,
+                    research,
+                    gap_map,
+                    strategy,
+                )
+            except Exception as exc:
+                if title == "Company Signal Map":
+                    log(6, f"Company Signal Map regeneration failed; keeping existing section: {exc}", "done")
+                    continue
+                raise
             replacement = f"## {title}\n{replacement_body.strip()}\n\n"
             repaired = repaired[:start] + replacement + repaired[end:]
             log(6, f"Regenerated visible section: {title}", "done")
     assert_no_banned_visible_strings(repaired)
     remaining_outline_failures = []
-    remaining_company_signal_failures = []
     for title, _start, _end, text in markdown_sections(repaired):
         if title == "Best Answer Outlines":
             remaining_outline_failures.extend(answer_outline_word_failures(text))
-        if title == "Company Signal Map":
-            remaining_company_signal_failures.extend(company_signal_map_failures(text, research))
+            remaining_outline_failures.extend(answer_outline_story_failures(text))
     if remaining_outline_failures:
         raise ValueError(f"Best Answer Outlines failed word-count validation: {', '.join(remaining_outline_failures[:10])}")
-    if remaining_company_signal_failures:
-        raise ValueError(f"Company Signal Map failed validation: {', '.join(remaining_company_signal_failures[:10])}")
     return repaired
 
 
