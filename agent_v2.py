@@ -3,6 +3,7 @@ import re
 import json
 import time
 from datetime import datetime
+from contextvars import ContextVar
 from urllib.parse import urlparse
 from dotenv import load_dotenv
 from openai import OpenAI
@@ -18,8 +19,22 @@ MODEL_STRATEGY = os.getenv("OPENAI_MODEL_STRATEGY", "gpt-4o-mini")
 
 openai_client = OpenAI(api_key=OPENAI_API_KEY)
 
-results = {}
-progress_log = []
+_current_results = ContextVar("nailit_current_results", default=None)
+_current_progress_log = ContextVar("nailit_current_progress_log", default=None)
+
+
+def _active_results():
+    active = _current_results.get()
+    if active is None:
+        raise RuntimeError("Pipeline result state is not initialized for this job.")
+    return active
+
+
+def _active_progress_log():
+    active = _current_progress_log.get()
+    if active is None:
+        raise RuntimeError("Pipeline progress state is not initialized for this job.")
+    return active
 
 
 def log(stage, message, status="running"):
@@ -29,7 +44,7 @@ def log(stage, message, status="running"):
         "message": message,
         "status": status,
     }
-    progress_log.append(event)
+    _active_progress_log().append(event)
     print(f"[Stage {stage}] {message}")
 
 
@@ -39,11 +54,23 @@ def report_progress(progress_callback, stage, progress):
 
 
 def set_result(key, value):
-    results[key] = value
+    _active_results()[key] = value
 
 
 def get_result(key):
-    return results.get(key, "")
+    return _active_results().get(key, "")
+
+
+def safe_path_part(value, fallback="item"):
+    safe = re.sub(r"[^A-Za-z0-9_.-]+", "_", value or "").strip("_")
+    return safe[:80] or fallback
+
+
+def create_job_workspace(job_id):
+    safe_job_id = safe_path_part(job_id, "sync_job")
+    workspace = Path("jobs") / safe_job_id
+    workspace.mkdir(parents=True, exist_ok=True)
+    return workspace
 
 
 def normalize_text(text):
@@ -1035,31 +1062,36 @@ def run_full_pipeline(company_name, role_name, job_description, cv, extra, progr
 if __name__ == "__main__":
     print("agent_v2 ready")
 
-def run_pipeline(job_description, cv, extra, company_name, role_name, progress_callback=None):
-    results.clear()
-    progress_log.clear()
+def run_pipeline(job_description, cv, extra, company_name, role_name, progress_callback=None, job_id=None):
+    local_results = {}
+    local_progress_log = []
+    results_token = _current_results.set(local_results)
+    progress_token = _current_progress_log.set(local_progress_log)
 
-    pipeline_result = run_full_pipeline(
-        company_name=company_name,
-        role_name=role_name,
-        job_description=job_description,
-        cv=cv,
-        extra=extra,
-        progress_callback=progress_callback,
-    )
+    try:
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        safe_company = safe_path_part(company_name, "company")
+        safe_job_id = safe_path_part(job_id or f"sync_{timestamp}_{safe_company}", "sync_job")
+        workspace = create_job_workspace(safe_job_id)
 
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    safe_company = re.sub(r"[^A-Za-z0-9]+", "_", company_name).strip("_") or "company"
+        pipeline_result = run_full_pipeline(
+            company_name=company_name,
+            role_name=role_name,
+            job_description=job_description,
+            cv=cv,
+            extra=extra,
+            progress_callback=progress_callback,
+        )
 
-    md_filename = f"interview_prep_{safe_company}_{timestamp}.md"
-
-    markdown = f"""# Interview Prep Pack
+        markdown = f"""# Interview Prep Pack
 
 Company: {company_name}
 
 Role: {role_name}
 
 Generated: {timestamp}
+
+Job ID: {safe_job_id}
 
 ## Research Plan
 
@@ -1098,12 +1130,33 @@ Generated: {timestamp}
 {get_result("final_prep_pack")}
 """
 
-    Path(md_filename).write_text(markdown)
+        files = {
+            "research_plan.txt": get_result("research_plan"),
+            "source_manifest.txt": get_result("source_manifest"),
+            "source_mix.json": get_result("source_mix"),
+            "source_digest.txt": get_result("source_digest"),
+            "company_intelligence.txt": get_result("intel_report"),
+            "candidate_digest.txt": get_result("candidate_evidence_digest"),
+            "job_description_decode.txt": get_result("job_description_decode"),
+            "match_gap_risk_map.txt": get_result("match_gap_risk_map"),
+            "story_bank.txt": get_result("story_bank"),
+            "question_answer_bank.txt": get_result("question_answer_bank"),
+            "final_prep_pack.txt": get_result("final_prep_pack"),
+            "progress_log.json": json.dumps(local_progress_log, indent=2),
+        }
+        for filename, content in files.items():
+            (workspace / filename).write_text(content or "", encoding="utf8")
 
-    lua_filename = f"lua_brief_{safe_company}_{timestamp}.json"
-    Path(lua_filename).write_text(
-        pipeline_result.get("lua_mock_interview_brief", "{}"),
-        encoding="utf8",
-    )
+        md_path = workspace / "prep_pack.md"
+        md_path.write_text(markdown, encoding="utf8")
 
-    return md_filename
+        lua_path = workspace / "lua_brief.json"
+        lua_path.write_text(
+            pipeline_result.get("lua_mock_interview_brief", "{}"),
+            encoding="utf8",
+        )
+
+        return str(md_path)
+    finally:
+        _current_progress_log.reset(progress_token)
+        _current_results.reset(results_token)

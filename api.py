@@ -12,7 +12,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 
-from agent_v2 import get_result, run_pipeline
+from agent_v2 import run_pipeline
 from job_store import create_job, get_job, update_job
 from lua_coach import build_lua_coach_response
 from lua_benchmark_coach import build_benchmark_question, build_selected_answer_training_card, build_benchmark_practice_feedback
@@ -113,7 +113,7 @@ def prepare(req: PrepRequest):
     output_path = Path(output_file)
     markdown_file = output_path.with_suffix(".md")
     product_json_file = Path(str(output_path).replace("interview_prep_", "product_brief_"))
-    lua_brief_file = Path(str(output_path).replace("interview_prep_", "lua_brief_")).with_suffix(".json")
+    lua_brief_file = output_path.parent / "lua_brief.json"
 
     markdown = markdown_file.read_text() if markdown_file.exists() else ""
     product_json = None
@@ -145,14 +145,16 @@ def _read_pipeline_files(output_file):
     output_path = Path(output_file)
     markdown_file = output_path.with_suffix(".md")
     product_json_file = Path(str(output_path).replace("interview_prep_", "product_brief_"))
+    source_manifest_file = output_path.parent / "source_manifest.txt"
 
     markdown = markdown_file.read_text() if markdown_file.exists() else ""
     product_json = None
+    source_manifest = source_manifest_file.read_text() if source_manifest_file.exists() else ""
 
     if product_json_file.exists():
         product_json = json.loads(product_json_file.read_text())
 
-    return markdown, product_json
+    return markdown, product_json, source_manifest
 
 
 def _run_prepare_job(job_id, payload):
@@ -174,9 +176,10 @@ def _run_prepare_job(job_id, payload):
             company_name=payload.get("company_name", ""),
             role_name=payload.get("role_name", ""),
             progress_callback=progress_callback,
+            job_id=job_id,
         )
 
-        markdown, product_json = _read_pipeline_files(output_file)
+        markdown, product_json, source_manifest = _read_pipeline_files(output_file)
         update_job(
             job_id,
             status="done",
@@ -184,7 +187,7 @@ def _run_prepare_job(job_id, payload):
             progress=100,
             markdown_output=markdown,
             product_json=product_json or {},
-            source_manifest=get_result("source_manifest"),
+            source_manifest=source_manifest,
             output_file=output_file,
             error="",
         )
