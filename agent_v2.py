@@ -275,9 +275,6 @@ def important_role_terms(role_name, job_description=""):
 
 def source_matches_target(source, company_name, role_name, job_description):
     source_type = source.get("source_type", "")
-    if source_type == "Official company source":
-        return True
-
     company_slug = re.sub(r"[^a-z0-9]+", "", (company_name or "").lower())
     text = " ".join([
         source.get("title", ""),
@@ -289,6 +286,10 @@ def source_matches_target(source, company_name, role_name, job_description):
     role_terms = important_role_terms(role_name, job_description)
     has_role = not role_terms or any(term in text for term in role_terms)
     has_interview_process = any(term in text for term in ["interview", "hiring", "how we hire", "recruit"])
+    has_values = any(term in text for term in ["values", "commitments", "culture", "principles"])
+
+    if source_type == "Official company source":
+        return has_company and (has_role or has_interview_process or has_values)
 
     if "directional" in source_type.lower() or source_type in {
         "Public prep or candidate experience",
@@ -859,6 +860,10 @@ Job description:
 
 Read between the lines. This is not a summary.
 
+Critical grounding rules:
+Do not add technical requirements, credentials, algorithms, software design, cybersecurity, AI, or domain requirements unless they appear in the JD or are explicitly supported by a relevant official source.
+If a requirement comes only from an adjacent or generic source, label it as adjacent and low confidence or omit it.
+
 Return this structure:
 
 ### Role decoded in plain English
@@ -1109,6 +1114,9 @@ Rules:
 No unsupported claims.
 No invented source URLs.
 Do not use vague basis labels such as "Source 1" unless they are accompanied by title and URL.
+Do not use vague basis labels such as "Role requirements" unless followed by the exact JD wording or a source title plus URL.
+Do not create requirements from generic Google Careers search pages or adjacent official pages unless the source is clearly about Google Trust and Safety, Google Program Manager, or Google hiring process.
+Do not claim algorithms, software design, AI, cybersecurity, degrees, or technical credentials are required unless the provided JD or a relevant official source explicitly says so.
 Do not call Reddit, Glassdoor, Blind, YouTube, blogs, forums, or prep sites official.
 Do not state exact interview rounds as fact unless official source confirms them.
 Do not invent candidate employers, titles, industries, credentials, degrees, domain expertise, or authority.
@@ -1191,6 +1199,7 @@ No invented candidate background.
 No unsupported metrics. Story Bank can only use CV and answer bank stories; missing stories belong in "story gaps to prepare."
 Interview process must use "likely interview areas," "observed public pattern," "possible round type," confidence level, and what it tests. Do not list a fixed sequence or exact number as expected unless official sources confirm it.
 Evidence Ledger basis must include source title plus URL for web claims, or JD/CV/answer bank/transcript basis for candidate claims.
+Do not include unsupported technical requirements such as algorithms, software design, AI, cybersecurity, degrees, or technical credentials unless the provided JD or a clearly relevant official source says so.
 
 Return this exact structure:
 
