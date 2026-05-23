@@ -963,6 +963,7 @@ Create a story bank that uses only real candidate evidence.
 Critical Story Bank rules:
 Only use stories that are directly supported by CV, answer bank, or user context.
 Do not invent new projects, domains, teams, training programs, automation initiatives, conflict-resolution cases, satisfaction scores, alignment scores, incident reductions, or any metric not present in the candidate evidence.
+Preserve the candidate's actual story lane. Do not turn "launch readiness" into "product launch," "risk tracking" into "Trust and Safety incident reduction," or "dashboarding" into "automation" unless the candidate material says that.
 You may sharpen wording, but metrics must be listed only if already supplied. If a useful metric is missing, write "metric to prepare" rather than inventing a number.
 If there are fewer than 10 supported stories, create fewer stories. Put missing coverage in "Story gaps to prepare."
 
