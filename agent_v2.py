@@ -2071,6 +2071,20 @@ def regenerate_best_answer_outlines_section(candidate_profile, jd_analysis, rese
         item for item in as_list(strategy.get("top_10_likely_questions"))
         if isinstance(item, dict) and item.get("question")
     ][:10]
+    seen_questions = {normalize_text(item.get("question", "")).lower() for item in questions}
+    for item in as_list(strategy.get("best_answer_outlines")):
+        if len(questions) >= 10:
+            break
+        if not isinstance(item, dict):
+            continue
+        question_text = item.get("question")
+        if not question_text:
+            continue
+        normalized = normalize_text(question_text).lower()
+        if normalized in seen_questions:
+            continue
+        questions.append({"question": question_text})
+        seen_questions.add(normalized)
     assignments = assign_stories_to_questions(questions)
     rows = []
     for index, question in enumerate(questions, start=1):
