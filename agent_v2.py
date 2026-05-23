@@ -2005,7 +2005,38 @@ def count_words(text):
     return len(re.findall(r"\b\w+\b", text or ""))
 
 
+def assigned_story_evidence(assigned_story):
+    evidence = {
+        "Queue routing redesign story": (
+            "Manual queue management was costing one full hour of response time on every case. "
+            "The candidate mapped the case journey, rejected the assumption that the issue was capacity, "
+            "piloted automated routing with one cohort, reduced initial response time by one hour per case, "
+            "saved 40 weekly hours, and improved quality by 14%."
+        ),
+        "Backlog reduction story": (
+            "Cases were falling between EMEA, North America, and APAC handovers. The candidate co-designed "
+            "a shared handover system with regional leads without direct authority, reduced backlog by 34%, "
+            "and converted skeptical stakeholders into advocates."
+        ),
+        "Metric calculation error story": (
+            "The candidate rebuilt a key SLA metric from raw case data, found a denominator error, surfaced it "
+            "transparently with a fix, and secondary response time improved from 77% to 93%."
+        ),
+        "72-hour SLA ownership story": (
+            "While the manager was away, the candidate led a 72-hour metric gap analysis using Six Sigma structure, "
+            "5 Whys, SME delegation, and action planning. Two SLAs were renegotiated, financial penalties were "
+            "eliminated, and operations efficiency improved by about 15%."
+        ),
+        "People development story": (
+            "The candidate diagnosed skill gaps in an underperforming specialist, built weekly QA sessions, "
+            "reverse shadowing, and check-ins, and the specialist became a top performer and SME."
+        ),
+    }
+    return evidence.get(assigned_story, "")
+
+
 def regenerate_single_answer_outline(question, assigned_story, candidate_profile, jd_analysis, research, gap_map):
+    story_evidence = assigned_story_evidence(assigned_story)
     prompt = f"""
 {STAGE_QUALITY_INSTRUCTION}
 
@@ -2016,6 +2047,9 @@ Question:
 
 Assigned story:
 {assigned_story}
+
+Assigned story evidence you must use:
+{story_evidence or "No grounded story is assigned. Write story gap to prepare and explain what story the candidate needs to build."}
 
 candidate_profile.json:
 {trim_text(json_dumps(candidate_profile), 12000)}
@@ -2036,6 +2070,7 @@ Use the assigned story exactly:
 - 72-hour SLA ownership story: use for questions about influencing without authority, working under pressure, and owning outcomes solo.
 - People development story: use for questions about team development, coaching, and people management.
 If the assigned story is "story gap to prepare", write story gap to prepare and explain what story the candidate needs to build for that question.
+If an assigned story evidence block is provided, the answer must be built around that evidence block and must not use any other candidate story. Do not swap in queue routing, backlog, metric error, SLA ownership, or people development unless that exact story is assigned.
 
 For this question write a complete 150 to 200 word answer using only the candidate stories and metrics in candidate_profile.json. Do not write placeholders. Do not write story to use colon story name. Write the full answer as if the candidate is speaking it out loud in the interview. Include the situation in one sentence, the decision they made and why, the specific action they took personally, a realistic metric from the CV, the business result, and one tradeoff or difficulty they navigated. End with the business result or the interviewer signal. The last sentence must be the impact or the proof of fit, not a coaching note to the interviewer. Never write "The key takeaway for you is". If a story does not exist for that question write story gap to prepare and explain what story the candidate needs to build.
 
@@ -2055,6 +2090,9 @@ Question:
 
 Assigned story:
 {assigned_story}
+
+Assigned story evidence you must use:
+{story_evidence or "No grounded story is assigned. Write story gap to prepare and explain what story the candidate needs to build."}
 
 Current answer:
 {answer}
