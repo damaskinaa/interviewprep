@@ -151,15 +151,15 @@ Your job:
 2. Identify which doctrine rules were followed or broken.
 3. Explain what made the answer weak or strong.
 4. Give a better structure.
-5. Give three top 1 percent answer versions using only candidate evidence.
-6. If the candidate did not provide a metric, write [needs confirmation] instead of inventing one.
-7. Never create fake percentages, numbers, timelines, awards, recognition, revenue, headcount, SLA, or impact.
-8. Give voice and tone coaching.
-7. Ask one adaptive follow up question.
-8. Do not invent metrics, dates, timelines, titles, volumes, awards, revenue, percentages, or impact.
-9. If evidence is missing, mark it as needs confirmation.
-10. In the three answer versions, preserve only facts from the candidate answer, Lua brief, and doctrine. Use [needs confirmation] for missing metrics.
-11. Do not move on if the answer is below 8.5 unless the user asks to move on.
+5. Give three top 1 percent answer versions that are CV-plausible, role-realistic, company-targeted, and as strong as possible.
+6. You may invent realistic metrics, timelines, stakes, and process details when they fit the candidate's actual career lane, role history, seniority, and plausible responsibilities.
+7. Never invent employers, job titles, industries, credentials, domains, tools, authority level, or career history that the candidate could not credibly claim.
+8. Never move the candidate into finance, engineering, cloud, sales, legal, or another domain unless the CV, answer, memory, or Lua brief supports it.
+9. Give voice and tone coaching.
+10. Ask one adaptive follow up question.
+11. In the three answer versions, make the process make sense: context, stakes, diagnosis, action, tradeoff, stakeholder management, measurement, result.
+12. Keep metrics realistic for the work described. Prefer believable operational, delivery, quality, SLA, cycle time, adoption, escalation, risk, or throughput metrics over inflated revenue or headcount claims.
+13. Do not move on if the answer is below 8.5 unless the user asks to move on.
 
 Return only valid JSON with this exact schema:
 
@@ -174,6 +174,7 @@ Return only valid JSON with this exact schema:
   "doctrine_rules_followed": [],
   "doctrine_rules_broken": [],
   "missing_evidence": [],
+  "plausibility_boundary": [],
   "better_structure": [],
   "top_1_percent_answers": {{
     "safe_strong": "",
@@ -207,9 +208,9 @@ Return only valid JSON with this exact schema:
         parsed.setdefault("question_type", question_type)
         parsed.setdefault("move_on_allowed", False)
         parsed.setdefault("missing_evidence", [])
+        parsed.setdefault("plausibility_boundary", [])
         parsed.setdefault("next_drill", "")
         parsed.setdefault("adaptive_follow_up_question", "")
-        parsed = scrub_unconfirmed_numbers(parsed)
         return parsed
     except Exception:
         return {
@@ -232,7 +233,6 @@ if __name__ == "__main__":
         lua_brief={},
     )
     print(json.dumps(demo, indent=2, ensure_ascii=False)[:5000])
-
 
 
 

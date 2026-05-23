@@ -15,3 +15,12 @@ lua_brief_*.md
 
 backend.log
 *.log
+*.db
+.DS_Store
+agent_safe_before_v2.py
+agent_v1_stable_backup.py
+agent_v2_part2_append.py
+agent_v2_part3_append.py
+benchmark_practice.patch
+mastery_writer.patch
+state_fix.patch

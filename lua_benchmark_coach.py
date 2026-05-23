@@ -43,12 +43,20 @@ You are an elite career coach and interview strategist.
 
 Create ONE benchmark learning card.
 
-This is NOT truthful CV mode.
-This is benchmark learning mode.
+This is CV-plausible elite answer mode.
 
-The candidate wants top 1 percent ideal answers, invented or inspired by public interview patterns.
-The answers can be hypothetical and idealized.
-Clearly label them as benchmark practice answers, not verified personal experience.
+The candidate wants top 1 percent winning interview answers inspired by:
+1. elite public interview patterns,
+2. the company and role research in the Nailit pack,
+3. the candidate's actual career lane, CV, answer bank, and stored coach memory.
+
+You may invent the specific story, process, tradeoffs, and metrics, but only inside a realistic boundary for someone with this candidate's roles, seniority, skills, and plausible responsibilities.
+
+Do not invent employers, job titles, industries, credentials, domains, tools, authority level, or career history that the candidate could not credibly claim.
+Do not move the candidate into finance, engineering, cloud, sales, legal, or another domain unless their CV or memory supports it.
+Do not create impossible scale, budget, headcount, revenue, or executive authority.
+
+The answers must be as strong as possible while still sounding like this person could have said them.
 
 Company:
 {company}
@@ -76,17 +84,18 @@ Doctrine:
 
 Rules:
 1. Pick one high probability interview question.
-2. Give exactly three top 1 percent benchmark answers.
-3. Do not limit answers to the candidate CV.
-4. Use stored coach memory when it is relevant.
-5. If stored memory conflicts with the request, prefer the most specific and recent memory.
-6. If memory improves an answer, make that visible in why_it_works.
-7. Do not quote memory blindly. Convert it into elite answer strategy.
-8. Use elite interview patterns from public candidate examples, hiring guides, company style, STAR, Hero Journey, result first, tradeoff, result squared, and senior tone.
-9. Each answer must include why it works, metrics used, structure, tone notes, and risk.
-10. Make answers specific, senior, and memorable.
-11. Do not say these are the candidate's real facts.
-12. Return only valid JSON.
+2. Give exactly three top 1 percent answers.
+3. Make every answer CV-plausible, role-realistic, company-targeted, and senior.
+4. You may invent realistic metrics when they fit the candidate's role and project type.
+5. Explain the winning process behind the answer: diagnosis, operating rhythm, stakeholder control, tradeoff, execution, measurement, result.
+6. Use stored coach memory when it is relevant.
+7. If stored memory conflicts with the request, prefer the most specific and recent memory.
+8. If memory improves an answer, make that visible in why_it_works.
+9. Do not quote memory blindly. Convert it into elite answer strategy.
+10. Use elite interview patterns from public candidate examples, hiring guides, company style, STAR, Hero Journey, result first, tradeoff, result squared, and senior tone.
+11. Each answer must include why it works, realistic metrics used, structure, tone notes, and plausibility risk.
+12. Do not say these are verified personal facts. Say they are elite CV-plausible practice answers.
+13. Return only valid JSON.
 
 Schema:
 {{
@@ -102,10 +111,11 @@ Schema:
   "answer_options": [
     {{
       "option_id": "A",
-      "label": "executive benchmark",
+      "label": "safest elite realistic answer",
       "answer": "",
       "why_it_works": "",
       "metrics_used": [],
+      "winning_process": [],
       "structure_used": [
         "result first",
         "STAR",
@@ -115,29 +125,34 @@ Schema:
       ],
       "tone_notes": "",
       "seniority_markers": [],
-      "risk": "Benchmark invented answer, not verified personal experience"
+      "plausibility_boundary": "",
+      "risk": "Elite CV-plausible practice answer, not a verified personal fact"
     }},
     {{
       "option_id": "B",
-      "label": "concise pressure proof",
+      "label": "strongest realistic stretch",
       "answer": "",
       "why_it_works": "",
       "metrics_used": [],
+      "winning_process": [],
       "structure_used": [],
       "tone_notes": "",
       "seniority_markers": [],
-      "risk": "Benchmark invented answer, not verified personal experience"
+      "plausibility_boundary": "",
+      "risk": "Elite CV-plausible practice answer, not a verified personal fact"
     }},
     {{
       "option_id": "C",
-      "label": "story driven Hero Journey",
+      "label": "bold top 1 percent answer",
       "answer": "",
       "why_it_works": "",
       "metrics_used": [],
+      "winning_process": [],
       "structure_used": [],
       "tone_notes": "",
       "seniority_markers": [],
-      "risk": "Benchmark invented answer, not verified personal experience"
+      "plausibility_boundary": "",
+      "risk": "Elite CV-plausible practice answer, not a verified personal fact"
     }}
   ],
   "coach_instruction": "Pick A, B, or C. Then we will train it until it sounds natural."
@@ -148,6 +163,11 @@ Schema:
     data = safe_json(raw)
     data.setdefault("status", "benchmark_ready")
     data.setdefault("mode", "benchmark_learning")
+    for option in data.get("answer_options", []) or []:
+        option.setdefault("metrics_used", [])
+        option.setdefault("winning_process", [])
+        option.setdefault("plausibility_boundary", "")
+        option.setdefault("risk", "Elite CV-plausible practice answer, not a verified personal fact")
     return data
 
 
@@ -164,6 +184,9 @@ Selected answer:
 {json.dumps(selected_answer, ensure_ascii=False)[:9000]}
 
 Break it into a practice plan.
+Preserve the selected answer's realistic metrics and winning process.
+The chunks should help the candidate sound natural, not memorized.
+If the answer includes invented-but-plausible metrics, train them as interview practice metrics and keep them believable.
 
 Return only valid JSON.
 The memorisation_chunks array must contain exactly 5 chunks.
@@ -193,12 +216,15 @@ Return only valid JSON:
     "confidence": "",
     "words_to_avoid": []
   }},
+  "metric_and_process_notes": [],
   "first_drill": "",
   "instruction": "Read the opening out loud first. Say done when finished."
 }}
 """
     raw = ask_llm(prompt, max_tokens=2500, retries=3)
-    return safe_json(raw)
+    data = safe_json(raw)
+    data.setdefault("metric_and_process_notes", [])
+    return data
 
 
 def build_benchmark_practice_feedback(
@@ -238,7 +264,11 @@ Relevant coach memory:
 Relevant memory count:
 {len(relevant_memory_items)}
 
-Score hard against meaning, structure, seniority, confidence, pace, tone, filler words, rambling, metrics, result first, STAR, Hero Journey, and the relevant coach memory above.
+Score hard against meaning, structure, seniority, confidence, pace, tone, filler words, rambling, realistic metrics, winning process, result first, STAR, Hero Journey, and the relevant coach memory above.
+
+The selected answer may contain invented-but-CV-plausible story details and metrics. Do not punish the user because the metric is invented. Punish only if it sounds unrealistic for the candidate's role, too inflated, inconsistent, vague, or disconnected from the process.
+
+The standard is top 1 percent interview delivery: specific, senior, believable, company-relevant, and natural.
 
 If relevant memory influenced scoring:
 1. Add it into memory_used
@@ -265,6 +295,7 @@ Schema:
   "verdict": "",
   "what_matched": [],
   "what_was_missing": [],
+  "plausibility_feedback": [],
   "memory_used": [
     {{
       "memory_title": "",
@@ -290,4 +321,5 @@ Schema:
     data.setdefault("session_id", session_id)
     data.setdefault("should_respond", True)
     data.setdefault("move_on_allowed", False)
+    data.setdefault("plausibility_feedback", [])
     return data
