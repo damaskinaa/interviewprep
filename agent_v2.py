@@ -1829,57 +1829,14 @@ Job ID: {safe_job_id}
 
 {get_result("source_manifest")}
 
-## Company Intelligence
+## Structured Artifacts Saved
 
-{get_result("intel_report")}
-
-        ## Candidate Evidence Digest
-
-{get_result("candidate_evidence_digest")}
-
-## Candidate Profile JSON
-
-{get_result("candidate_profile_json")}
-
-## JD Analysis JSON
-
-{get_result("jd_analysis_json")}
-
-## Research JSON
-
-{get_result("research_json")}
-
-## Gap Map JSON
-
-{get_result("gap_map_json")}
-
-## Interview Strategy JSON
-
-{get_result("interview_strategy_json")}
-
-## Pack Validation JSON
-
-{get_result("pack_validation_json")}
-
-## Job Description Decode
-
-{get_result("job_description_decode")}
-
-## Match Gap Risk Map
-
-{get_result("match_gap_risk_map")}
-
-## Story Bank
-
-{get_result("story_bank")}
-
-## Question And Answer Bank
-
-{get_result("question_answer_bank")}
-
-## Evidence Ledger
-
-{get_result("evidence_ledger")}
+- candidate_profile.json
+- jd_analysis.json
+- research.json
+- gap_map.json
+- interview_strategy.json
+- pack_validation.json
 
 ## Final Prep Pack
 
