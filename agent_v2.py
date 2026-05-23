@@ -547,6 +547,23 @@ def create_candidate_evidence_digest(company_name, role_name, job_description, c
     log(2, "Creating candidate evidence digest", "running")
 
     clean_extra = strip_external_research(extra)
+    answer_bank = ""
+
+    match = re.search(
+        r"\[CANDIDATE_ANSWER_BANK\](.*?)\[/CANDIDATE_ANSWER_BANK\]",
+        clean_extra,
+        flags=re.S,
+    )
+
+    if match:
+        answer_bank = normalize_text(match.group(1))
+        clean_extra = re.sub(
+            r"\[CANDIDATE_ANSWER_BANK\].*?\[/CANDIDATE_ANSWER_BANK\]",
+            "",
+            clean_extra,
+            flags=re.S,
+        )
+
     combined = f"""
 JOB DESCRIPTION:
 {normalize_text(job_description)}
@@ -554,7 +571,10 @@ JOB DESCRIPTION:
 CV:
 {normalize_text(cv)}
 
-ANSWER BANK AND EXTRA CONTEXT:
+Candidate's own prepared answers and stories:
+{answer_bank}
+
+EXTRA CONTEXT:
 {normalize_text(clean_extra)}
 """
 
@@ -586,6 +606,9 @@ Metrics, percentages, time saved, SLA, KPI, volume, headcount, backlog, financia
 
 ### Strong stories found
 Story name, situation, action, result, competency.
+
+### Prepared answer bank evidence
+Candidate's own prepared answers and stories. Preserve useful story details, examples, language, and signals separately from CV facts.
 
 ### Leadership evidence
 People leadership, coaching, conflict, performance management, hiring, delegation.
