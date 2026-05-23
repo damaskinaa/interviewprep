@@ -85,7 +85,7 @@ class PrepRequest(BaseModel):
     role_name: str = Field(min_length=1, max_length=120)
     job_description: str = Field(min_length=1, max_length=120000)
     cv: str = Field(min_length=1, max_length=120000)
-    extra: str = Field(default="", max_length=120000)
+    extra: str = Field(default="", max_length=900000)
 
 
 def require_app_key(x_app_key: str = Header(default="")):
