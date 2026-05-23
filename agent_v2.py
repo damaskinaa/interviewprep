@@ -1574,9 +1574,11 @@ No new candidate stories or metrics.
 
 For best_answer_outlines:
 For each of the top 10 questions write a complete 150 to 200 word answer using only the candidate stories and metrics in candidate_profile.json. Do not write placeholders. Do not write story to use colon story name. Write the full answer as if the candidate is speaking it out loud in the interview. Include the situation in one sentence, the decision they made and why, the specific action they took personally, a realistic metric from the CV, the business result, and one tradeoff or difficulty they navigated. End with the interviewer takeaway. If a story does not exist for that question write story gap to prepare and explain what story the candidate needs to build.
+The full_answer field is invalid if it is under 150 words. Count the words before output. Do not compress the answer into a summary.
 
 For section_strategy.company_signal_map:
 Read research.json carefully. Extract exactly 5 company specific signals that are true for this company and not generic to all companies. For each signal write: the signal itself, why it matters for this specific role, and one sentence on how the candidate should use it in their answer. If research is insufficient to produce 5 real signals say research insufficient and list what signals you could confirm versus what is missing. Never output no grounded item available. Never output a generic signal that could apply to any company.
+Each signal must be anchored in a specific Google source, public Google hiring signal, or Google People Operations relevant research item from research.json. Generic signals like collaboration, innovation, or data driven decision making are invalid unless tied to a specific Google source and People Operations implication.
 """
     strategy = ask_json(prompt, model=MODEL_STRATEGY, max_tokens=9000, fallback={})
     strategy = normalize_interview_strategy(strategy, research=research)
@@ -1861,12 +1863,29 @@ def failed_quality_strings(text):
     return [needle for needle in PACK_QUALITY_BANNED_STRINGS if needle in lowered]
 
 
+def answer_outline_word_failures(section_text):
+    blocks = re.split(r"\n(?=\d+\. \*\*)", section_text or "")
+    failures = []
+    for block in blocks:
+        clean = block.strip()
+        if not re.match(r"^\d+\. \*\*", clean):
+            continue
+        answer_text = re.sub(r"^\d+\. \*\*.*?\*\*\s*", "", clean, flags=re.S)
+        answer_text = answer_text.split("\n   - Evidence used:", 1)[0].strip()
+        word_count = len(re.findall(r"\b\w+\b", answer_text))
+        if word_count and word_count < 150:
+            heading = clean.splitlines()[0]
+            failures.append(f"{heading} has {word_count} words")
+    return failures
+
+
 def regenerate_pack_section(section_title, section_text, company_name, role_name, candidate_profile, jd_analysis, research, gap_map, strategy):
     banned = ", ".join(PACK_QUALITY_BANNED_STRINGS)
     if section_title == "Best Answer Outlines":
         specific_instruction = """
 Rewrite this section as the Best Answer Outlines body only.
 For each of the top 10 questions write a complete 150 to 200 word answer using only the candidate stories and metrics in candidate_profile.json. Do not write placeholders. Do not write story to use colon story name. Write the full answer as if the candidate is speaking it out loud in the interview. Include the situation in one sentence, the decision they made and why, the specific action they took personally, a realistic metric from the CV, the business result, and one tradeoff or difficulty they navigated. End with the interviewer takeaway. If a story does not exist for that question write story gap to prepare and explain what story the candidate needs to build.
+Every answer must be at least 150 words and no more than 200 words. Count words before returning the section.
 """
     elif section_title == "Company Signal Map":
         specific_instruction = """
@@ -1920,6 +1939,8 @@ def repair_pack_quality(pack, company_name, role_name, candidate_profile, jd_ana
         failures = []
         for title, start, end, text in sections:
             hits = failed_quality_strings(text)
+            if title == "Best Answer Outlines":
+                hits.extend(answer_outline_word_failures(text))
             if hits:
                 failures.append((title, start, end, text, hits))
         if not failures:
@@ -1941,6 +1962,12 @@ def repair_pack_quality(pack, company_name, role_name, candidate_profile, jd_ana
             repaired = repaired[:start] + replacement + repaired[end:]
             log(6, f"Regenerated visible section: {title}", "done")
     assert_no_banned_visible_strings(repaired)
+    remaining_outline_failures = []
+    for title, _start, _end, text in markdown_sections(repaired):
+        if title == "Best Answer Outlines":
+            remaining_outline_failures.extend(answer_outline_word_failures(text))
+    if remaining_outline_failures:
+        raise ValueError(f"Best Answer Outlines failed word-count validation: {', '.join(remaining_outline_failures[:10])}")
     return repaired
 
 
