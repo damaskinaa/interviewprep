@@ -2035,6 +2035,54 @@ def assigned_story_evidence(assigned_story):
     return evidence.get(assigned_story, "")
 
 
+def answer_matches_assigned_story(answer, assigned_story):
+    if assigned_story == "story gap to prepare":
+        return "story gap to prepare" in normalize_text(answer).lower()
+    signatures = {
+        "Queue routing redesign story": ["queue", "routing", "40", "14%"],
+        "Backlog reduction story": ["backlog", "34%", "emea", "apac"],
+        "Metric calculation error story": ["metric", "denominator", "77%", "93%"],
+        "72-hour SLA ownership story": ["72-hour", "sla", "5 whys", "15%"],
+        "People development story": ["underperforming", "weekly qa", "reverse shadowing", "sme"],
+    }
+    text = normalize_text(answer).lower()
+    terms = signatures.get(assigned_story, [])
+    return sum(1 for term in terms if term in text) >= 2
+
+
+def fallback_answer_for_story(question, assigned_story):
+    question_text = question.get("question", "") if isinstance(question, dict) else str(question)
+    if assigned_story == "story gap to prepare":
+        return (
+            f"Story gap to prepare: for '{question_text}', I would need a grounded example that is not yet proven in the CV or answer bank. "
+            "The story should show the specific business problem, the decision I personally made, the stakeholders involved, the metric I used to define success, "
+            "the tradeoff I had to navigate, and the measurable result. For this Google People Operations role, the strongest gap story would connect global process "
+            "improvement, employee or stakeholder experience, adoption governance, and data-driven control plans. I should not invent a People Operations domain story, "
+            "a Google-specific experience, or a credential I do not have. The right preparation step is to build a truthful story from my operations background that "
+            "shows transferable process excellence: how I diagnosed the issue, aligned stakeholders, piloted the fix, measured adoption, and controlled the process after launch. "
+            "That would give the interviewer confidence that I can translate proven operational discipline into the People Operations service-delivery environment."
+        )
+    story_bodies = {
+        "Queue routing redesign story": (
+            "I would use my queue routing redesign example. In that operation, manual queue management was adding one full hour of response time to every case, and the easy assumption was that we simply needed more capacity. I decided to test the process first because the case journey showed that routing friction, not effort, was the bigger constraint. I mapped the workflow, identified where cases waited or moved unnecessarily, and piloted automated routing with one cohort before scaling it. The tradeoff was that automation could improve speed but create quality risk if the routing logic was wrong, so I protected the pilot with monitoring and quality checks. The result was a one-hour reduction in initial response time per case, 40 weekly hours saved, and a 14% quality improvement because the team could redirect time into higher-value review work. That is the same operating discipline I would bring to Google: diagnose before solving, pilot before scaling, and measure both speed and quality."
+        ),
+        "Backlog reduction story": (
+            "I would use my cross-regional backlog reduction story. In that situation, work was falling between EMEA, North America, and APAC because the handover model did not create clear ownership across time zones. I decided not to treat it as a local productivity issue; I treated it as a global operating-system problem. I worked with regional leads, even without direct authority, to co-design a shared handover process with clearer ownership, better visibility, and more consistent follow-through. The difficulty was that each region had its own habits and constraints, so I had to make the process useful enough for stakeholders to adopt rather than simply telling them to comply. The result was a 34% backlog reduction and a shift from skepticism to advocacy among the regional partners. For a Google People Operations role, that shows I can improve a global service process by aligning stakeholders around a practical operating rhythm."
+        ),
+        "Metric calculation error story": (
+            "I would use my metric calculation error story. I noticed that a key SLA metric did not match the operational reality teams were seeing, so I rebuilt the calculation from raw case data instead of accepting the dashboard at face value. The decision I made was to investigate the measurement system first, because improving the wrong number would have hidden the real problem. I found a denominator error, surfaced it transparently, and proposed a correction so the team could manage against the right signal. The tradeoff was that raising a metric flaw can create discomfort, especially when stakeholders are already relying on the existing report, so I focused the conversation on decision quality rather than blame. Once corrected, secondary response time improved from 77% to 93%. That is the kind of data integrity mindset I would bring to Google People Operations: metrics should help leaders see reality, prioritize accurately, and sustain process improvement."
+        ),
+        "72-hour SLA ownership story": (
+            "I would use my 72-hour SLA ownership story. While my manager was away, I took ownership of a time-sensitive metric gap analysis because the operation needed a clear answer quickly. I chose a Six Sigma-style structure rather than a reactive status update, using the 5 Whys, SME delegation, and action planning to separate symptoms from root causes. I personally coordinated the analysis, brought the right experts into the work, and kept the focus on actions that would protect the business outcome. The tradeoff was speed versus completeness: we had to move quickly, but I still needed enough evidence to make credible recommendations. The result was that two SLAs were renegotiated, client recommendations were implemented, financial penalties were eliminated, and operational efficiency improved by about 15%. That experience proves I can own ambiguous, high-pressure process work and turn it into measurable operating impact."
+            " It also shows that I can protect service quality while moving fast, which is essential when global People Operations teams depend on reliable delivery."
+        ),
+        "People development story": (
+            "I would use my people development story. I had an underperforming specialist whose output was creating quality risk, and I decided to treat it as a capability-building problem rather than only a performance-management issue. I diagnosed the specific skill gaps, then built a practical support rhythm with weekly QA sessions, reverse shadowing, and regular check-ins so the person could see what good looked like and practice it consistently. The tradeoff was that coaching required time that could have gone into immediate production work, but I believed improving capability would create a better long-term operating result than repeatedly correcting mistakes. Over time, the specialist became a top performer and an SME, which improved team resilience because expertise was no longer concentrated in only a few people. For Google People Operations, that is the proof of fit: I improve systems and people capability together, so process changes are adopted and sustained."
+        ),
+    }
+    return story_bodies.get(assigned_story, story_bodies["Queue routing redesign story"])
+
+
 def regenerate_single_answer_outline(question, assigned_story, candidate_profile, jd_analysis, research, gap_map):
     story_evidence = assigned_story_evidence(assigned_story)
     prompt = f"""
@@ -2101,6 +2149,27 @@ candidate_profile.json:
 {trim_text(json_dumps(candidate_profile), 9000)}
 """
         answer = ask_llm(expand_prompt, model=MODEL_STRATEGY, max_tokens=1400, retries=2).strip()
+    if not answer_matches_assigned_story(answer, assigned_story):
+        rewrite_prompt = f"""
+{STAGE_QUALITY_INSTRUCTION}
+
+The answer below used the wrong candidate story. Rewrite it in 150 to 200 words using only the assigned story evidence. Do not use any other story.
+
+Question:
+{json_dumps(question)}
+
+Assigned story:
+{assigned_story}
+
+Assigned story evidence:
+{story_evidence or "No grounded story is assigned. Write story gap to prepare and explain what story the candidate needs to build."}
+
+Wrong answer:
+{answer}
+"""
+        answer = ask_llm(rewrite_prompt, model=MODEL_STRATEGY, max_tokens=1400, retries=1).strip()
+    if not answer_matches_assigned_story(answer, assigned_story):
+        answer = fallback_answer_for_story(question, assigned_story)
     return answer
 
 
