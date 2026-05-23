@@ -177,6 +177,23 @@ def extract_external_research(extra):
     return extra[start:end + len(end_marker)].strip()
 
 
+def extract_marked_block(text, name):
+    text = text or ""
+    start_marker = f"[{name}]"
+    end_marker = f"[/{name}]"
+    start = text.find(start_marker)
+    if start == -1:
+        return ""
+    end = text.find(end_marker, start)
+    if end == -1:
+        return text[start + len(start_marker):].strip()
+    return text[start + len(start_marker):end].strip()
+
+
+def extract_youtube_transcripts(extra):
+    return normalize_text(extract_marked_block(extra, "YOUTUBE_TRANSCRIPTS"))
+
+
 def source_host(url):
     try:
         return urlparse(url or "").netloc.lower().replace("www.", "")
@@ -184,7 +201,20 @@ def source_host(url):
         return ""
 
 
-def classify_source(company_name, url, title, content):
+def classify_source(company_name, url, title, content, provided_type=""):
+    provided_type = normalize_text(provided_type)
+    type_map = {
+        "official_company_source": "Official company source",
+        "directional_glassdoor": "Glassdoor directional theme",
+        "directional_reddit": "Reddit directional theme",
+        "directional_blind": "Blind directional theme",
+        "directional_blog": "Blog directional theme",
+        "directional_prep": "Public prep or candidate experience",
+        "youtube_source": "YouTube public theme",
+    }
+    if provided_type in type_map:
+        return type_map[provided_type]
+
     company_name = company_name or ""
     company_slug = re.sub(r"[^a-z0-9]+", "", company_name.lower())
     host = source_host(url)
@@ -193,7 +223,7 @@ def classify_source(company_name, url, title, content):
     content_l = (content or "").lower()
     if not url or url in {"tavily_answer", "search_summary"}:
         return "Search summary"
-    if company_slug and company_slug in host:
+    if company_slug and company_slug in re.sub(r"[^a-z0-9]+", "", host):
         return "Official company source"
     if company_name.lower() == "google" and ("google.com" in host or "abc.xyz" in host):
         return "Official company source"
@@ -203,7 +233,9 @@ def classify_source(company_name, url, title, content):
         return "Reddit directional theme"
     if "glassdoor." in host:
         return "Glassdoor directional theme"
-    public_domains = ["linkedin.com", "medium.com", "prepfully.com", "igotanoffer.com", "levels.fyi", "interviewquery.com", "tryexponent.com", "gogotechy.com", "interviewkickstart.com"]
+    if "blind.app" in host or "teamblind.com" in host:
+        return "Blind directional theme"
+    public_domains = ["linkedin.com", "medium.com", "substack.com", "prepfully.com", "igotanoffer.com", "levels.fyi", "interviewquery.com", "tryexponent.com", "gogotechy.com", "interviewkickstart.com"]
     if any(domain in host for domain in public_domains):
         return "Public prep or candidate experience"
     if "interview" in title_l or "interview" in content_l:
@@ -219,7 +251,7 @@ def source_score(source_type, content):
         return 5
     if source_type == "High signal public source":
         return 4
-    if source_type in {"Public prep or candidate experience", "YouTube public theme", "Reddit directional theme", "Glassdoor directional theme"}:
+    if source_type in {"Public prep or candidate experience", "YouTube public theme", "Reddit directional theme", "Glassdoor directional theme", "Blind directional theme", "Blog directional theme"}:
         return 3
     if source_type == "Search summary":
         return 2
@@ -260,6 +292,12 @@ def source_family(source):
     if "glassdoor" in host:
         return "glassdoor"
 
+    if "blind.app" in host or "teamblind.com" in host:
+        return "blind"
+
+    if "medium.com" in host or "substack.com" in host:
+        return "blog"
+
     if "youtube.com" in host or "youtu.be" in host:
         return "youtube"
 
@@ -269,25 +307,38 @@ def source_family(source):
 def parse_external_sources(external_research, company_name):
     sources = []
     text = external_research or ""
-    pattern = re.compile(r"QUERY:\s*(.*?)\nTITLE:\s*(.*?)\nURL:\s*(.*?)\nCONTENT:\s*(.*?)(?=\n\n---\n\n|\n\[/NAILIT_EXTERNAL_RESEARCH\]|\Z)", re.S)
+    pattern = re.compile(
+        r"(?:SOURCE_INDEX:\s*.*?\n)?(?:SOURCE_TYPE:\s*(.*?)\n)?(?:SOURCE_CONFIDENCE:\s*(.*?)\n)?QUERY:\s*(.*?)\nTITLE:\s*(.*?)\nURL:\s*(.*?)\nCONTENT:\s*(.*?)(?=\n\n---\n\n|\n\[/OFFICIAL_SOURCES\]|\n\[/DIRECTIONAL_SOURCES\]|\n\[/NAILIT_EXTERNAL_RESEARCH\]|\Z)",
+        re.S,
+    )
     for match in pattern.finditer(text):
-        query = normalize_text(match.group(1))
-        title = normalize_text(match.group(2))
-        url = normalize_text(match.group(3))
-        content = normalize_text(match.group(4))
+        provided_type = normalize_text(match.group(1))
+        confidence = normalize_text(match.group(2))
+        query = normalize_text(match.group(3))
+        title = normalize_text(match.group(4))
+        url = normalize_text(match.group(5))
+        content = normalize_text(match.group(6))
         if len(content) < 50:
             continue
-        source_type = classify_source(company_name, url, title, content)
-        sources.append({"query": query, "title": title, "url": url, "content": content, "source_type": source_type, "score": source_score(source_type, content)})
+        source_type = classify_source(company_name, url, title, content, provided_type=provided_type)
+        sources.append({
+            "query": query,
+            "title": title,
+            "url": url,
+            "content": content,
+            "source_type": source_type,
+            "source_confidence": confidence or ("high" if source_type == "Official company source" else "medium" if "directional" in source_type.lower() else "low"),
+            "score": source_score(source_type, content),
+        })
     deduped = []
     seen = set()
     for source in sorted(sources, key=lambda item: item["score"], reverse=True):
-        key = (source["url"], source["title"])
+        key = (canonical_source_key(source["url"]), source["title"].lower())
         if key in seen:
             continue
         seen.add(key)
         deduped.append(source)
-    return deduped[:60]
+    return deduped[:90]
 
 
 def smoke_test():
@@ -387,7 +438,9 @@ def collect_sources(company_name, role_name, job_description, extra):
         "official_google_careers": 5,
         "official_google_cloud_blog": 3,
         "reddit": 5,
-        "glassdoor": 5,
+        "glassdoor": 8,
+        "blind": 8,
+        "blog": 8,
         "youtube": 5,
     }
 
@@ -414,12 +467,12 @@ def collect_sources(company_name, role_name, job_description, extra):
     directional = [s for s in deduped if "directional" in s.get("source_type", "").lower() or s.get("source_type", "").lower().startswith("youtube")]
     public = [s for s in deduped if s not in official and s not in directional]
 
-    final_sources = (official[:18] + public[:18] + directional[:18])[:54]
+    final_sources = (official[:35] + directional[:35] + public[:30])[:90]
 
     manifest = []
     for index, source in enumerate(final_sources, start=1):
         manifest.append(
-            f"{index}. [{source['source_type']}] score {source['score']} | "
+            f"{index}. [{source['source_type']}] confidence {source.get('source_confidence', '')} score {source['score']} | "
             f"{source['title']} | {source['url']} | query: {source['query']}"
         )
 
@@ -435,13 +488,13 @@ def collect_sources(company_name, role_name, job_description, extra):
     log(1, f"Final source manifest contains {len(final_sources)} sources", "done")
     return final_sources
 
-def create_source_digest(company_name, role_name, sources):
+def create_source_digest(company_name, role_name, sources, youtube_transcripts=""):
     log(1, "Creating source digest", "running")
 
-    if not sources:
+    if not sources and not youtube_transcripts:
         digest = """
 ### Source status
-No usable online sources were collected.
+No usable online sources or transcripts were collected.
 
 ### Limitation
 Research failed before source extraction. Do not infer company facts from missing sources.
@@ -451,7 +504,7 @@ Research failed before source extraction. Do not infer company facts from missin
         return digest
 
     blocks = []
-    for index, source in enumerate(sources[:24], start=1):
+    for index, source in enumerate(sources[:45], start=1):
         blocks.append(
             f"""
 SOURCE {index}
@@ -475,7 +528,10 @@ Role:
 {role_name}
 
 Sources:
-{chr(10).join(blocks)}
+{chr(10).join(blocks) if blocks else "No extracted web sources."}
+
+YouTube transcripts supplied by user:
+{trim_text(youtube_transcripts, 18000) if youtube_transcripts else "No YouTube transcripts supplied."}
 
 Create a compact executive source digest. Do not dump sources. Synthesize patterns.
 
@@ -491,10 +547,13 @@ Use only company owned or clearly official sources. Group repeated job pages int
 Extract recurring requirements across official or adjacent role pages. Focus on execution, stakeholders, systems, metrics, ambiguity, domain, and leadership.
 
 ### Directional public interview themes
-Use Reddit, Glassdoor, YouTube, LinkedIn, forums, and prep sites only as directional candidate experience themes.
+Use Reddit, Glassdoor, Blind, YouTube, LinkedIn, forums, blogs, and prep sites only as directional candidate experience themes.
+
+### YouTube transcript signals
+Use transcript content as candidate experience intelligence and question pattern signals only. Label transcript-derived claims as transcript signals.
 
 ### Interview process findings
-Separate official evidence, repeated directional evidence, and unknowns. Do not invent exact rounds.
+Separate official evidence, repeated directional evidence, transcript signals, and unknowns. State observed ranges with confidence. Do not invent exact rounds.
 
 ### Company signal map
 Translate sources into what the candidate must prove in interviews.
@@ -508,7 +567,7 @@ Give precise confidence notes for official, public, and directional claims.
 Rules:
 Do not include fake URLs such as tavily_answer as sources.
 Do not claim directional sources are official.
-Do not invent exact interview rounds unless supported.
+Do not state exact interview rounds as fact unless official sources confirm them. If public sources disagree, give an observed range and confidence.
 Do not over list similar Google Careers job pages.
 Prefer synthesized signals over long source lists.
 """
@@ -551,7 +610,7 @@ Official values, hiring language, culture, and answer signals. Only use official
 Candidate experience themes from public sources. Label as directional.
 
 ### Interview process map
-Describe likely stages. Separate official, directional, and unknown. For each stage, explain likely purpose.
+Describe likely stages using calibrated language. Separate officially supported, repeated public theme, transcript signal, directional only, inferred, and unknown. State observed ranges with confidence. Never state exact rounds as fact unless official sources confirm them.
 
 ### Role specific evaluation criteria
 What this role is likely to test. Go beyond generic program management.
@@ -566,7 +625,12 @@ Words and themes the candidate should naturally use.
 Specific answer types that would fail.
 
 ### Confidence notes
-What is strong, directional, unclear, and worth manually checking.
+What is officially supported, repeated public theme, directional only, transcript signal, inferred, unclear, and worth manually checking.
+
+Rules:
+Google must not sound like Stripe. Every section must be company specific.
+Do not invent source URLs.
+Do not present Reddit, Glassdoor, Blind, YouTube, blogs, forums, or prep sites as official.
 """
 
     intel = ask_llm(prompt, model=MODEL_STRATEGY, max_tokens=4300, retries=3)
@@ -579,6 +643,7 @@ def create_candidate_evidence_digest(company_name, role_name, job_description, c
     log(2, "Creating candidate evidence digest", "running")
 
     clean_extra = strip_external_research(extra)
+    clean_extra = re.sub(r"\[YOUTUBE_TRANSCRIPTS\].*?\[/YOUTUBE_TRANSCRIPTS\]", "", clean_extra, flags=re.S)
     answer_bank = ""
 
     match = re.search(
@@ -858,7 +923,7 @@ Match gap risk map:
 Story bank:
 {trim_text(story_bank, 10000)}
 
-Create a serious interview question bank by likely round.
+Create a serious interview question bank by likely round. Use the JD as the targeting core. If interview rounds are not official, label them as likely/observed/directional rather than factual.
 
 For Google or similar companies, include these round types if relevant:
 Recruiter screen
@@ -899,7 +964,72 @@ Use candidate evidence, not generic advice.
     return output
 
 
-def create_final_pack(company_name, role_name, company_intel, job_decode, candidate_digest, match_gap_map, story_bank, qa_bank):
+def create_evidence_ledger(company_name, role_name, source_digest, company_intel, job_decode, candidate_digest, match_gap_map, qa_bank):
+    log(7, "Creating evidence ledger", "running")
+
+    prompt = f"""
+You are building Nailit's mandatory Evidence Ledger.
+
+Company:
+{company_name}
+
+Role:
+{role_name}
+
+Source digest:
+{trim_text(source_digest, 9000)}
+
+Company intelligence:
+{trim_text(company_intel, 7000)}
+
+Job description decode:
+{trim_text(job_decode, 6500)}
+
+Candidate evidence digest:
+{trim_text(candidate_digest, 6500)}
+
+Match/gap/risk map:
+{trim_text(match_gap_map, 6500)}
+
+Question bank:
+{trim_text(qa_bank, 6500)}
+
+Create the top 15 most important claims that the final prep pack is allowed to rely on.
+
+For every claim include:
+- claim text
+- source classification: officially_supported, repeated_public_theme, directional_only, JD_inferred, transcript_signal, CV_supported, answer_bank_supported
+- confidence: high, medium, low
+- basis: source titles/URLs where available, or JD/CV/answer bank/transcript basis
+- calibrated language to use
+- language to avoid
+
+Rules:
+No unsupported claims.
+No invented source URLs.
+Do not call Reddit, Glassdoor, Blind, YouTube, blogs, forums, or prep sites official.
+Do not state exact interview rounds as fact unless official source confirms them.
+Do not invent candidate employers, titles, industries, credentials, degrees, domain expertise, or authority.
+If public process reports conflict, write observed range + most common + confidence.
+
+Return this exact structure:
+
+### Evidence Ledger
+For each claim use:
+Claim:
+Classification:
+Confidence:
+Basis:
+Calibrated language:
+Avoid saying:
+"""
+    ledger = ask_llm(prompt, model=MODEL_STRATEGY, max_tokens=5200, retries=3)
+    set_result("evidence_ledger", ledger)
+    log(7, "Evidence ledger complete", "done")
+    return ledger
+
+
+def create_final_pack(company_name, role_name, company_intel, job_decode, candidate_digest, match_gap_map, story_bank, qa_bank, evidence_ledger):
     log(7, "Creating final premium prep pack", "running")
 
     prompt = f"""
@@ -929,6 +1059,9 @@ Story bank:
 Question and answer bank:
 {trim_text(qa_bank, 6500)}
 
+Mandatory Evidence Ledger:
+{trim_text(evidence_ledger, 9000)}
+
 Write a premium final prep pack. It should feel like an executive interview strategist prepared it.
 
 Rules:
@@ -936,9 +1069,18 @@ Do not be generic.
 Do not invent candidate evidence.
 Use concrete candidate stories where available.
 Separate official company evidence from directional public themes.
+Use official sources as high confidence facts.
+Use directional sources as themes and signals only, never as facts.
+Use YouTube transcripts as candidate experience intelligence and question pattern signals only.
+State interview rounds as observed range with confidence level unless officially confirmed.
+Make every section company specific. Google must not sound like Stripe.
+Use JD as the core targeting material for question bank and risk map.
 Be honest about gaps.
 Make it practical for preparation tonight.
 Make it detailed but readable.
+No unsupported claims.
+No invented source URLs.
+No invented candidate background.
 
 Return this exact structure:
 
@@ -956,6 +1098,8 @@ Return this exact structure:
 ## Why This Role Answer
 ## Questions To Ask The Interviewer
 ## Seven Day Preparation Plan
+## Evidence Ledger
+Include the top 15 claims from the mandatory Evidence Ledger with claim, classification, confidence, and basis.
 ## Final Interview Checklist
 """
     output = ask_llm(prompt, model=MODEL_STRATEGY, max_tokens=5200, retries=3)
@@ -970,8 +1114,9 @@ def run_full_pipeline(company_name, role_name, job_description, cv, extra, progr
     # Stage 1 — Research
     report_progress(progress_callback, "Official company site and careers pages", 8)
     sources = collect_sources(company_name, role_name, job_description, extra)
+    youtube_transcripts = extract_youtube_transcripts(extra)
     report_progress(progress_callback, "Company values, culture, leadership principles", 16)
-    source_digest = create_source_digest(company_name, role_name, sources)
+    source_digest = create_source_digest(company_name, role_name, sources, youtube_transcripts=youtube_transcripts)
     report_progress(progress_callback, "Interview process and likely rounds", 24)
     report_progress(progress_callback, "Role specific public signals", 32)
     report_progress(progress_callback, "Directional themes only", 40)
@@ -1024,6 +1169,18 @@ def run_full_pipeline(company_name, role_name, job_description, cv, extra, progr
         story_bank,
     )
 
+    report_progress(progress_callback, "Evidence ledger", 94)
+    evidence_ledger = create_evidence_ledger(
+        company_name,
+        role_name,
+        source_digest,
+        company_intel,
+        job_decode,
+        candidate_digest,
+        match_map,
+        qa_bank,
+    )
+
     report_progress(progress_callback, "Final prep pack", 96)
     final_pack = create_final_pack(
         company_name,
@@ -1034,6 +1191,7 @@ def run_full_pipeline(company_name, role_name, job_description, cv, extra, progr
         match_map,
         story_bank,
         qa_bank,
+        evidence_ledger,
     )
 
     lua_brief = build_lua_mock_interview_brief(
@@ -1125,6 +1283,10 @@ Job ID: {safe_job_id}
 
 {get_result("question_answer_bank")}
 
+## Evidence Ledger
+
+{get_result("evidence_ledger")}
+
 ## Final Prep Pack
 
 {get_result("final_prep_pack")}
@@ -1141,6 +1303,7 @@ Job ID: {safe_job_id}
             "match_gap_risk_map.txt": get_result("match_gap_risk_map"),
             "story_bank.txt": get_result("story_bank"),
             "question_answer_bank.txt": get_result("question_answer_bank"),
+            "evidence_ledger.txt": get_result("evidence_ledger"),
             "final_prep_pack.txt": get_result("final_prep_pack"),
             "progress_log.json": json.dumps(local_progress_log, indent=2),
         }
