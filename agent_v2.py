@@ -1593,13 +1593,13 @@ def normalize_interview_strategy(strategy):
             continue
         normalized_outlines.append({
             "question": item.get("question", ""),
-            "direct_answer": item.get("direct_answer", "Answer directly, then prove it with one grounded story."),
-            "story_to_use": item.get("story_to_use", "Use the closest grounded story from candidate_profile.json; if missing, mark as a story gap to prepare."),
-            "decision_to_emphasize": item.get("decision_to_emphasize", item.get("jd_signal", "The operating decision the interviewer is testing.")),
-            "tradeoff_to_name": item.get("tradeoff_to_name", "Name the execution tradeoff honestly."),
-            "metric_to_use": item.get("metric_to_use", "Use only metrics already present in the CV or answer bank; otherwise prepare a future metric."),
-            "result_squared": item.get("result_squared", "Connect the result to business, stakeholder, delivery, or risk impact."),
-            "what_not_to_say": item.get("what_not_to_say", "Do not claim unproven domain experience, stories, titles, employers, credentials, or metrics."),
+            "direct_answer": item.get("direct_answer") or "Answer directly, then prove it with one grounded story.",
+            "story_to_use": item.get("story_to_use") or "Use the closest grounded story from candidate_profile.json; if missing, mark as a story gap to prepare.",
+            "decision_to_emphasize": item.get("decision_to_emphasize") or item.get("jd_signal") or "The operating decision the interviewer is testing.",
+            "tradeoff_to_name": item.get("tradeoff_to_name") or "Name the execution tradeoff honestly.",
+            "metric_to_use": item.get("metric_to_use") or "Use only metrics already present in the CV or answer bank; otherwise state the metric to prepare.",
+            "result_squared": item.get("result_squared") or "Connect the result to business, stakeholder, delivery, or risk impact.",
+            "what_not_to_say": item.get("what_not_to_say") or "Do not claim unproven domain experience, stories, titles, employers, credentials, or metrics.",
         })
 
     for item in all_questions:
