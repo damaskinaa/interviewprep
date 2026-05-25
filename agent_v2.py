@@ -2,6 +2,9 @@ import os
 import re
 import json
 import time
+import urllib.request
+import urllib.error
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime
 from contextvars import ContextVar
 from urllib.parse import urlparse
@@ -2467,6 +2470,695 @@ def validate_pack(company_name, role_name, pack, candidate_profile, strategy):
         if not question.get("jd_signal") or not question.get("candidate_gap") or not question.get("research_signal"):
             issues.append("generic questions")
     return sorted(set(issues))
+
+
+SESSION_MODULES = {
+    "company_intelligence",
+    "role_intelligence",
+    "candidate_profile",
+    "gap_map",
+    "interview_strategy",
+    "prep_pack",
+}
+
+
+def session_workspace(session_id, module_name=None):
+    base = Path("jobs") / safe_path_part(session_id, "session")
+    if module_name:
+        base = base / safe_path_part(module_name, "module")
+    base.mkdir(parents=True, exist_ok=True)
+    return base
+
+
+def module_artifact_path(session_id, module_name):
+    filename = "prep_pack.md" if module_name == "prep_pack" else f"{module_name}.json"
+    return session_workspace(session_id, module_name) / filename
+
+
+def read_module_artifact(session_id, module_name):
+    path = module_artifact_path(session_id, module_name)
+    if not path.exists():
+        raise FileNotFoundError(f"Required module artifact missing: {module_name}")
+    if path.suffix == ".md":
+        return path.read_text(encoding="utf8")
+    return json.loads(path.read_text(encoding="utf8"))
+
+
+def write_module_json(session_id, module_name, data):
+    path = module_artifact_path(session_id, module_name)
+    path.write_text(json_dumps(data), encoding="utf8")
+    return path
+
+
+def write_module_markdown(session_id, module_name, markdown):
+    path = module_artifact_path(session_id, module_name)
+    path.write_text(markdown, encoding="utf8")
+    return path
+
+
+def company_domain_hint(company_name):
+    name = normalize_text(company_name).lower()
+    known = {
+        "google": "google.com",
+        "alphabet": "abc.xyz",
+        "meta": "metacareers.com",
+        "facebook": "metacareers.com",
+        "amazon": "amazon.jobs",
+        "stripe": "stripe.com",
+        "canva": "canva.com",
+        "atlassian": "atlassian.com",
+        "hubspot": "hubspot.com",
+        "openai": "openai.com",
+        "notion": "notion.so",
+        "datadog": "datadoghq.com",
+    }
+    for key, domain in known.items():
+        if key in name:
+            return domain
+    slug = re.sub(r"[^a-z0-9]+", "", name)
+    return f"{slug}.com" if slug else ""
+
+
+def tavily_post(endpoint, payload, timeout=20):
+    if not TAVILY_API_KEY:
+        return {}
+    data = json.dumps(payload).encode("utf8")
+    req = urllib.request.Request(
+        f"https://api.tavily.com/{endpoint}",
+        data=data,
+        headers={
+            "Content-Type": "application/json",
+            "Authorization": f"Bearer {TAVILY_API_KEY}",
+        },
+        method="POST",
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as res:
+            return json.loads(res.read().decode("utf8", errors="replace"))
+    except Exception:
+        return {}
+
+
+def tavily_search(query):
+    data = tavily_post(
+        "search",
+        {
+            "query": query,
+            "search_depth": "advanced",
+            "max_results": 8,
+            "include_answer": False,
+            "include_raw_content": False,
+        },
+        timeout=20,
+    )
+    rows = []
+    for item in data.get("results", []) if isinstance(data, dict) else []:
+        url = item.get("url", "")
+        if not url:
+            continue
+        rows.append({
+            "title": item.get("title", ""),
+            "url": url,
+            "content": item.get("content", "") or item.get("snippet", ""),
+            "query": query,
+        })
+    return rows
+
+
+def tavily_extract(urls):
+    if not urls:
+        return []
+    data = tavily_post(
+        "extract",
+        {"urls": urls, "extract_depth": "basic"},
+        timeout=20,
+    )
+    rows = []
+    for item in data.get("results", []) if isinstance(data, dict) else []:
+        content = item.get("raw_content", "") or item.get("content", "")
+        if content:
+            rows.append({
+                "url": item.get("url", ""),
+                "title": item.get("title", ""),
+                "content": trim_text(content, 5000),
+            })
+    return rows
+
+
+def collect_company_research(company_name, role_name):
+    domain = company_domain_hint(company_name)
+    queries = [
+        f"{company_name} official interview process site:{domain}" if domain else f"{company_name} official interview process",
+        f"{company_name} {role_name} interview questions site:glassdoor.com",
+        f"{company_name} interview experience site:reddit.com",
+        f"{company_name} values culture leadership principles",
+        f"{company_name} careers how we hire",
+        f"{company_name} {role_name} interview rounds behavioral",
+        f"{company_name} interview site:blind.app",
+        f"{company_name} {role_name} interview experience 2024 2025",
+    ]
+    discovered = []
+    with ThreadPoolExecutor(max_workers=8) as executor:
+        future_map = {executor.submit(tavily_search, query): query for query in queries}
+        for future in as_completed(future_map, timeout=22):
+            try:
+                discovered.extend(future.result(timeout=1))
+            except Exception:
+                continue
+    seen = set()
+    unique = []
+    for row in discovered:
+        key = canonical_source_key(row.get("url", ""))
+        if not key or key in seen:
+            continue
+        seen.add(key)
+        source_type = classify_source(company_name, row.get("url", ""), row.get("title", ""), row.get("content", ""))
+        row["source_type"] = source_type
+        row["source_confidence"] = "high" if source_type == "Official company source" else "medium" if "directional" in source_type.lower() or source_type in {"Glassdoor directional source", "Reddit directional source", "Blind directional source"} else "low"
+        unique.append(row)
+    unique.sort(key=lambda row: source_score(row.get("source_type", ""), row.get("content", "")), reverse=True)
+    extract_urls = [
+        row["url"] for row in unique[:28]
+        if "youtube.com" not in row["url"].lower() and "youtu.be" not in row["url"].lower()
+    ][:20]
+    extracted = {canonical_source_key(row.get("url", "")): row for row in tavily_extract(extract_urls)}
+    enriched = []
+    for row in unique[:35]:
+        key = canonical_source_key(row.get("url", ""))
+        content = extracted.get(key, {}).get("content") or row.get("content", "")
+        title = extracted.get(key, {}).get("title") or row.get("title", "")
+        if any(blocked in normalize_text(f"{title} {content}").lower() for blocked in ["just a moment", "enable javascript", "access denied"]):
+            continue
+        row = dict(row)
+        row["title"] = title
+        row["content"] = trim_text(content, 5000)
+        enriched.append(row)
+    return enriched
+
+
+def run_company_intelligence_module(session, progress_callback=None):
+    session_id = session["session_id"]
+    path = module_artifact_path(session_id, "company_intelligence")
+    if path.exists() and time.time() - path.stat().st_mtime < 24 * 60 * 60:
+        report_progress(progress_callback, "Company intelligence cache hit", 100)
+        return json.loads(path.read_text(encoding="utf8"))
+    report_progress(progress_callback, "Company research discovery", 15)
+    sources = collect_company_research(session["company_name"], session["role_name"])
+    report_progress(progress_callback, "Company signal extraction", 55)
+    prompt = f"""
+{STAGE_QUALITY_INSTRUCTION}
+
+Build company_intelligence.json for a serious interview intelligence tool.
+
+Company: {session["company_name"]}
+Role: {session["role_name"]}
+
+Raw JD:
+{trim_text(session.get("raw_jd"), 10000)}
+
+Company context:
+{trim_text(session.get("raw_company_context"), 8000) or "None supplied."}
+
+YouTube transcripts:
+{trim_text(session.get("raw_youtube_transcripts"), 14000) or "No transcripts provided."}
+
+Research sources:
+{trim_text(json_dumps([source_record(source, i) for i, source in enumerate(sources, start=1)]), 22000)}
+
+Return valid JSON only with this exact structure:
+{{
+  "official_company_signals": [{{"signal": "", "source_url": "", "confidence": "high", "basis": ""}}],
+  "interview_process_signals": [{{"signal": "", "source_type": "officially confirmed | directional only | inferred", "confidence": "high | medium | low", "process_area": "", "what_it_tests": "", "rejection_signal": "", "hiring_signal": ""}}],
+  "role_specific_signals": [{{"signal": "", "basis": "", "confidence": "high | medium | low"}}],
+  "directional_themes": [{{"theme": "", "source_count": 0, "confidence": "medium | low", "label": "directional only"}}],
+  "youtube_intelligence": {{"question_patterns": [], "success_themes": [], "failure_themes": [], "what_interviewers_look_for": [], "status": ""}},
+  "gaps_in_research": []
+}}
+
+Rules:
+Official company signals must be specific to this company, never generic.
+Public community sources are directional only, never official.
+If a field cannot be confirmed, say research insufficient and explain what is missing.
+Do not invent source URLs.
+Do not use page titles as claims.
+"""
+    result = ask_json(prompt, model=MODEL_STRATEGY, max_tokens=6500, retries=2, fallback={})
+    result["source_manifest"] = [
+        {
+            "title": source.get("title", ""),
+            "url": source.get("url", ""),
+            "source_type": source.get("source_type", ""),
+            "confidence": source.get("source_confidence", ""),
+        }
+        for source in sources[:40]
+    ]
+    write_module_json(session_id, "company_intelligence", result)
+    report_progress(progress_callback, "Company intelligence complete", 100)
+    return result
+
+
+def run_role_intelligence_module(session, progress_callback=None):
+    report_progress(progress_callback, "JD domain analysis", 20)
+    prompt = f"""
+{STAGE_QUALITY_INSTRUCTION}
+
+Read the JD with extreme care. Use the JD only. Do not use company name, CV, answer bank, or research.
+
+Raw JD:
+{trim_text(session.get("raw_jd"), 24000)}
+
+Return valid JSON only with this exact structure:
+{{
+  "role_domain": "",
+  "must_prove": [{{"signal": "", "why_it_matters": "", "weak_answer": "", "strong_answer": ""}}],
+  "hidden_expectations": [],
+  "danger_zones": [{{"requirement": "", "why_candidates_struggle": "", "jd_basis": ""}}],
+  "interview_round_map": [{{"round_name": "", "what_it_tests": "", "confidence": "inferred from JD", "jd_basis": ""}}],
+  "question_seeds": [{{"question": "", "maps_to_jd_line_or_requirement": "", "competency": ""}}]
+}}
+
+Requirements:
+role_domain must be the real domain in the JD text only.
+must_prove must contain exactly 5 high-value role-specific signals.
+question_seeds must contain exactly 20 specific questions derived directly from the JD.
+"""
+    result = ask_json(prompt, model=MODEL_STRATEGY, max_tokens=6500, retries=2, fallback={})
+    write_module_json(session["session_id"], "role_intelligence", result)
+    report_progress(progress_callback, "Role intelligence complete", 100)
+    return result
+
+
+def run_candidate_profile_module(session, progress_callback=None):
+    role_intelligence = read_module_artifact(session["session_id"], "role_intelligence")
+    report_progress(progress_callback, "Candidate evidence extraction", 25)
+    prompt = f"""
+{STAGE_QUALITY_INSTRUCTION}
+
+Create candidate_profile.json. Use raw CV and raw answer bank as truth. Use role_intelligence only to map evidence to role signals.
+
+Role intelligence:
+{trim_text(json_dumps(role_intelligence), 12000)}
+
+Raw CV:
+{trim_text(session.get("raw_cv"), 22000)}
+
+Raw answer bank:
+{trim_text(session.get("raw_answer_bank"), 18000) or "None supplied."}
+
+Return valid JSON only:
+{{
+  "positioning_statement": "",
+  "confirmed_evidence": [{{"claim": "", "specific_metric_or_outcome": "", "story": "", "jd_signal": ""}}],
+  "story_inventory": [{{"story_name": "", "situation": "", "candidate_decision": "", "candidate_actions": [], "metric": "", "business_result": "", "jd_signal": "", "interview_round_fit": ""}}],
+  "transferable_bridges": [{{"danger_zone": "", "bridge_language": "", "candidate_evidence": "", "what_not_to_claim": ""}}],
+  "forbidden_claims": [{{"claim": "", "why_forbidden": ""}}],
+  "story_gaps": [{{"question": "", "why_it_matters": "", "story_to_build": "", "required_elements": []}}]
+}}
+
+Rules:
+Never invent employers, titles, industries, credentials, direct domain experience, stories, outcomes, or metrics.
+If the candidate has transferable evidence but not direct domain evidence, say that honestly in positioning_statement.
+transferable_bridges must be actual words the candidate can say.
+"""
+    result = ask_json(prompt, model=MODEL_STRATEGY, max_tokens=7600, retries=2, fallback={})
+    write_module_json(session["session_id"], "candidate_profile", result)
+    report_progress(progress_callback, "Candidate profile complete", 100)
+    return result
+
+
+def run_gap_map_module(session, progress_callback=None):
+    session_id = session["session_id"]
+    role_intelligence = read_module_artifact(session_id, "role_intelligence")
+    candidate_profile = read_module_artifact(session_id, "candidate_profile")
+    company_intelligence = read_module_artifact(session_id, "company_intelligence")
+    report_progress(progress_callback, "Gap and repair mapping", 35)
+    prompt = f"""
+{STAGE_QUALITY_INSTRUCTION}
+
+Create gap_map.json from artifacts only.
+
+role_intelligence.json:
+{trim_text(json_dumps(role_intelligence), 12000)}
+
+candidate_profile.json:
+{trim_text(json_dumps(candidate_profile), 16000)}
+
+company_intelligence.json:
+{trim_text(json_dumps(company_intelligence), 14000)}
+
+Return valid JSON only:
+{{
+  "strength_matches": [{{"must_prove_signal": "", "candidate_evidence": "", "story_to_use": "", "metric_to_mention": ""}}],
+  "dangerous_gaps": [{{"gap": "", "why_it_will_come_up": "", "repair_script": "", "what_not_to_say": ""}}],
+  "repair_scripts": [{{"gap": "", "script": "", "evidence_boundary": ""}}],
+  "story_assignments": [{{"question": "", "assigned_story": "", "why_this_story": "", "story_gap_text": ""}}],
+  "pressure_responses": [{{"gap": "", "interviewer_pushback": "", "candidate_response": ""}}]
+}}
+
+Rules:
+repair_scripts and pressure_responses must be verbatim candidate words, not advice.
+No story may be assigned more than twice. Use story gap where evidence is missing.
+"""
+    result = ask_json(prompt, model=MODEL_STRATEGY, max_tokens=7600, retries=2, fallback={})
+    write_module_json(session_id, "gap_map", result)
+    report_progress(progress_callback, "Gap map complete", 100)
+    return result
+
+
+def ensure_modular_answer(question, answer, assigned_story, session, candidate_profile, gap_map):
+    answer = normalize_text(answer)
+    lowered = answer.lower()
+    bad_open = lowered.startswith("in my previous role") or lowered.startswith("in my role as")
+    bad_close = lowered.endswith("aligning with expectations") or lowered.endswith("the key takeaway for you is")
+    if 200 <= count_words(answer) <= 260 and not bad_open and not bad_close:
+        return answer
+    prompt = f"""
+{STAGE_QUALITY_INSTRUCTION}
+
+Rewrite this answer for an elite interview strategy pack.
+
+Company: {session["company_name"]}
+Role: {session["role_name"]}
+Question: {question}
+Assigned story: {assigned_story}
+
+Candidate profile:
+{trim_text(json_dumps(candidate_profile), 12000)}
+
+Gap map:
+{trim_text(json_dumps(gap_map), 10000)}
+
+Current answer:
+{answer}
+
+Rules:
+Write 200 to 250 words.
+Open with the situation or the stake. Do not open with "In my previous role" or "In my role as".
+Use only real candidate evidence from candidate_profile and gap_map.
+End with the business result or proof of fit.
+Do not end with "aligning with expectations" or "the key takeaway for you is".
+Do not invent employers, titles, industries, credentials, domain experience, stories, outcomes, or metrics.
+Return only the answer text.
+"""
+    rewritten = ask_llm(prompt, model=MODEL_STRATEGY, max_tokens=1400, retries=1).strip()
+    if count_words(rewritten) >= 180:
+        return rewritten
+    return answer
+
+
+def normalize_modular_strategy(strategy, session, candidate_profile, gap_map):
+    strategy = strategy if isinstance(strategy, dict) else {}
+    for round_item in as_list(strategy.get("questions_by_round")):
+        if not isinstance(round_item, dict):
+            continue
+        for item in as_list(round_item.get("questions")):
+            if not isinstance(item, dict):
+                continue
+            item["complete_written_answer"] = ensure_modular_answer(
+                item.get("question", ""),
+                item.get("complete_written_answer", ""),
+                item.get("assigned_story", ""),
+                session,
+                candidate_profile,
+                gap_map,
+            )
+    return strategy
+
+
+def run_interview_strategy_module(session, progress_callback=None):
+    session_id = session["session_id"]
+    company_intelligence = read_module_artifact(session_id, "company_intelligence")
+    role_intelligence = read_module_artifact(session_id, "role_intelligence")
+    candidate_profile = read_module_artifact(session_id, "candidate_profile")
+    gap_map = read_module_artifact(session_id, "gap_map")
+    report_progress(progress_callback, "Executive strategy and round plan", 20)
+    prompt = f"""
+{STAGE_QUALITY_INSTRUCTION}
+
+This is the most important module. Produce interview_strategy.json for this exact candidate and role.
+
+Company: {session["company_name"]}
+Role: {session["role_name"]}
+
+Raw JD:
+{trim_text(session.get("raw_jd"), 12000)}
+
+Raw CV:
+{trim_text(session.get("raw_cv"), 12000)}
+
+Raw answer bank:
+{trim_text(session.get("raw_answer_bank"), 12000) or "None supplied."}
+
+company_intelligence.json:
+{trim_text(json_dumps(company_intelligence), 13000)}
+
+role_intelligence.json:
+{trim_text(json_dumps(role_intelligence), 12000)}
+
+candidate_profile.json:
+{trim_text(json_dumps(candidate_profile), 16000)}
+
+gap_map.json:
+{trim_text(json_dumps(gap_map), 14000)}
+
+Return valid JSON only with this exact structure:
+{{
+  "executive_win_strategy": "",
+  "round_by_round_plan": [{{"round_name": "", "what_this_round_tests": "", "likely_interviewer": "", "what_they_are_evaluating": "", "stories_to_use": [], "gaps_to_expect": [], "repair_scripts": [], "success_looks_like": "", "failure_looks_like": "", "specific_preparation_actions": []}}],
+  "questions_by_round": [{{"round_name": "", "questions": [{{"question": "", "what_it_is_really_testing": "", "assigned_story": "", "danger_to_avoid": "", "complete_written_answer": "", "delivery_notes": ""}}]}}],
+  "dangerous_questions": [{{"question": "", "script": "", "why_it_is_dangerous": ""}}],
+  "pressure_followups": [{{"dangerous_question": "", "interviewer_followup": "", "candidate_response": ""}}],
+  "do_not_say": [{{"item": "", "reason": ""}}],
+  "why_this_company_answer": "",
+  "why_this_role_answer": "",
+  "thirty_sixty_ninety": {{"30_days": [], "60_days": [], "90_days": []}},
+  "questions_to_ask": [],
+  "seven_day_plan": [{{"day": "", "actions": []}}]
+}}
+
+Requirements:
+executive_win_strategy must be at least 400 words.
+Each round must have 3 to 5 questions.
+Each complete_written_answer must be 200 to 250 words.
+Each answer must open with the situation or the stake. Never open with "In my previous role" or "In my role as".
+Each answer must end with the business result or proof of fit. Never end with "aligning with expectations" or "the key takeaway for you is".
+dangerous_questions must contain exactly 8 items with verbatim scripts.
+do_not_say must contain exactly 15 specific items.
+questions_to_ask must contain exactly 8 specific questions.
+Do not invent candidate background.
+"""
+    result = ask_json(prompt, model=MODEL_STRATEGY, max_tokens=15000, retries=2, fallback={})
+    report_progress(progress_callback, "Strategy answer validation", 86)
+    result = normalize_modular_strategy(result, session, candidate_profile, gap_map)
+    write_module_json(session_id, "interview_strategy", result)
+    report_progress(progress_callback, "Interview strategy complete", 100)
+    return result
+
+
+def markdown_list(items):
+    lines = []
+    for item in as_list(items):
+        if isinstance(item, dict):
+            text = "; ".join(f"{k}: {v}" for k, v in item.items() if v not in ("", [], None))
+        else:
+            text = str(item)
+        if text:
+            lines.append(f"- {text}")
+    return "\n".join(lines) if lines else "- Research insufficient."
+
+
+def answer_word_failures_from_strategy(strategy):
+    failures = []
+    for round_item in as_list(strategy.get("questions_by_round")):
+        for item in as_list(round_item.get("questions") if isinstance(round_item, dict) else []):
+            answer = item.get("complete_written_answer", "") if isinstance(item, dict) else ""
+            words = count_words(answer)
+            if words and words < 180:
+                failures.append(item.get("question", "answer")[:120])
+    return failures
+
+
+def run_prep_pack_module(session, progress_callback=None):
+    session_id = session["session_id"]
+    company_intelligence = read_module_artifact(session_id, "company_intelligence")
+    role_intelligence = read_module_artifact(session_id, "role_intelligence")
+    candidate_profile = read_module_artifact(session_id, "candidate_profile")
+    gap_map = read_module_artifact(session_id, "gap_map")
+    strategy = read_module_artifact(session_id, "interview_strategy")
+    report_progress(progress_callback, "Deterministic prep pack assembly", 45)
+
+    answer_failures = answer_word_failures_from_strategy(strategy)
+    if answer_failures:
+        raise ValueError(f"Any answer under 180 words: {', '.join(answer_failures[:5])}")
+
+    round_sections = []
+    for round_item in as_list(strategy.get("round_by_round_plan")):
+        if not isinstance(round_item, dict):
+            continue
+        round_sections.append(
+            f"### {round_item.get('round_name', 'Interview round')}\n"
+            f"- What it tests: {round_item.get('what_this_round_tests', '')}\n"
+            f"- Who interviews: {round_item.get('likely_interviewer', '')}\n"
+            f"- What they evaluate: {round_item.get('what_they_are_evaluating', '')}\n"
+            f"- Preparation actions:\n{markdown_list(round_item.get('specific_preparation_actions'))}"
+        )
+
+    qa_sections = []
+    for round_item in as_list(strategy.get("questions_by_round")):
+        if not isinstance(round_item, dict):
+            continue
+        questions = []
+        for item in as_list(round_item.get("questions")):
+            if not isinstance(item, dict):
+                continue
+            questions.append(
+                f"#### {item.get('question', '')}\n"
+                f"- Really testing: {item.get('what_it_is_really_testing', '')}\n"
+                f"- Assigned story: {item.get('assigned_story', '')}\n"
+                f"- Danger to avoid: {item.get('danger_to_avoid', '')}\n\n"
+                f"{item.get('complete_written_answer', '')}\n\n"
+                f"- Delivery notes: {item.get('delivery_notes', '')}"
+            )
+        qa_sections.append(f"### {round_item.get('round_name', 'Interview round')}\n" + "\n\n".join(questions))
+
+    evidence_claims = []
+    for item in as_list(company_intelligence.get("official_company_signals"))[:6]:
+        if isinstance(item, dict):
+            evidence_claims.append(f"- Claim: {item.get('signal', '')}\n  - Source type: official company source\n  - Confidence: {item.get('confidence', '')}\n  - Basis: {item.get('basis') or item.get('source_url', '')}")
+    for item in as_list(candidate_profile.get("confirmed_evidence"))[:6]:
+        if isinstance(item, dict):
+            evidence_claims.append(f"- Claim: {item.get('claim', '')}\n  - Source type: CV or answer bank\n  - Confidence: high when directly present in candidate documents\n  - Basis: {item.get('story', '')} {item.get('specific_metric_or_outcome', '')}")
+    for item in as_list(role_intelligence.get("must_prove"))[:5]:
+        if isinstance(item, dict):
+            evidence_claims.append(f"- Claim: {item.get('signal', '')}\n  - Source type: JD supported\n  - Confidence: high\n  - Basis: {item.get('why_it_matters', '')}")
+
+    markdown = f"""# Interview Prep Pack
+
+Company: {session["company_name"]}
+
+Role: {session["role_name"]}
+
+Session ID: {session_id}
+
+## EXECUTIVE WIN STRATEGY
+{strategy.get("executive_win_strategy", "")}
+
+## CANDIDATE POSITIONING
+{candidate_profile.get("positioning_statement", "")}
+
+### Forbidden Claims
+{markdown_list(candidate_profile.get("forbidden_claims"))}
+
+## INTERVIEW PROCESS INTELLIGENCE
+{markdown_list(company_intelligence.get("interview_process_signals"))}
+
+## COMPANY INTELLIGENCE
+### Official Signals
+{markdown_list(company_intelligence.get("official_company_signals"))}
+
+### Directional Themes
+{markdown_list(company_intelligence.get("directional_themes"))}
+
+## INTERVIEW ROUNDS AND PREPARATION
+{chr(10).join(round_sections)}
+
+## QUESTIONS AND ANSWERS BY ROUND
+{chr(10).join(qa_sections)}
+
+## DANGEROUS QUESTIONS AND SCRIPTS
+{markdown_list(strategy.get("dangerous_questions"))}
+
+## DO NOT SAY
+{markdown_list(strategy.get("do_not_say"))}
+
+## STORY BANK
+{markdown_list(candidate_profile.get("story_inventory"))}
+
+## GAP REPAIR SCRIPTS
+{markdown_list(gap_map.get("repair_scripts"))}
+
+## WHY THIS COMPANY AND ROLE
+### Why This Company
+{strategy.get("why_this_company_answer", "")}
+
+### Why This Role
+{strategy.get("why_this_role_answer", "")}
+
+## THIRTY SIXTY NINETY
+{markdown_list(strategy.get("thirty_sixty_ninety", {}).get("30_days") if isinstance(strategy.get("thirty_sixty_ninety"), dict) else [])}
+
+{markdown_list(strategy.get("thirty_sixty_ninety", {}).get("60_days") if isinstance(strategy.get("thirty_sixty_ninety"), dict) else [])}
+
+{markdown_list(strategy.get("thirty_sixty_ninety", {}).get("90_days") if isinstance(strategy.get("thirty_sixty_ninety"), dict) else [])}
+
+## QUESTIONS TO ASK
+{markdown_list(strategy.get("questions_to_ask"))}
+
+## SEVEN DAY PLAN
+{markdown_list(strategy.get("seven_day_plan"))}
+
+## EVIDENCE LEDGER
+{chr(10).join(evidence_claims) if evidence_claims else "- Research insufficient."}
+"""
+    banned = [
+        "This section needs more specific evidence",
+        "No grounded questions generated",
+        "Just a moment",
+        "in my previous role as",
+        "aligning with expectations",
+        "the key takeaway for you is",
+        "No grounded item available",
+        "id: S",
+        "excerpt:",
+        "source_type:",
+    ]
+    lowered = markdown.lower()
+    found = [needle for needle in banned if needle.lower() in lowered]
+    if found:
+        raise ValueError(f"Prep pack failed assembly validation: {', '.join(found)}")
+    path = write_module_markdown(session_id, "prep_pack", markdown.strip())
+    report_progress(progress_callback, "Prep pack complete", 100)
+    return {"markdown": markdown.strip(), "path": str(path)}
+
+
+def run_session_module(session, module_name, progress_callback=None):
+    module_name = safe_path_part(module_name, "module")
+    if module_name not in SESSION_MODULES:
+        raise ValueError(f"Unknown module: {module_name}")
+    local_results = {}
+    local_progress_log = []
+    results_token = _current_results.set(local_results)
+    progress_token = _current_progress_log.set(local_progress_log)
+    try:
+        report_progress(progress_callback, f"{module_name} started", 1)
+        if module_name == "company_intelligence":
+            result = run_company_intelligence_module(session, progress_callback)
+        elif module_name == "role_intelligence":
+            result = run_role_intelligence_module(session, progress_callback)
+        elif module_name == "candidate_profile":
+            result = run_candidate_profile_module(session, progress_callback)
+        elif module_name == "gap_map":
+            result = run_gap_map_module(session, progress_callback)
+        elif module_name == "interview_strategy":
+            result = run_interview_strategy_module(session, progress_callback)
+        elif module_name == "prep_pack":
+            pack = run_prep_pack_module(session, progress_callback)
+            return {
+                "stage": "Prep pack complete",
+                "markdown": pack["markdown"],
+                "product_json": {"module_name": module_name, "session_id": session["session_id"]},
+                "output_file": pack["path"],
+            }
+        artifact = module_artifact_path(session["session_id"], module_name)
+        return {
+            "stage": f"{module_name} complete",
+            "markdown": "",
+            "product_json": result,
+            "output_file": str(artifact),
+        }
+    finally:
+        _current_progress_log.reset(progress_token)
+        _current_results.reset(results_token)
 
 
 def run_full_pipeline(company_name, role_name, job_description, cv, extra, progress_callback=None, workspace=None):

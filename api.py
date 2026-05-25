@@ -12,8 +12,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 
-from agent_v2 import run_pipeline
-from job_store import create_job, get_job, update_job
+from agent_v2 import run_pipeline, run_session_module
+from job_store import create_job, create_session, get_job, get_session, update_job
 from lua_coach import build_lua_coach_response
 from lua_benchmark_coach import build_benchmark_question, build_selected_answer_training_card, build_benchmark_practice_feedback
 from lua_benchmark_store import save_benchmark_event, load_benchmark_session
@@ -86,6 +86,21 @@ class PrepRequest(BaseModel):
     job_description: str = Field(min_length=1, max_length=120000)
     cv: str = Field(min_length=1, max_length=120000)
     extra: str = Field(default="", max_length=900000)
+
+
+class SessionCreateRequest(BaseModel):
+    company_name: str = Field(min_length=1, max_length=120)
+    role_name: str = Field(min_length=1, max_length=120)
+    job_description: str = Field(min_length=1, max_length=120000)
+    cv: str = Field(min_length=1, max_length=120000)
+    answer_bank: str = Field(default="", max_length=240000)
+    company_description: str = Field(default="", max_length=120000)
+    youtube_transcripts: str = Field(default="", max_length=900000)
+
+
+class ModuleRunRequest(BaseModel):
+    session_id: str = Field(min_length=1, max_length=160)
+    module_name: str = Field(min_length=1, max_length=80)
 
 
 def require_app_key(x_app_key: str = Header(default="")):
@@ -209,6 +224,101 @@ def _run_prepare_job(job_id, payload):
             stage="Failed",
             error=str(error),
         )
+
+
+@app.post("/session/create", dependencies=[Depends(require_app_key)])
+def session_create(req: SessionCreateRequest):
+    payload = req.model_dump() if hasattr(req, "model_dump") else req.dict()
+    session_id = "sess_" + datetime.now().strftime("%Y%m%d_%H%M%S_") + uuid.uuid4().hex[:8]
+    session = create_session(session_id, payload)
+    return {
+        "session_id": session["session_id"],
+        "company_name": session["company_name"],
+        "role_name": session["role_name"],
+        "created_at": session["created_at"],
+    }
+
+
+@app.get("/session/get", dependencies=[Depends(require_app_key)])
+def session_get(session_id: str):
+    session = get_session(session_id, include_raw=False)
+    if not session:
+        raise HTTPException(status_code=404, detail="Session not found")
+    return session
+
+
+def _run_module_job(job_id, session_id, module_name):
+    try:
+        update_job(job_id, status="running", stage="Module queued", progress=1)
+        session = get_session(session_id, include_raw=True)
+        if not session:
+            raise ValueError("Session not found")
+
+        def progress_callback(stage, progress):
+            update_job(
+                job_id,
+                status="running",
+                stage=stage,
+                progress=progress,
+            )
+
+        result = run_session_module(
+            session=session,
+            module_name=module_name,
+            progress_callback=progress_callback,
+        )
+        markdown = result.get("markdown", "") if isinstance(result, dict) else ""
+        product_json = result.get("product_json", {}) if isinstance(result, dict) else {}
+        update_job(
+            job_id,
+            status="done",
+            stage=result.get("stage", "Module complete") if isinstance(result, dict) else "Module complete",
+            progress=100,
+            markdown_output=markdown,
+            product_json=product_json,
+            output_file=result.get("output_file", "") if isinstance(result, dict) else "",
+            error="",
+        )
+    except Exception as error:
+        update_job(
+            job_id,
+            status="failed",
+            stage="Failed",
+            progress=100,
+            error=str(error),
+        )
+
+
+@app.post("/module/run", dependencies=[Depends(require_app_key)])
+def module_run(req: ModuleRunRequest):
+    session = get_session(req.session_id, include_raw=False)
+    if not session:
+        raise HTTPException(status_code=404, detail="Session not found")
+    job_id = "mod_" + datetime.now().strftime("%Y%m%d_%H%M%S_") + uuid.uuid4().hex[:8]
+    payload = {"session_id": req.session_id, "module_name": req.module_name}
+    job = create_job(job_id, payload)
+    thread = threading.Thread(
+        target=_run_module_job,
+        args=(job_id, req.session_id, req.module_name),
+        daemon=True,
+    )
+    thread.start()
+    return {
+        "job_id": job_id,
+        "session_id": req.session_id,
+        "module_name": req.module_name,
+        "status": job["status"],
+        "stage": job["stage"],
+        "progress": job["progress"],
+    }
+
+
+@app.get("/module/status", dependencies=[Depends(require_app_key)])
+def module_status(job_id: str):
+    job = get_job(job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
+    return job
 
 
 @app.post("/prepare/start", dependencies=[Depends(require_app_key)])

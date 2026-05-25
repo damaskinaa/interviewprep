@@ -30,6 +30,20 @@ def _connect():
             updated_at TEXT NOT NULL
         )
     """)
+    con.execute("""
+        CREATE TABLE IF NOT EXISTS sessions (
+            session_id TEXT PRIMARY KEY,
+            company_name TEXT NOT NULL,
+            role_name TEXT NOT NULL,
+            raw_jd TEXT NOT NULL DEFAULT '',
+            raw_cv TEXT NOT NULL DEFAULT '',
+            raw_answer_bank TEXT NOT NULL DEFAULT '',
+            raw_company_context TEXT NOT NULL DEFAULT '',
+            raw_youtube_transcripts TEXT NOT NULL DEFAULT '',
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL
+        )
+    """)
     con.commit()
     return con
 
@@ -133,3 +147,64 @@ def get_job(job_id):
         "created_at": row["created_at"],
         "updated_at": row["updated_at"],
     }
+
+
+def create_session(session_id, payload):
+    now = _now()
+    with _connect() as con:
+        con.execute(
+            """
+            INSERT INTO sessions (
+                session_id, company_name, role_name, raw_jd, raw_cv,
+                raw_answer_bank, raw_company_context, raw_youtube_transcripts,
+                created_at, updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                session_id,
+                payload.get("company_name", ""),
+                payload.get("role_name", ""),
+                payload.get("job_description", ""),
+                payload.get("cv", ""),
+                payload.get("answer_bank", ""),
+                payload.get("company_description", ""),
+                payload.get("youtube_transcripts", ""),
+                now,
+                now,
+            ),
+        )
+        con.commit()
+    return get_session(session_id, include_raw=True)
+
+
+def get_session(session_id, include_raw=False):
+    with _connect() as con:
+        row = con.execute(
+            "SELECT * FROM sessions WHERE session_id = ?",
+            (session_id,),
+        ).fetchone()
+
+    if not row:
+        return None
+
+    session = {
+        "session_id": row["session_id"],
+        "company_name": row["company_name"],
+        "role_name": row["role_name"],
+        "created_at": row["created_at"],
+        "updated_at": row["updated_at"],
+        "has_job_description": bool(row["raw_jd"]),
+        "has_cv": bool(row["raw_cv"]),
+        "has_answer_bank": bool(row["raw_answer_bank"]),
+        "has_company_context": bool(row["raw_company_context"]),
+        "has_youtube_transcripts": bool(row["raw_youtube_transcripts"]),
+    }
+    if include_raw:
+        session.update({
+            "raw_jd": row["raw_jd"],
+            "raw_cv": row["raw_cv"],
+            "raw_answer_bank": row["raw_answer_bank"],
+            "raw_company_context": row["raw_company_context"],
+            "raw_youtube_transcripts": row["raw_youtube_transcripts"],
+        })
+    return session
