@@ -2969,7 +2969,13 @@ def markdown_list(items):
     lines = []
     for item in as_list(items):
         if isinstance(item, dict):
-            text = "; ".join(f"{k}: {v}" for k, v in item.items() if v not in ("", [], None))
+            safe_parts = []
+            for k, v in item.items():
+                if k in {"id", "excerpt", "source_type", "source_manifest"} or v in ("", [], None):
+                    continue
+                label = str(k).replace("_", " ").strip().title()
+                safe_parts.append(f"{label}: {v}")
+            text = "; ".join(safe_parts)
         else:
             text = str(item)
         if text:
