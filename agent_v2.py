@@ -2707,6 +2707,18 @@ Do not invent source URLs.
 Do not use page titles as claims.
 """
     result = ask_json(prompt, model=MODEL_STRATEGY, max_tokens=6500, retries=2, fallback={})
+    known_urls = {normalize_text(source.get("url", "")) for source in sources if source.get("url")}
+    for item in as_list(result.get("official_company_signals")):
+        if not isinstance(item, dict):
+            continue
+        source_url = normalize_text(item.get("source_url", ""))
+        if source_url and source_url not in known_urls:
+            item["source_url"] = ""
+            item["confidence"] = "medium"
+            item["basis"] = (
+                "Source URL was not present in the collected source manifest, so this is treated as a JD, "
+                "company-context, or synthesis-supported signal rather than a proof-linked official source."
+            )
     result["source_manifest"] = [
         {
             "title": source.get("title", ""),
