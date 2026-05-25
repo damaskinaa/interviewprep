@@ -2971,7 +2971,13 @@ def markdown_list(items):
         if isinstance(item, dict):
             safe_parts = []
             for k, v in item.items():
-                if k in {"id", "excerpt", "source_type", "source_manifest"} or v in ("", [], None):
+                key = str(k).lower()
+                if (
+                    key in {"id", "excerpt", "source_type", "source_manifest"}
+                    or key.endswith("_id")
+                    or "source_id" in key
+                    or v in ("", [], None)
+                ):
                     continue
                 label = str(k).replace("_", " ").strip().title()
                 safe_parts.append(f"{label}: {v}")
