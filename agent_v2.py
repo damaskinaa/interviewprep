@@ -225,6 +225,10 @@ def assert_no_banned_visible_strings(markdown):
     for line_number, line in enumerate((markdown or "").splitlines(), start=1):
         lowered = line.lower()
         for needle in BANNED_VISIBLE_STRINGS + PACK_QUALITY_BANNED_STRINGS:
+            if needle == "id: S":
+                if re.search(r"(^|\s)id:\s*S\d*\b", line):
+                    found.append(f"{needle} on line {line_number}")
+                continue
             if needle.lower() in lowered:
                 found.append(f"{needle} on line {line_number}")
     if found:
@@ -3135,7 +3139,14 @@ Session ID: {session_id}
         "source_type:",
     ]
     lowered = markdown.lower()
-    found = [needle for needle in banned if needle.lower() in lowered]
+    found = []
+    for needle in banned:
+        if needle == "id: S":
+            if re.search(r"(^|\s)id:\s*S\d*\b", markdown):
+                found.append(needle)
+            continue
+        if needle.lower() in lowered:
+            found.append(needle)
     if found:
         raise ValueError(f"Prep pack failed assembly validation: {', '.join(found)}")
     path = write_module_markdown(session_id, "prep_pack", markdown.strip())
