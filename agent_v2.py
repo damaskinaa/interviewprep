@@ -2859,6 +2859,7 @@ WHY_COMPANY_GENERIC_PHRASES = [
     "culture of innovation",
     "commitment to innovation",
     "innovation and excellence",
+    "innovative practices",
 ]
 
 
@@ -3077,6 +3078,23 @@ Never pretend a generic answer is specific.
 
 def normalize_modular_strategy(strategy, session, company_intelligence, role_intelligence, candidate_profile, gap_map):
     strategy = strategy if isinstance(strategy, dict) else {}
+    if not isinstance(strategy.get("questions_by_round"), list):
+        strategy["questions_by_round"] = []
+    existing_rounds = {
+        normalize_text(item.get("round_name", "")).lower()
+        for item in as_list(strategy.get("questions_by_round"))
+        if isinstance(item, dict)
+    }
+    for round_plan in as_list(strategy.get("round_by_round_plan")):
+        if not isinstance(round_plan, dict):
+            continue
+        round_name = normalize_text(round_plan.get("round_name", ""))
+        if not round_name:
+            continue
+        key = round_name.lower()
+        if key not in existing_rounds:
+            strategy["questions_by_round"].append({"round_name": round_name, "questions": []})
+            existing_rounds.add(key)
     for round_item in as_list(strategy.get("questions_by_round")):
         if not isinstance(round_item, dict):
             continue
