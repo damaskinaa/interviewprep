@@ -2860,6 +2860,8 @@ WHY_COMPANY_GENERIC_PHRASES = [
     "commitment to innovation",
     "innovation and excellence",
     "innovative practices",
+    "collaboration across various teams",
+    "enhancing employee experience",
 ]
 
 
@@ -3037,8 +3039,46 @@ def why_company_is_generic(text):
     return any(phrase in lowered for phrase in WHY_COMPANY_GENERIC_PHRASES)
 
 
+def company_signal_text(signal):
+    if isinstance(signal, dict):
+        return normalize_text(signal.get("signal") or signal.get("theme") or signal.get("claim") or "")
+    return normalize_text(signal)
+
+
+def company_signal_has_source(signal):
+    if not isinstance(signal, dict):
+        return False
+    return bool(normalize_text(signal.get("source_url") or signal.get("url")) or signal.get("source_count"))
+
+
+def has_specific_company_signal(company_intelligence):
+    signals = as_list(company_intelligence.get("official_company_signals"))
+    themes = as_list(company_intelligence.get("directional_themes"))
+    for item in signals + themes:
+        text = company_signal_text(item)
+        if len(text.split()) < 7:
+            continue
+        if why_company_is_generic(text):
+            continue
+        if company_signal_has_source(item) or isinstance(item, dict) and item.get("source_count"):
+            return True
+    return False
+
+
+def insufficient_why_company_answer(company_intelligence):
+    found = markdown_list(company_intelligence.get("official_company_signals") or company_intelligence.get("directional_themes"))
+    return (
+        "Research insufficient for specific Google People Operations signals. "
+        f"Found: {found} "
+        "Missing: a clearly verified, non-generic signal about Google's People Operations operating model, "
+        "service delivery measures, process improvement mechanisms, or People Operations quality model that can be safely used in a Why Google answer."
+    )
+
+
 def repair_why_company_answer(strategy, session, company_intelligence, candidate_profile):
     current = strategy.get("why_this_company_answer", "")
+    if not has_specific_company_signal(company_intelligence):
+        return insufficient_why_company_answer(company_intelligence)
     if current and not why_company_is_generic(current):
         return current
     prompt = f"""
@@ -3067,12 +3107,7 @@ Never pretend a generic answer is specific.
 """
     answer = ask_llm(prompt, model=MODEL_STRATEGY, max_tokens=1200, retries=1).strip()
     if why_company_is_generic(answer):
-        found = markdown_list(company_intelligence.get("official_company_signals") or company_intelligence.get("directional_themes"))
-        answer = (
-            "Research insufficient for specific Google People Operations signals. "
-            f"Found: {found} "
-            "Missing: a clearly verified, non-generic signal about Google's People Operations operating model, service delivery measures, or process improvement mechanisms that can be safely used in a Why Google answer."
-        )
+        answer = insufficient_why_company_answer(company_intelligence)
     return answer
 
 
