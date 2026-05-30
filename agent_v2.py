@@ -2841,10 +2841,85 @@ No story may be assigned more than twice. Use story gap where evidence is missin
     return result
 
 
+ANSWER_BANNED_OPENINGS = [
+    "while my manager was away",
+    "in my previous role",
+    "in my role as",
+    "recognizing the need",
+    "i identified that",
+    "i faced a situation",
+]
+
+WHY_COMPANY_GENERIC_PHRASES = [
+    "leader in innovation",
+    "google is a leader in innovation",
+    "i admire google's culture",
+    "i admire google’s culture",
+    "dynamic environment",
+    "culture of innovation",
+    "commitment to innovation",
+    "innovation and excellence",
+]
+
+
+def first_sentence(text):
+    text = normalize_text(text)
+    match = re.search(r"(.+?[.!?])(\s|$)", text)
+    return match.group(1).strip() if match else text.split("\n", 1)[0].strip()
+
+
+def starts_with_banned_opening(answer):
+    opening = first_sentence(answer).lower()
+    return any(opening.startswith(phrase) for phrase in ANSWER_BANNED_OPENINGS)
+
+
+def replace_first_sentence(answer, new_opening):
+    answer = normalize_text(answer)
+    new_opening = normalize_text(new_opening).rstrip(".") + "."
+    match = re.search(r"(.+?[.!?])(\s|$)", answer)
+    if not match:
+        return normalize_text(f"{new_opening} {answer}")
+    return normalize_text(new_opening + " " + answer[match.end():])
+
+
+def repair_answer_opening(question, answer, assigned_story, session, candidate_profile):
+    prompt = f"""
+{STAGE_QUALITY_INSTRUCTION}
+
+Rewrite only the opening sentence for this interview answer. Return one sentence only.
+
+Company: {session["company_name"]}
+Role: {session["role_name"]}
+Question: {question}
+Assigned story: {assigned_story}
+
+Candidate profile:
+{trim_text(json_dumps(candidate_profile), 8000)}
+
+Current first sentence:
+{first_sentence(answer)}
+
+Allowed opening patterns:
+- The specific stake or problem first: The backlog across three regions had reached a point where...
+- The decision first: When the metric showed 77 percent I did not accept the calculation...
+- The constraint first: With no direct authority over regional leads and a 34 percent backlog gap...
+- The result first: We cut response time by one hour per case. Here is how...
+
+Never start with:
+{", ".join(ANSWER_BANNED_OPENINGS)}
+
+Use a specific metric or constraint from the assigned story if available. Do not invent facts.
+"""
+    opening = ask_llm(prompt, model=MODEL_FAST, max_tokens=180, retries=1).strip()
+    if not opening or starts_with_banned_opening(opening):
+        opening = "The operating problem was specific, measurable, and important enough to require a structured response."
+    return replace_first_sentence(answer, opening)
+
+
 def ensure_modular_answer(question, answer, assigned_story, session, candidate_profile, gap_map):
     answer = normalize_text(answer)
     lowered = answer.lower()
-    bad_open = lowered.startswith("in my previous role") or lowered.startswith("in my role as")
+    bad_open = starts_with_banned_opening(answer)
     bad_close = lowered.endswith("aligning with expectations") or lowered.endswith("the key takeaway for you is")
     if 200 <= count_words(answer) <= 260 and not bad_open and not bad_close:
         return answer
@@ -2869,7 +2944,12 @@ Current answer:
 
 Rules:
 Write 200 to 250 words.
-Open with the situation or the stake. Do not open with "In my previous role" or "In my role as".
+Each answer must open differently. Open with one of these patterns:
+- The specific stake or problem first.
+- The decision first.
+- The constraint first.
+- The result first.
+Do not open with: While my manager was away, In my previous role, In my role as, Recognizing the need, I identified that, I faced a situation.
 Use only real candidate evidence from candidate_profile and gap_map.
 End with the business result or proof of fit.
 Do not end with "aligning with expectations" or "the key takeaway for you is".
@@ -2889,14 +2969,129 @@ Return only the answer text.
             "That is the business result I would bring into the interview: evidence-led execution that improves quality, speed, and trust without inventing experience I have not had."
         )
         candidate_answer = normalize_text(candidate_answer + bridge)
+    if starts_with_banned_opening(candidate_answer):
+        candidate_answer = repair_answer_opening(question, candidate_answer, assigned_story, session, candidate_profile)
     return candidate_answer
 
 
-def normalize_modular_strategy(strategy, session, candidate_profile, gap_map):
+def generate_additional_round_questions(session, round_item, needed, company_intelligence, role_intelligence, candidate_profile, gap_map):
+    if needed <= 0:
+        return []
+    round_name = round_item.get("round_name", "Interview round") if isinstance(round_item, dict) else "Interview round"
+    prompt = f"""
+{STAGE_QUALITY_INSTRUCTION}
+
+The interview_strategy module produced too few questions for one round. Generate exactly {needed} additional questions for this round.
+
+Company: {session["company_name"]}
+Role: {session["role_name"]}
+Round: {round_name}
+
+Round context:
+{trim_text(json_dumps(round_item), 5000)}
+
+company_intelligence.json:
+{trim_text(json_dumps(company_intelligence), 9000)}
+
+role_intelligence.json:
+{trim_text(json_dumps(role_intelligence), 9000)}
+
+candidate_profile.json:
+{trim_text(json_dumps(candidate_profile), 10000)}
+
+gap_map.json:
+{trim_text(json_dumps(gap_map), 9000)}
+
+Return valid JSON only:
+{{"questions": [{{"question": "", "what_it_is_really_testing": "", "assigned_story": "", "danger_to_avoid": "", "complete_written_answer": "", "delivery_notes": ""}}]}}
+
+Rules:
+Each question must be specific and serious.
+Each answer must be 200 to 250 words and use only real candidate evidence.
+Each answer must open with the problem, decision, constraint, or result. Do not use banned openings.
+If the JD does not provide enough signal, generate the question from company_intelligence directional themes and write "Likely based on public patterns" inside what_it_is_really_testing.
+Do not invent candidate employers, titles, industries, credentials, domain experience, stories, outcomes, or metrics.
+"""
+    data = ask_json(prompt, model=MODEL_STRATEGY, max_tokens=5500, retries=1, fallback={"questions": []})
+    rows = []
+    for item in as_list(data.get("questions"))[:needed]:
+        if not isinstance(item, dict):
+            continue
+        item["complete_written_answer"] = ensure_modular_answer(
+            item.get("question", ""),
+            item.get("complete_written_answer", ""),
+            item.get("assigned_story", ""),
+            session,
+            candidate_profile,
+            gap_map,
+        )
+        rows.append(item)
+    return rows
+
+
+def why_company_is_generic(text):
+    lowered = normalize_text(text).lower()
+    if not lowered:
+        return True
+    return any(phrase in lowered for phrase in WHY_COMPANY_GENERIC_PHRASES)
+
+
+def repair_why_company_answer(strategy, session, company_intelligence, candidate_profile):
+    current = strategy.get("why_this_company_answer", "")
+    if current and not why_company_is_generic(current):
+        return current
+    prompt = f"""
+{STAGE_QUALITY_INSTRUCTION}
+
+Rewrite why_this_company_answer only. Return the full answer as plain text.
+
+Company: {session["company_name"]}
+Role: {session["role_name"]}
+
+company_intelligence.json:
+{trim_text(json_dumps(company_intelligence), 12000)}
+
+candidate_profile.json:
+{trim_text(json_dumps(candidate_profile), 12000)}
+
+Required structure:
+1. One specific thing about this company's approach to this domain that is different from other companies, sourced from company_intelligence official_company_signals or directional_themes.
+2. One specific thing about this role that connects to the candidate's real evidence from candidate_profile.
+3. One honest statement about what the candidate wants to learn or build that this role enables.
+
+Rules:
+Do not write generic phrases like "Google is a leader in innovation" or "I admire Google's culture."
+If company_intelligence does not have enough specific signals to write a non-generic Why Google answer, write: "Research insufficient for specific Google People Operations signals" and list what was found versus what is missing.
+Never pretend a generic answer is specific.
+"""
+    answer = ask_llm(prompt, model=MODEL_STRATEGY, max_tokens=1200, retries=1).strip()
+    if why_company_is_generic(answer):
+        found = markdown_list(company_intelligence.get("official_company_signals") or company_intelligence.get("directional_themes"))
+        answer = (
+            "Research insufficient for specific Google People Operations signals. "
+            f"Found: {found} "
+            "Missing: a clearly verified, non-generic signal about Google's People Operations operating model, service delivery measures, or process improvement mechanisms that can be safely used in a Why Google answer."
+        )
+    return answer
+
+
+def normalize_modular_strategy(strategy, session, company_intelligence, role_intelligence, candidate_profile, gap_map):
     strategy = strategy if isinstance(strategy, dict) else {}
     for round_item in as_list(strategy.get("questions_by_round")):
         if not isinstance(round_item, dict):
             continue
+        questions = as_list(round_item.get("questions"))[:6]
+        if len(questions) < 4:
+            questions.extend(generate_additional_round_questions(
+                session,
+                round_item,
+                4 - len(questions),
+                company_intelligence,
+                role_intelligence,
+                candidate_profile,
+                gap_map,
+            ))
+        round_item["questions"] = questions[:6]
         for item in as_list(round_item.get("questions")):
             if not isinstance(item, dict):
                 continue
@@ -2908,6 +3103,15 @@ def normalize_modular_strategy(strategy, session, candidate_profile, gap_map):
                 candidate_profile,
                 gap_map,
             )
+            if starts_with_banned_opening(item["complete_written_answer"]):
+                item["complete_written_answer"] = repair_answer_opening(
+                    item.get("question", ""),
+                    item["complete_written_answer"],
+                    item.get("assigned_story", ""),
+                    session,
+                    candidate_profile,
+                )
+    strategy["why_this_company_answer"] = repair_why_company_answer(strategy, session, company_intelligence, candidate_profile)
     return strategy
 
 
@@ -2964,18 +3168,37 @@ Return valid JSON only with this exact structure:
 
 Requirements:
 executive_win_strategy must be at least 400 words.
-Each round must have 3 to 5 questions.
+Each round must have minimum 4 questions and maximum 6 questions. This is mandatory. Do not produce fewer than 4 questions for any round.
+If the JD does not provide enough signal to generate 4 questions for a round, generate the remaining questions from company_intelligence directional_themes and label them as likely based on public patterns inside what_it_is_really_testing.
 Each complete_written_answer must be 200 to 250 words.
-Each answer must open with the situation or the stake. Never open with "In my previous role" or "In my role as".
+Each answer must open differently.
+Ban these opening phrases across all answers in the same pack:
+- While my manager was away
+- In my previous role
+- In my role as
+- Recognizing the need
+- I identified that
+- I faced a situation
+Each answer must open with one of these patterns instead:
+- The specific stake or problem first: The backlog across three regions had reached a point where...
+- The decision first: When the metric showed 77 percent I did not accept the calculation...
+- The constraint first: With no direct authority over regional leads and a 34 percent backlog gap...
+- The result first: We cut response time by one hour per case. Here is how...
 Each answer must end with the business result or proof of fit. Never end with "aligning with expectations" or "the key takeaway for you is".
 dangerous_questions must contain exactly 8 items with verbatim scripts.
 do_not_say must contain exactly 15 specific items.
 questions_to_ask must contain exactly 8 specific questions.
+why_this_company_answer must use specific signals from company_intelligence official_company_signals and directional_themes. It must not contain generic phrases like "Google is a leader in innovation" or "I admire Google's culture."
+why_this_company_answer must follow this structure:
+1. One specific thing about this company's approach to this domain that is different from other companies, sourced from company_intelligence.
+2. One specific thing about this role that connects to the candidate's real evidence from candidate_profile.
+3. One honest statement about what the candidate wants to learn or build that this role enables.
+If company_intelligence does not have enough specific signals to write a non-generic Why Google answer, say "Research insufficient for specific Google People Operations signals" and list what was found versus what was missing.
 Do not invent candidate background.
 """
     result = ask_json(prompt, model=MODEL_STRATEGY, max_tokens=15000, retries=2, fallback={})
     report_progress(progress_callback, "Strategy answer validation", 86)
-    result = normalize_modular_strategy(result, session, candidate_profile, gap_map)
+    result = normalize_modular_strategy(result, session, company_intelligence, role_intelligence, candidate_profile, gap_map)
     write_module_json(session_id, "interview_strategy", result)
     report_progress(progress_callback, "Interview strategy complete", 100)
     return result
