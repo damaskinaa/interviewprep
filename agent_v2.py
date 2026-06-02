@@ -1528,12 +1528,174 @@ def content_terms(text):
 
 
 def raw_jd_anchor_phrases(job_description):
-    sentences = [
-        normalize_text(sentence)
-        for sentence in re.split(r"(?<=[.!?])\s+|\n+", normalize_text(job_description))
-        if len(normalize_text(sentence).split()) >= 5
+    text = normalize_text(job_description)
+    candidates = []
+    for chunk in re.split(r"(?<=[.!?])\s+|\n+|;", text):
+        chunk = normalize_text(chunk)
+        if len(chunk.split()) >= 5:
+            candidates.append(chunk)
+        for subchunk in re.split(r",\s+", chunk):
+            subchunk = normalize_text(subchunk)
+            if len(subchunk.split()) >= 5:
+                candidates.append(subchunk)
+    anchors = []
+    seen = set()
+    for candidate in candidates:
+        key = candidate.lower()
+        if key not in seen:
+            seen.add(key)
+            anchors.append(candidate)
+    return anchors[:12]
+
+
+def derive_role_domain(role_name, job_description):
+    text = f"{role_name} {job_description}".lower()
+    if "data center" in text and "construction" in text and "workforce" in text:
+        return "Data Center Construction Workforce Development"
+    if "people operations" in text:
+        return "People Operations"
+    if "trust and safety" in text:
+        return "Trust and Safety"
+    if "lean six sigma" in text or "process improvement" in text:
+        return "Process Improvement / Operational Excellence"
+    role = normalize_text(role_name)
+    return role or "Program Management"
+
+
+def derive_top_responsibilities_from_jd(job_description):
+    anchors = raw_jd_anchor_phrases(job_description)
+    responsibilities = []
+    for anchor in anchors:
+        lower = anchor.lower()
+        if any(term in lower for term in [
+            "owns", "including", "aligning", "building", "tracking", "reducing",
+            "coordinating", "communicating", "lead", "manage", "strategy", "program",
+        ]):
+            responsibilities.append(anchor)
+    if len(responsibilities) < 5:
+        responsibilities.extend(anchor for anchor in anchors if anchor not in responsibilities)
+    return responsibilities[:8]
+
+
+def derive_must_prove_from_jd(job_description):
+    anchors = raw_jd_anchor_phrases(job_description)
+    text = normalize_text(job_description).lower()
+    signals = []
+
+    def add(signal, evidence, why):
+        if evidence:
+            signals.append({"signal": signal, "jd_evidence": evidence, "why_it_matters": why})
+
+    for anchor in anchors:
+        lower = anchor.lower()
+        if "trade gap" in lower or "labor market" in lower:
+            add("Can diagnose critical trade and labor-market gaps", anchor, "The role depends on identifying workforce constraints before they become delivery risks.")
+        elif "general contractor" in lower or "trade partner" in lower or "community college" in lower or "trade school" in lower:
+            add("Can align external partners and internal delivery teams", anchor, "The role requires influence across organizations that do not report directly to the program manager.")
+        elif "training" in lower or "mentorship" in lower or "upskilling" in lower or "buddy" in lower:
+            add("Can build repeatable workforce development mechanisms", anchor, "The JD points to scalable capability-building rather than one-off coordination.")
+        elif "metrics" in lower or "tracking" in lower:
+            add("Can define and monitor workforce readiness metrics", anchor, "The program has to prove progress with evidence, not activity reporting alone.")
+        elif "delivery risk" in lower or "labor constraints" in lower or "mitigation" in lower:
+            add("Can translate workforce constraints into delivery-risk mitigation plans", anchor, "The business impact is construction delivery risk, so the candidate must connect workforce work to execution outcomes.")
+        elif "senior" in lower or "communicating" in lower or "status" in lower:
+            add("Can communicate program status, risks, and mitigations to senior stakeholders", anchor, "Senior stakeholders need clear escalation, options, and evidence-backed recommendations.")
+
+    if "cross-functional" in text:
+        add("Can connect cross-functional teams around a shared workforce plan", next((a for a in anchors if "cross-functional" in a.lower()), anchors[0] if anchors else ""), "Cross-functional alignment is implied by the number of partner groups in the JD.")
+    if "data center" in text and len(signals) < 5:
+        add("Can operate in a data center construction delivery context", anchors[0] if anchors else normalize_text(job_description)[:300], "The role is anchored in data center construction delivery, so domain translation matters.")
+
+    seen = set()
+    unique = []
+    for item in signals:
+        key = item["signal"].lower()
+        if key not in seen:
+            seen.add(key)
+            unique.append(item)
+    return unique[:8]
+
+
+def derive_hidden_expectations_from_jd(job_description, top_responsibilities=None, must_prove_signals=None):
+    text = normalize_text(job_description).lower()
+    expectations = []
+    if any(term in text for term in ["general contractors", "trade partners", "community colleges", "trade schools", "workforce boards", "cross-functional"]):
+        expectations.append("Can align internal teams, external contractors, and education partners without direct authority.")
+    if any(term in text for term in ["training", "mentorship", "buddy", "upskilling", "scale"]):
+        expectations.append("Can build repeatable operating mechanisms, not one-off training activities.")
+    if any(term in text for term in ["metrics", "tracking", "data"]):
+        expectations.append("Can define workforce pipeline metrics, monitor adoption, and adjust based on evidence.")
+    if any(term in text for term in ["electrical", "mechanical", "piping", "trade gaps", "labor markets"]):
+        expectations.append("Can understand regional workforce constraints and translate them into practical program plans.")
+    if any(term in text for term in ["delivery risk", "labor constraints", "mitigation"]):
+        expectations.append("Can connect workforce development work directly to data center delivery-risk reduction.")
+    if any(term in text for term in ["senior stakeholders", "program status", "risks"]):
+        expectations.append("Can communicate status, tradeoffs, risks, and mitigation plans clearly to senior stakeholders.")
+    if len(expectations) < 5:
+        for item in as_list(top_responsibilities) + as_list(must_prove_signals):
+            text_item = short_item(item)
+            if text_item:
+                expectations.append(f"Can turn this JD requirement into a practical operating rhythm: {text_item}")
+            if len(expectations) >= 5:
+                break
+    return expectations[:8]
+
+
+def derive_dangerous_gaps_from_jd(job_description):
+    text = normalize_text(job_description).lower()
+    gaps = []
+    checks = [
+        ("data center construction" in text or "construction delivery" in text, "direct data center construction workforce development experience"),
+        ("electrical" in text or "piping" in text or "mechanical" in text, "electrical, mechanical, and piping trades familiarity"),
+        ("trade school" in text or "community college" in text or "workforce board" in text, "vocational training, workforce board, or apprenticeship partnership ownership"),
+        ("general contractor" in text or "trade partner" in text, "contractor and trade partner alignment experience"),
+        ("mentorship" in text or "buddy" in text or "training" in text or "upskilling" in text, "on-site mentorship, buddy programming, or upskilling module ownership"),
+        ("data center" in text, "data center delivery environment exposure"),
+        ("safety" in text or "construction" in text, "craft labor safety standards familiarity"),
+        ("metrics" in text or "tracking" in text, "workforce readiness metrics and adoption tracking experience"),
+        ("senior stakeholder" in text or "communicating" in text, "senior stakeholder risk communication in a construction delivery context"),
     ]
-    return sentences[:10]
+    for condition, label in checks:
+        if condition:
+            gaps.append(label)
+    if len(gaps) < 5:
+        gaps.extend([
+            "direct ownership of this role's exact operating environment",
+            "partner ecosystem depth specific to this JD",
+            "domain vocabulary and constraints specific to this JD",
+            "evidence of scaling the exact program mechanisms named in the JD",
+            "senior-level communication around the risks named in the JD",
+        ])
+    seen = set()
+    unique = []
+    for gap in gaps:
+        key = gap.lower()
+        if key not in seen:
+            seen.add(key)
+            unique.append(gap)
+    return unique[:8]
+
+
+def derive_scenario_questions_from_jd(job_description):
+    anchors = raw_jd_anchor_phrases(job_description)
+    signals = derive_must_prove_from_jd(job_description)
+    questions = []
+    for signal in signals:
+        anchor = signal.get("jd_evidence", "")
+        questions.append({
+            "question": f"Tell me about a time you proved you could {signal.get('signal', '').lower()}.",
+            "jd_anchor": anchor,
+            "why_this_question_matters": signal.get("why_it_matters", ""),
+        })
+    for anchor in anchors:
+        if len(questions) >= 10:
+            break
+        questions.append({
+            "question": f"How would you approach this responsibility from the JD: {anchor[:180]}?",
+            "jd_anchor": anchor,
+            "why_this_question_matters": "This tests whether the candidate can translate a stated JD requirement into a practical program plan.",
+        })
+    return questions[:10]
 
 
 def jd_analysis_prompt(job_description, role_name="", strict=False):
@@ -1594,6 +1756,13 @@ def validate_jd_target_lock(analysis, role_name, job_description):
     issues = []
     serialized = json_dumps(analysis).lower()
 
+    if not normalize_text(analysis.get("submitted_role_name")):
+        issues.append("submitted_role_name missing")
+    if not normalize_text(analysis.get("extracted_role_title")):
+        issues.append("extracted_role_title missing")
+    if not normalize_text(analysis.get("role_domain")):
+        issues.append("role_domain missing")
+
     for term in WRONG_JD_DOMAIN_TERMS:
         if term in serialized and term not in jd_text:
             issues.append(f"wrong domain term not in submitted JD: {term}")
@@ -1620,17 +1789,23 @@ def validate_jd_target_lock(analysis, role_name, job_description):
                 issues.append(f"top responsibility contains wrong-domain term: {term}")
 
     anchors = as_list(analysis.get("raw_jd_anchor_phrases"))
-    if not anchors:
-        issues.append("raw_jd_anchor_phrases missing")
+    if len(anchors) < 8:
+        issues.append("raw_jd_anchor_phrases has fewer than 8 items")
     for anchor in anchors[:10]:
         anchor_text = normalize_text(anchor).lower()
         if anchor_text and anchor_text not in jd_text:
             issues.append(f"raw JD anchor phrase not found in submitted JD: {anchor_text[:120]}")
 
-    required_lists = ["top_responsibilities", "must_prove_signals", "hidden_expectations", "dangerous_gaps", "scenario_question_seeds"]
-    for key in required_lists:
-        if not as_list(analysis.get(key)):
-            issues.append(f"{key} missing or empty")
+    required_counts = {
+        "top_responsibilities": 5,
+        "must_prove_signals": 5,
+        "hidden_expectations": 5,
+        "dangerous_gaps": 5,
+        "scenario_question_seeds": 8,
+    }
+    for key, minimum in required_counts.items():
+        if len(as_list(analysis.get(key))) < minimum:
+            issues.append(f"{key} has fewer than {minimum} items")
 
     return sorted(set(issues))
 
@@ -1638,11 +1813,11 @@ def validate_jd_target_lock(analysis, role_name, job_description):
 def normalize_jd_analysis(analysis, role_name, job_description):
     analysis = analysis if isinstance(analysis, dict) else {}
     analysis["submitted_role_name"] = normalize_text(analysis.get("submitted_role_name") or role_name)
-    analysis.setdefault("extracted_role_title", normalize_text(role_name))
-    analysis.setdefault("role_domain", "")
+    analysis["extracted_role_title"] = normalize_text(analysis.get("extracted_role_title") or role_name)
+    analysis["role_domain"] = normalize_text(analysis.get("role_domain") or derive_role_domain(role_name, job_description))
     anchors = raw_jd_anchor_phrases(job_description)
-    if not as_list(analysis.get("raw_jd_anchor_phrases")):
-        analysis["raw_jd_anchor_phrases"] = anchors[:6]
+    if len(as_list(analysis.get("raw_jd_anchor_phrases"))) < 8:
+        analysis["raw_jd_anchor_phrases"] = anchors[:10]
     if not isinstance(analysis.get("must_prove_signals"), list):
         analysis["must_prove_signals"] = as_list(analysis.get("jd_signals"))
     if not isinstance(analysis.get("jd_signals"), list):
@@ -1663,6 +1838,61 @@ def normalize_jd_analysis(analysis, role_name, job_description):
     ]:
         if not isinstance(analysis.get(key), list):
             analysis[key] = []
+
+    if len(analysis["top_responsibilities"]) < 5:
+        merged = analysis["top_responsibilities"] + [
+            item for item in derive_top_responsibilities_from_jd(job_description)
+            if item not in analysis["top_responsibilities"]
+        ]
+        analysis["top_responsibilities"] = merged[:8]
+
+    if len(analysis["must_prove_signals"]) < 5:
+        existing_signals = {short_item(item).lower() for item in analysis["must_prove_signals"]}
+        for item in derive_must_prove_from_jd(job_description):
+            if short_item(item).lower() not in existing_signals:
+                analysis["must_prove_signals"].append(item)
+                existing_signals.add(short_item(item).lower())
+        for responsibility in analysis["top_responsibilities"]:
+            if len(analysis["must_prove_signals"]) >= 5:
+                break
+            signal = {
+                "signal": f"Can execute this JD responsibility: {short_item(responsibility)[:160]}",
+                "jd_evidence": short_item(responsibility),
+                "why_it_matters": "This is a stated responsibility in the submitted JD and must be proven with a relevant candidate story.",
+            }
+            key = short_item(signal).lower()
+            if key not in existing_signals:
+                analysis["must_prove_signals"].append(signal)
+                existing_signals.add(key)
+        analysis["must_prove_signals"] = analysis["must_prove_signals"][:8]
+
+    if len(analysis["jd_signals"]) < 5:
+        analysis["jd_signals"] = analysis["must_prove_signals"][:8]
+
+    if len(analysis["hidden_expectations"]) < 5:
+        existing = {short_item(item).lower() for item in analysis["hidden_expectations"]}
+        for item in derive_hidden_expectations_from_jd(job_description, analysis["top_responsibilities"], analysis["must_prove_signals"]):
+            if short_item(item).lower() not in existing:
+                analysis["hidden_expectations"].append(item)
+                existing.add(short_item(item).lower())
+        analysis["hidden_expectations"] = analysis["hidden_expectations"][:8]
+
+    if len(analysis["dangerous_gaps"]) < 5:
+        existing = {short_item(item).lower() for item in analysis["dangerous_gaps"]}
+        for item in derive_dangerous_gaps_from_jd(job_description):
+            if short_item(item).lower() not in existing:
+                analysis["dangerous_gaps"].append(item)
+                existing.add(short_item(item).lower())
+        analysis["dangerous_gaps"] = analysis["dangerous_gaps"][:8]
+
+    if len(analysis["scenario_question_seeds"]) < 8:
+        existing = {short_item(item).lower() for item in analysis["scenario_question_seeds"]}
+        for item in derive_scenario_questions_from_jd(job_description):
+            if short_item(item).lower() not in existing:
+                analysis["scenario_question_seeds"].append(item)
+                existing.add(short_item(item).lower())
+        analysis["scenario_question_seeds"] = analysis["scenario_question_seeds"][:10]
+
     return analysis
 
 
