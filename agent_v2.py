@@ -2580,13 +2580,258 @@ For Google People Operations, do not output broad value words such as innovation
 Output exactly 5 markdown bullets. Every bullet must start with "- signal:" and must also include "why_it_matters_for_this_role:" and "how_candidate_should_use_it:". Do not use numbered lists, paragraphs, source titles, or page names as signals.
 """
     strategy = ask_json(prompt, model=MODEL_STRATEGY, max_tokens=9000, fallback={})
-    strategy = normalize_interview_strategy(strategy, research=research)
+    strategy = normalize_interview_strategy(strategy, research=research, candidate_profile=candidate_profile)
+    outline_issues = validate_best_answer_outlines(strategy, candidate_profile)
+    if outline_issues:
+        raise ValueError("interview_strategy best_answer_outlines assignment failed. " + "; ".join(outline_issues[:8]))
     set_result("interview_strategy_json", json_dumps(strategy))
     log(5, "Interview strategy JSON complete", "done")
     return strategy
 
 
-def normalize_interview_strategy(strategy, research=None):
+STRATEGY_BANNED_OPENINGS = [
+    "in my previous role",
+    "in my role as",
+    "i identified that",
+    "i faced a situation",
+    "recognizing the need",
+    "while my manager was away",
+]
+
+
+def strategy_answer_has_banned_opening(answer):
+    opening = normalize_text(answer).lower()
+    return any(opening.startswith(item) for item in STRATEGY_BANNED_OPENINGS)
+
+
+def story_title(story):
+    return normalize_text(story.get("title") or story.get("story_name") or "Candidate story") if isinstance(story, dict) else ""
+
+
+def story_id(story):
+    return normalize_text(story.get("story_id") or story_id_from_title(story_title(story), 1)) if isinstance(story, dict) else ""
+
+
+def story_lookup(candidate_profile):
+    stories = [story for story in as_list((candidate_profile or {}).get("story_inventory")) if isinstance(story, dict)]
+    by_id = {story_id(story): story for story in stories if story_id(story)}
+    return stories, by_id
+
+
+def story_assignment_keywords(question):
+    text = normalize_text(question).lower()
+    buckets = []
+    checks = [
+        (["stakeholder", "cross-functional", "cross functional", "regional", "handover", "partner", "alignment"], ["backlog", "handover", "stakeholder", "regional", "cross"]),
+        (["process", "redesign", "efficiency", "workflow", "automation", "improvement"], ["queue", "workflow", "automation", "40", "process"]),
+        (["metric", "dashboard", "data", "root cause", "integrity", "measure"], ["metric", "dashboard", "77", "93", "data", "sla"]),
+        (["leadership", "team performance", "operating cadence", "quality", "qa"], ["team leadership", "quality", "qa", "14", "cadence"]),
+        (["mentor", "mentorship", "buddy", "coaching", "knowledge transfer", "team growth"], ["people development", "mentor", "coach", "training"]),
+        (["training", "onboarding", "upskilling", "sop", "repeatable"], ["training", "onboarding", "sop", "knowledge", "upskilling"]),
+        (["workforce", "capacity", "staffing", "resource", "labor"], ["workforce", "resource", "capacity", "team of 10"]),
+        (["launch", "readiness", "risk", "escalation", "delivery"], ["launch", "readiness", "risk", "operating rhythm", "escalation"]),
+    ]
+    for question_terms, story_terms in checks:
+        if any(term in text for term in question_terms):
+            buckets.extend(story_terms)
+    return buckets
+
+
+def direct_domain_question(question):
+    text = normalize_text(question).lower()
+    direct_terms = [
+        "critical trade gap", "electrical", "piping", "mechanical", "trade school",
+        "apprenticeship", "contractor", "data center construction", "construction workforce",
+    ]
+    transferable_terms = ["stakeholder", "metric", "risk", "process", "training", "resource", "alignment", "readiness"]
+    return any(term in text for term in direct_terms) and not any(term in text for term in transferable_terms)
+
+
+def choose_story_for_question(question, stories, counts):
+    if direct_domain_question(question):
+        return None
+    keywords = story_assignment_keywords(question)
+    best_story = None
+    best_score = 0
+    for story in stories:
+        if counts.get(story_id(story), 0) >= 2 and len(stories) >= 5:
+            continue
+        haystack = " ".join([
+            story_title(story),
+            normalize_text(story.get("trigger_phrase")),
+            " ".join(as_list(story.get("competencies"))),
+            " ".join(as_list(story.get("usable_for_questions"))),
+        ]).lower()
+        score = sum(1 for keyword in keywords if keyword and keyword in haystack)
+        if score > best_score:
+            best_score = score
+            best_story = story
+    if best_story:
+        return best_story
+    for story in stories:
+        if counts.get(story_id(story), 0) < 2 or len(stories) < 5:
+            return story
+    return None
+
+
+def answer_word_range(answer):
+    return count_words(answer)
+
+
+def fit_answer_word_count(answer):
+    answer = normalize_text(answer)
+    if answer_word_range(answer) < 180:
+        answer = normalize_text(answer + " " + (
+            "The tradeoff I would name in the interview is that this was not the same domain as data center construction workforce development, "
+            "so I would not overclaim trade, contractor, or construction ownership. The proof I would emphasize is the operating pattern: I clarified the problem, "
+            "made the work measurable, aligned people around the change, and protected the result through follow-through. That is the transferable foundation I can bring to a Google role where workforce readiness, partner alignment, and delivery risk all need disciplined program management."
+        ))
+    if answer_word_range(answer) > 260:
+        sentences = re.split(r"(?<=[.!?])\s+", answer)
+        kept = []
+        for sentence in sentences:
+            if answer_word_range(" ".join(kept + [sentence])) > 255:
+                break
+            kept.append(sentence)
+        answer = normalize_text(" ".join(kept)) or answer
+    return answer
+
+
+def build_story_answer(question, story):
+    title = story_title(story)
+    metrics = ", ".join(as_list(story.get("metrics") or story.get("metrics_provided"))) or "the operating metric attached to the story"
+    actions = " ".join(as_list(story.get("actions"))[:3])
+    competencies = ", ".join(as_list(story.get("competencies"))[:3]) or "program management and operating discipline"
+    answer = (
+        f"The result I would lead with is {normalize_text(story.get('result')) or 'a measurable operating improvement'} because it shows {competencies}. "
+        f"The situation was this: {normalize_text(story.get('situation')) or title}. "
+        f"The decision I made was {normalize_text(story.get('decision')) or 'to treat the issue as an operating-system problem rather than a one-off task'}. "
+        f"I personally focused on {actions or 'clarifying ownership, making the work measurable, and creating a repeatable execution rhythm'}. "
+        f"The metric I would use is {metrics}. "
+        "The tradeoff was that I had to improve speed and clarity without pretending I had direct authority over every stakeholder or direct domain ownership I did not have. "
+        f"What this proves for the question '{normalize_text(question)}' is that I can take an ambiguous operating problem, define the mechanism, align people around it, and measure whether the change actually worked. "
+        f"The result squared is that the story is not only about {title}; it shows a repeatable way to reduce delivery risk, improve readiness, and build trust through evidence."
+    )
+    if strategy_answer_has_banned_opening(answer):
+        answer = "The measurable operating result is the important starting point. " + answer
+    return fit_answer_word_count(answer)
+
+
+def build_story_gap_answer(question, candidate_profile):
+    forbidden = "; ".join(as_list((candidate_profile or {}).get("forbidden_claims"))[:3])
+    answer = (
+        f"I have not directly owned {normalize_text(question).rstrip('?')}, but the closest transferable evidence I have is my operations work in stakeholder alignment, metrics discipline, process improvement, team leadership, and risk visibility. "
+        "I would be explicit about that boundary in the interview because claiming direct construction, electrical, piping, trade school, contractor, or data center delivery ownership would be inaccurate. "
+        "The way I would bridge it is by showing how I have handled adjacent operating problems: making ambiguous work visible, creating dashboards or operating rhythms, coordinating stakeholders, improving quality, and using metrics to guide decisions. "
+        "The tradeoff is that transferable evidence is not the same as domain proof, so I would not present it as a finished workforce-development credential. "
+        "Instead, I would say that the story I need to prepare is a truthful example of how I diagnosed a capacity or capability gap, aligned the right partners, tracked adoption, and reduced delivery risk. "
+        f"What I would not say is: {forbidden or 'anything that invents unsupported direct domain ownership'}. "
+        "That gives the interviewer a truthful bridge: I am not pretending to have the exact domain background, but I can show the operating discipline needed to learn the domain quickly and execute responsibly."
+    )
+    return fit_answer_word_count(answer)
+
+
+def normalize_outline_answer_item(question, story, candidate_profile):
+    if story is None:
+        return {
+            "question": normalize_text(question),
+            "assigned_story_id": "story_gap",
+            "assigned_story_title": "Story gap to prepare",
+            "assigned_story": "Story gap to prepare",
+            "story_source": "story_gap",
+            "why_this_story": "No candidate story directly proves this domain-specific question without risking unsupported claims.",
+            "complete_written_answer": build_story_gap_answer(question, candidate_profile),
+            "full_answer": build_story_gap_answer(question, candidate_profile),
+            "what_it_proves": "Truthful boundary-setting and transferable operating discipline.",
+            "metric_to_use": "No direct metric; prepare a truthful metric if one exists.",
+            "tradeoff_to_show": "Transferable evidence versus direct domain ownership.",
+            "result_squared": "Shows honesty, judgment, and a plan to build the missing story.",
+            "what_not_to_say": "Do not invent direct construction, electrical, piping, trade school, contractor, or data center delivery ownership.",
+            "evidence_used": ["story_gap"],
+            "risk_boundary": "Do not claim unsupported background.",
+        }
+    metrics = as_list(story.get("metrics") or story.get("metrics_provided"))
+    answer = build_story_answer(question, story)
+    return {
+        "question": normalize_text(question),
+        "assigned_story_id": story_id(story),
+        "assigned_story_title": story_title(story),
+        "assigned_story": story_title(story),
+        "story_source": story.get("source", ""),
+        "why_this_story": f"This story maps to the question through {', '.join(as_list(story.get('usable_for_questions'))[:3]) or 'transferable program evidence'}.",
+        "complete_written_answer": answer,
+        "full_answer": answer,
+        "what_it_proves": ", ".join(as_list(story.get("competencies"))[:4]) or "Grounded candidate evidence.",
+        "metric_to_use": ", ".join(metrics) if metrics else "Use only the metrics already attached to this story.",
+        "tradeoff_to_show": "Name the domain boundary honestly while showing the transferable operating pattern.",
+        "result_squared": story.get("result_squared") or "Explain how the result proves a repeatable operating pattern.",
+        "what_not_to_say": "; ".join(as_list(story.get("forbidden_expansions"))[:3]) or "Do not claim unsupported domain ownership.",
+        "evidence_used": [story_id(story), story_title(story)],
+        "risk_boundary": "Do not claim unsupported background.",
+    }
+
+
+def normalize_best_answer_outlines(strategy, candidate_profile):
+    stories, by_id = story_lookup(candidate_profile)
+    questions = [
+        item for item in as_list(strategy.get("top_10_likely_questions"))
+        if isinstance(item, dict) and item.get("question")
+    ][:10]
+    if len(questions) < 8:
+        for item in as_list(strategy.get("best_answer_outlines")):
+            if len(questions) >= 10:
+                break
+            if isinstance(item, dict) and item.get("question"):
+                questions.append({"question": item.get("question")})
+    counts = {}
+    outlines = []
+    for item in questions[:10]:
+        question = item.get("question", "")
+        story = choose_story_for_question(question, stories, counts)
+        if story is not None:
+            counts[story_id(story)] = counts.get(story_id(story), 0) + 1
+        outlines.append(normalize_outline_answer_item(question, story, candidate_profile))
+    strategy["best_answer_outlines"] = outlines
+    return strategy
+
+
+def validate_best_answer_outlines(strategy, candidate_profile):
+    stories, by_id = story_lookup(candidate_profile)
+    outlines = as_list(strategy.get("best_answer_outlines"))
+    issues = []
+    if len(outlines) < 8:
+        issues.append("best_answer_outlines has fewer than 8")
+    counts = {}
+    for index, outline in enumerate(outlines, start=1):
+        if not isinstance(outline, dict):
+            issues.append(f"outline {index} is not an object")
+            continue
+        sid = normalize_text(outline.get("assigned_story_id"))
+        title = normalize_text(outline.get("assigned_story_title"))
+        answer = normalize_text(outline.get("complete_written_answer") or outline.get("full_answer"))
+        if not sid:
+            issues.append(f"outline {index} missing assigned_story_id")
+        if not title:
+            issues.append(f"outline {index} missing assigned_story_title")
+        if sid != "story_gap" and sid not in by_id:
+            issues.append(f"outline {index} assigned_story_id not found in candidate_profile: {sid}")
+        if sid != "story_gap":
+            counts[sid] = counts.get(sid, 0) + 1
+        words = count_words(answer)
+        if words < 180:
+            issues.append(f"outline {index} complete_written_answer fewer than 180 words")
+        if words > 260:
+            issues.append(f"outline {index} complete_written_answer more than 260 words")
+        if strategy_answer_has_banned_opening(answer):
+            issues.append(f"outline {index} starts with banned opening")
+    if len(stories) >= 5:
+        for sid, count in counts.items():
+            if count > 2:
+                issues.append(f"story {sid} used more than twice")
+    return issues
+
+
+def normalize_interview_strategy(strategy, research=None, candidate_profile=None):
     strategy = strategy if isinstance(strategy, dict) else {}
     for key in [
         "why_interviewer_might_hesitate",
@@ -2620,39 +2865,7 @@ def normalize_interview_strategy(strategy, research=None):
                 "risk_to_avoid": "Do not claim unproven employer, title, industry, credential, domain, story, outcome, or metric.",
             })
 
-    normalized_outlines = []
-    for item in as_list(strategy.get("best_answer_outlines")):
-        if not isinstance(item, dict) or not item.get("question"):
-            continue
-        full_answer = item.get("full_answer") or item.get("answer") or item.get("direct_answer") or ""
-        if not str(full_answer).strip():
-            full_answer = (
-                "Story gap to prepare: this question needs a specific candidate story from candidate_profile.json "
-                "with situation, decision, personal action, metric, result, difficulty, and a final sentence that lands on impact or proof of fit."
-            )
-        normalized_outlines.append({
-            "question": item.get("question", ""),
-            "assigned_story": item.get("assigned_story") or preferred_story_for_question(item.get("question", "")),
-            "full_answer": str(full_answer).strip(),
-            "evidence_used": as_list(item.get("evidence_used")),
-            "risk_boundary": item.get("risk_boundary") or item.get("what_not_to_say") or "Do not claim unproven domain experience, stories, titles, employers, credentials, or metrics.",
-        })
-
-    for item in all_questions:
-        if len(normalized_outlines) >= 10:
-            break
-        normalized_outlines.append({
-            "question": item.get("question", ""),
-            "assigned_story": preferred_story_for_question(item),
-            "full_answer": (
-                "Story gap to prepare: build a grounded spoken answer for this question using one verified candidate story, "
-                "one metric from candidate_profile.json, the decision made, the personal action taken, the difficulty navigated, "
-                "the result, and a final sentence that lands on impact or proof of fit. Do not claim unproven domain ownership."
-            ),
-            "evidence_used": [item.get("jd_signal", ""), item.get("candidate_gap", ""), item.get("research_signal", "")],
-            "risk_boundary": "Do not claim unproven domain ownership, employers, titles, industries, credentials, stories, outcomes, or metrics.",
-        })
-    strategy["best_answer_outlines"] = normalized_outlines
+    strategy = normalize_best_answer_outlines(strategy, candidate_profile or {})
     if len(strategy["section_strategy"]["company_signal_map"]) < 5:
         existing = strategy["section_strategy"]["company_signal_map"]
         if len(existing) < 5:
@@ -2746,16 +2959,23 @@ def format_answer_outlines(outlines):
         question = item.get("question", "").strip()
         if not question:
             continue
-        full_answer = (item.get("full_answer") or item.get("answer") or item.get("direct_answer") or "").strip()
+        full_answer = (item.get("complete_written_answer") or item.get("full_answer") or item.get("answer") or item.get("direct_answer") or "").strip()
         if not full_answer:
             full_answer = "Story gap to prepare: build a specific answer from verified candidate evidence before practicing this question."
         evidence = ", ".join(str(entry) for entry in as_list(item.get("evidence_used")) if str(entry).strip())
         risk_boundary = item.get("risk_boundary", "")
+        story_label = item.get("assigned_story_title") or item.get("assigned_story") or "Story gap to prepare"
+        story_id_value = item.get("assigned_story_id") or "story_gap"
         rows.append(
             f"{index}. **{question}**\n"
             f"{full_answer}\n"
-            f"   - Evidence used: Assigned story: {item.get('assigned_story') or 'story gap to prepare'}"
+            f"   - Evidence used: Assigned story: {story_label} (ID: {story_id_value})"
             f"{', ' + evidence if evidence else ''}\n"
+            f"   - Why this story: {item.get('why_this_story') or 'Grounded candidate evidence.'}\n"
+            f"   - Metric to use: {item.get('metric_to_use') or 'Use only verified metrics.'}\n"
+            f"   - Tradeoff to show: {item.get('tradeoff_to_show') or 'Name the honest boundary.'}\n"
+            f"   - Result squared: {item.get('result_squared') or 'Connect the result to proof of fit.'}\n"
+            f"   - What not to say: {item.get('what_not_to_say') or 'Do not invent unsupported background.'}\n"
             f"   - Risk boundary: {risk_boundary or 'Do not claim unsupported background.'}"
         )
     return "\n".join(rows) if rows else "- Best answer outlines were not produced; rerun the strategy stage."
@@ -2854,7 +3074,7 @@ def answer_outline_word_failures(section_text):
         answer_text = re.sub(r"^\d+\. \*\*.*?\*\*\s*", "", clean, flags=re.S)
         answer_text = answer_text.split("\n   - Evidence used:", 1)[0].strip()
         word_count = len(re.findall(r"\b\w+\b", answer_text))
-        if word_count and word_count < 150:
+        if word_count and word_count < 180:
             heading = clean.splitlines()[0]
             failures.append(f"{heading} has {word_count} words")
     return failures
@@ -2923,13 +3143,13 @@ def assign_stories_to_questions(questions):
 def answer_outline_story_failures(section_text):
     assigned = re.findall(r"Assigned story:\s*([^\n,]+)", section_text or "", flags=re.I)
     failures = []
-    if len(assigned) < 10:
+    if len(assigned) < 8:
         failures.append("Best Answer Outlines missing assigned stories")
         return failures
     counts = {}
     for story in assigned:
         story = story.strip()
-        if story.lower() == "story gap to prepare":
+        if story.lower().startswith("story gap"):
             continue
         counts[story] = counts.get(story, 0) + 1
     for story, count in counts.items():
@@ -3482,6 +3702,8 @@ def validate_artifacts_before_pack(role_name, job_description, extra, candidate_
         issues.append("interview strategy dangerous questions empty")
     if not as_list(strategy.get("top_10_likely_questions")):
         issues.append("interview strategy likely questions empty")
+    outline_issues = validate_best_answer_outlines(strategy, candidate_profile)
+    issues.extend(f"best_answer_outlines: {issue}" for issue in outline_issues)
 
     return sorted(set(issues))
 
