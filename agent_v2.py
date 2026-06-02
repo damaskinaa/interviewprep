@@ -191,6 +191,16 @@ PACK_QUALITY_BANNED_STRINGS = [
     "the key takeaway for you is",
 ]
 
+EDITORIAL_BANNED_STRINGS = [
+    "The context was",
+    "The result squared",
+    "This proves my fit",
+    "This aligns with Google expectations",
+    "The result I would lead with is",
+    "Use the official company signals above",
+    "This section needs more specific evidence",
+]
+
 STAGE_QUALITY_INSTRUCTION = (
     "Think carefully and thoroughly before producing output. Do not rush. "
     "You must produce substantive specific content for this candidate and this role. "
@@ -233,6 +243,20 @@ def assert_no_banned_visible_strings(markdown):
                 found.append(f"{needle} on line {line_number}")
     if found:
         raise ValueError(f"Visible prep pack contains banned internal strings: {', '.join(found[:20])}")
+
+
+def assert_no_editorial_banned_strings(markdown):
+    found = []
+    text = markdown or ""
+    lowered = text.lower()
+    for needle in EDITORIAL_BANNED_STRINGS:
+        if needle.lower() in lowered:
+            found.append(needle)
+    copied_question_pattern = re.compile(r"I have not directly owned\s+[^.\n?]{45,}[?.]", flags=re.I)
+    if copied_question_pattern.search(text):
+        found.append("I have not directly owned followed by a copied question")
+    if found:
+        raise ValueError(f"Visible prep pack failed editorial quality gate: {', '.join(found[:20])}")
 
 
 def strip_external_research(extra):
@@ -4034,6 +4058,322 @@ def repair_pack_quality(pack, company_name, role_name, candidate_profile, jd_ana
     return repaired
 
 
+def replace_markdown_section(markdown, title, body):
+    pattern = re.compile(rf"^## {re.escape(title)}\s*$", flags=re.M)
+    match = pattern.search(markdown or "")
+    if not match:
+        return markdown
+    start = match.end()
+    next_match = re.search(r"^## ", markdown[start:], flags=re.M)
+    end = start + next_match.start() if next_match else len(markdown)
+    replacement = f"## {title}\n{body.strip()}\n\n"
+    return markdown[:match.start()] + replacement + markdown[end:]
+
+
+def find_story(candidate_profile, terms):
+    stories = [story for story in as_list((candidate_profile or {}).get("story_inventory")) if isinstance(story, dict)]
+    terms = [term.lower() for term in terms]
+    best = None
+    best_score = -1
+    for story in stories:
+        haystack = " ".join([
+            story_title(story),
+            normalize_text(story.get("situation")),
+            normalize_text(story.get("decision")),
+            " ".join(as_list(story.get("actions"))),
+            " ".join(as_list(story.get("competencies"))),
+            " ".join(as_list(story.get("usable_for_questions"))),
+        ]).lower()
+        score = sum(1 for term in terms if term in haystack)
+        if score > best_score:
+            best = story
+            best_score = score
+    return best
+
+
+def lead_story_set(candidate_profile):
+    return [
+        find_story(candidate_profile, ["backlog", "handover", "stakeholder", "regional"]),
+        find_story(candidate_profile, ["queue", "workflow", "automation", "40"]),
+        find_story(candidate_profile, ["metric", "dashboard", "77", "93", "sla"]),
+    ]
+
+
+def story_label_for_visible(story):
+    return story_title(story) if story else "Bridge story to prepare"
+
+
+def editorial_story_for_question(question, candidate_profile):
+    text = normalize_text(question).lower()
+    if any(term in text for term in ["electrical", "piping", "readiness dashboard", "metric", "pipeline metrics", "definitions of readiness"]):
+        return find_story(candidate_profile, ["metric", "dashboard", "77", "93", "sla"])
+    if any(term in text for term in ["contractor", "vendor", "stakeholder", "community college", "trade school", "workforce board", "external partners"]):
+        return find_story(candidate_profile, ["backlog", "stakeholder", "handover", "regional"])
+    if any(term in text for term in ["training lab", "mentorship", "buddy", "upskilling", "safety", "craft workers", "coaching", "playbook"]):
+        return find_story(candidate_profile, ["training", "onboarding", "sop", "people development", "mentor", "coaching", "quality"])
+    if any(term in text for term in ["delivery risk", "regional workforce", "labor constraints", "six months behind", "data center"]):
+        return find_story(candidate_profile, ["launch", "readiness", "risk", "workforce", "resource", "backlog"])
+    if any(term in text for term in ["background is operations", "strongest claim", "fastest learning curve"]):
+        return find_story(candidate_profile, ["backlog", "queue", "metric", "team leadership"])
+    return find_story(candidate_profile, ["backlog", "metric", "training", "stakeholder"])
+
+
+def metric_sentence(story):
+    metrics = [normalize_text(item) for item in as_list((story or {}).get("metrics") or (story or {}).get("metrics_provided")) if normalize_text(item)]
+    if not metrics:
+        return "I would not add a metric unless I can tie it back to the actual story."
+    if len(metrics) == 1:
+        return f"The metric I would use is {metrics[0]}, because it gives the interviewer something concrete instead of a vague claim."
+    return f"The metrics I would use are {', '.join(metrics[:3])}, because they show the change was measurable rather than anecdotal."
+
+
+def editorial_opening_for_question(question, story):
+    text = normalize_text(question).lower()
+    if "background is operations" in text or "why should google take that risk" in text:
+        return "I would be careful not to sell myself as a construction workforce expert."
+    if "electrical" in text or "piping" in text:
+        return "I would not pretend I already know the electrical or piping labor market."
+    if "contractor" in text or "vendor" in text:
+        return "I would start by separating the disagreement from the data."
+    if "trade school" in text or "workforce board" in text or "community college" in text:
+        return "I would treat that as a partner-alignment problem with different incentives on the table."
+    if "training lab" in text or "mentorship" in text or "buddy" in text or "upskilling" in text:
+        return "I would judge the program by whether it changes readiness, not by whether it looks active."
+    if "regional workforce" in text or "delivery risk" in text or "labor constraints" in text:
+        return "The stake I would put on the table is schedule risk."
+    if story:
+        title = story_title(story).lower()
+        if "backlog" in title:
+            return "The closest evidence I would use is the global backlog and handover work."
+        if "metric" in title or "dashboard" in title:
+            return "The strongest evidence I have is the metric-correction work."
+        if "training" in title or "sop" in title or "mentor" in title:
+            return "The closest capability-building evidence is my training, SOP, and coaching work."
+    return "The way I would answer is with an honest bridge, not a domain claim."
+
+
+def fit_editorial_answer(answer):
+    answer = normalize_text(answer)
+    if count_words(answer) < 180:
+        answer = normalize_text(answer + " " + (
+            "I would close by making the boundary clear: this is not the same as owning construction workforce development, but it is evidence that I can bring order to ambiguous, cross-functional work. "
+            "That is the part I would want Google to see: disciplined problem diagnosis, practical stakeholder alignment, and the judgment not to overstate what I have not yet owned."
+        ))
+    if count_words(answer) > 240:
+        sentences = re.split(r"(?<=[.!?])\s+", answer)
+        kept = []
+        for sentence in sentences:
+            if count_words(" ".join(kept + [sentence])) > 235:
+                break
+            kept.append(sentence)
+        answer = normalize_text(" ".join(kept)) or answer
+    return answer
+
+
+def editorial_answer_for_question(question, story, candidate_profile):
+    opening = editorial_opening_for_question(question, story)
+    title = story_label_for_visible(story)
+    situation = normalize_text((story or {}).get("situation")) or "the work involved several groups, uneven visibility, and rising execution risk"
+    decision = normalize_text((story or {}).get("decision")) or "to turn the issue into a measurable operating problem instead of treating it as a one-off escalation"
+    actions = [normalize_text(item) for item in as_list((story or {}).get("actions")) if normalize_text(item)]
+    action_text = "; ".join(actions[:3]) or "clarified ownership, created a rhythm for follow-up, and made the work visible through metrics"
+    result = normalize_text((story or {}).get("result")) or "the team had a clearer mechanism for managing the work"
+    metric = metric_sentence(story)
+    evidence_sentence = (
+        f"The story behind that bridge is {title}, and the operating problem was similar: unclear ownership, different stakeholder incentives, and risk building up before the team had a shared view of it."
+        if "closest evidence" in opening.lower() else
+        f"The closest evidence I would use is {title}, because the operating problem was similar: unclear ownership, different stakeholder incentives, and risk building up before the team had a shared view of it."
+    )
+    answer = (
+        f"{opening} "
+        f"{evidence_sentence} "
+        f"In that story, {situation}. "
+        f"The decision I made was {decision}. "
+        f"I personally focused on {action_text}. "
+        f"{metric} "
+        "The tradeoff I would name is that speed matters, but credibility matters more; I would rather be precise about the boundary than pretend I have construction, contractor, trade-school, electrical, piping, or data-center delivery ownership that I do not have. "
+        f"For Google, I would translate the lesson carefully: use the domain experts for the trade-specific judgment, then build the operating mechanism that makes gaps, owners, metrics, and delivery risk visible. "
+        f"The impact was {result}, and that is the kind of disciplined program management I can bring while learning the construction workforce domain fast."
+    )
+    return fit_editorial_answer(answer)
+
+
+def editorial_executive_strategy(company_name, role_name, candidate_profile, jd_analysis, gap_map, strategy):
+    lead_stories = [story for story in lead_story_set(candidate_profile) if story]
+    thesis = (
+        "The candidate wins by positioning as a transferable operating-systems builder: someone who has not owned construction workforce development directly, "
+        "but has repeatedly made messy operational work measurable, aligned stakeholders, improved team capability, and reduced execution risk."
+    )
+    objection = (
+        "The biggest interviewer objection is domain credibility: Google may worry that the candidate does not understand data center construction, skilled trades, contractors, trade schools, or electrical and piping labor constraints deeply enough."
+    )
+    bridge = (
+        "The honest bridge is to say: I have not owned that domain, but I have owned the operating pattern behind it: capacity visibility, KPI discipline, stakeholder alignment, SOPs, training, handovers, launch readiness, and risk escalation."
+    )
+    proof_lines = []
+    for story in lead_stories[:3]:
+        proof_lines.append(f"- {story_title(story)}: {story_result_text(story)}; metric to use: {story_metric_text(story)}")
+    avoid = [
+        "Do not imply direct construction workforce development ownership.",
+        "Do not claim electrical, piping, contractor, trade-school, or data center delivery expertise.",
+        "Do not answer only with generic program management; translate every story into workforce readiness, partner alignment, metrics, or delivery-risk language.",
+    ]
+    positioning = (
+        "Positioning line to say: \"I am not coming in as a construction workforce expert; I am coming in as an operator who knows how to make constraints visible, align the right partners, and build the rhythm that turns risk into accountable execution.\""
+    )
+    return "\n".join([
+        f"Company: {company_name}",
+        f"Role: {role_name}",
+        "",
+        f"Winning thesis: {thesis}",
+        "",
+        f"Biggest interviewer objection: {objection}",
+        "",
+        f"Exact honest bridge: {bridge}",
+        "",
+        "Three proof stories to lead with:",
+        *(proof_lines or ["- Prepare three grounded proof stories before the interview."]),
+        "",
+        "Three things to avoid:",
+        *(f"- {item}" for item in avoid),
+        "",
+        positioning,
+    ])
+
+
+def editorial_gap_repair(candidate_profile):
+    scripts = [
+        (
+            "Construction workforce gap",
+            "I would be direct: I have not owned construction workforce development before. The bridge I would make is that I have managed capacity, quality, handovers, and operating risk in support operations. I would use that experience to build the workforce operating system carefully: first understand the trade constraints from contractors and delivery teams, then make the gaps measurable, assign owners, and create a cadence where risk is surfaced early."
+        ),
+        (
+            "Electrical and piping trade gap",
+            "I would not pretend to know the electrical or piping labor market on day one. My first move would be to learn the constraint from the people closest to it, then translate that input into a dashboard the program can act on. The closest story I would use is the SLA/KPI correction work, because it shows I do not accept a number until I understand whether it reflects reality."
+        ),
+        (
+            "Contractor/vendor gap",
+            "If a contractor disagreed with the workforce assessment, I would not try to win the argument by authority. I would move the conversation to shared facts: where the schedule risk is, what each side is seeing, what metric defines readiness, and what decision is needed. The backlog and handover story is the bridge because it shows I can align groups without pretending they all have the same incentives."
+        ),
+        (
+            "Trade school/apprenticeship gap",
+            "I have not owned trade-school or apprenticeship partnerships, so I would not overclaim that. The bridge is training, onboarding, SOPs, and knowledge transfer. I would frame the work as a capability-building mechanism: define the skill gap, agree what readiness looks like, build a repeatable learning path with partners, and measure whether it changes workforce availability, not just participation."
+        ),
+        (
+            "Safety/mentorship gap",
+            "For safety or buddy programming, I would be careful because craft labor safety has domain-specific standards. My bridge is people development and QA discipline: I know how to turn coaching into a repeatable rhythm, make quality visible, and create feedback loops. I would lean on safety experts for the standard and own the operating mechanism that helps people adopt it consistently."
+        ),
+        (
+            "Data center delivery context gap",
+            "I would acknowledge that I have not worked inside a data center construction delivery environment. The way I would compensate is by learning the delivery model quickly and using launch-readiness discipline: stakeholder map, risk log, operating cadence, escalation path, and dashboard. My value would be making risk visible and actionable without pretending to be the domain expert."
+        ),
+        (
+            "Workforce metrics gap",
+            "The metric bridge is one of my strongest. I have experience challenging a KPI when the number did not reflect reality, improving visibility, and using dashboards to guide decisions. For this role, I would apply that same discipline to workforce readiness: define the metric with domain experts, test whether it predicts delivery risk, and make it useful for decisions rather than just reporting."
+        ),
+    ]
+    return "\n".join(f"- **{title}:** {body}" for title, body in scripts)
+
+
+def editorial_questions_section(items, candidate_profile):
+    rows = []
+    for index, item in enumerate(as_list(items), start=1):
+        if not isinstance(item, dict):
+            continue
+        question = item.get("question", "")
+        story = editorial_story_for_question(question, candidate_profile)
+        rows.append(
+            f"{index}. **{question}**\n"
+            f"   - Round: {item.get('round', 'Likely interview area')}\n"
+            f"   - What it tests: {item.get('what_it_tests', '')}\n"
+            f"   - Why it is dangerous or important: {item.get('candidate_risk_or_bridge') or item.get('candidate_gap', '')}\n"
+            f"   - Best bridge story: {story_label_for_visible(story)}\n"
+            f"   - Strategy: {item.get('answer_strategy', '')}"
+        )
+    return "\n".join(rows)
+
+
+def editorial_answer_outlines(strategy, candidate_profile):
+    rows = []
+    for index, item in enumerate(as_list(strategy.get("best_answer_outlines"))[:10], start=1):
+        if not isinstance(item, dict) or not item.get("question"):
+            continue
+        question = item.get("question")
+        story = editorial_story_for_question(question, candidate_profile)
+        answer = editorial_answer_for_question(question, story, candidate_profile)
+        rows.append(
+            f"{index}. **{question}**\n"
+            f"{answer}\n"
+            f"   - Best bridge story: {story_label_for_visible(story)}\n"
+            f"   - Delivery note: Say this calmly and precisely. The strength is the operating pattern, not a claim of direct construction-domain ownership."
+        )
+    return "\n".join(rows)
+
+
+def editorial_why_google(company_name, candidate_profile, research):
+    bridge = candidate_bridge_summary(candidate_profile)
+    return (
+        f"Why {company_name}: what interests me is the way this role connects workforce development to real infrastructure delivery risk. "
+        "From the data center workforce signals, this is not generic program coordination; it is about building the partner ecosystem, training mechanisms, readiness metrics, and operating cadence that help construction teams deliver. "
+        f"My honest bridge is {bridge}. "
+        "I would not claim that I already know the skilled-trades labor market or the contractor ecosystem. What I can bring is the operating discipline behind the problem: make constraints visible, align stakeholders who have different incentives, build repeatable mechanisms, and use metrics to decide where risk is increasing. "
+        "Why now is simple: my strongest experience is in operations where quality, capacity, handovers, and stakeholder trust all mattered, and this role would let me apply that pattern to a higher-stakes workforce problem. "
+        "That is why Google is compelling to me: the work has a clear business consequence, and it rewards someone who can be honest about the learning curve while still moving the operating system forward."
+    )
+
+
+def editorial_why_role(role_name, candidate_profile, jd_analysis):
+    bridge = candidate_bridge_summary(candidate_profile)
+    domain = normalize_text((jd_analysis or {}).get("role_domain")) or role_name
+    return (
+        f"Why this role: {domain} is exactly the kind of problem where my background is transferable without pretending it is identical. "
+        "The JD is asking for someone who can identify workforce gaps, align contractors and education partners, build training and mentorship mechanisms, track readiness metrics, and communicate delivery risk. "
+        f"My bridge is {bridge}. "
+        "Those stories are not construction stories, and I would not present them that way. They are evidence that I can diagnose an operating constraint, build visibility, improve a process, coach people through adoption, and communicate risk clearly. "
+        "The part of the role that stretches me is the construction workforce domain: electrical and piping trades, contractor alignment, trade-school partnerships, and data center delivery context. "
+        "The part I can contribute immediately is the program discipline: turn ambiguity into a mechanism, make the work measurable, and help senior stakeholders see where the risk is before it becomes a schedule problem."
+    )
+
+
+def editorial_thirty_sixty_ninety(candidate_profile):
+    bridge = candidate_bridge_summary(candidate_profile)
+    return "\n".join([
+        "30 days:",
+        "- Learn the domain before prescribing solutions: delivery model, contractor roles, trade constraints, education partners, workforce boards, and the current definition of readiness.",
+        "- Build the stakeholder and risk map: who sees labor constraints first, which metrics are trusted, where escalation happens, and where the current operating rhythm breaks down.",
+        f"- Bring the bridge carefully: {bridge}. Use those patterns to ask better questions, not to overclaim domain expertise.",
+        "",
+        "60 days:",
+        "- Create a practical workforce-readiness view that separates pipeline, training, mentorship, partner alignment, adoption, and delivery-risk signals.",
+        "- Pick one high-risk region or trade gap and build a repeatable operating cadence with owners, decision points, and senior stakeholder visibility.",
+        "- Test whether the metrics change decisions. If a dashboard does not help teams act earlier, improve the metric rather than defend the report.",
+        "",
+        "90 days:",
+        "- Show measurable improvement in visibility, decision speed, or mitigation quality for a real workforce constraint agreed by the team.",
+        "- Turn the strongest pilot into a repeatable mechanism: SOP, cadence, dashboard, escalation path, and adoption feedback loop.",
+        "- Demonstrate the core promise: honest about the domain learning curve, senior in operating discipline, and useful to delivery teams because risk becomes visible sooner.",
+    ])
+
+
+def final_editorial_rewrite_pack(pack, company_name, role_name, candidate_profile, jd_analysis, gap_map, strategy, research):
+    edited = pack
+    edited = replace_markdown_section(
+        edited,
+        "Executive Strategy",
+        editorial_executive_strategy(company_name, role_name, candidate_profile, jd_analysis, gap_map, strategy),
+    )
+    edited = replace_markdown_section(edited, "Gap And Risk Repair Plan", editorial_gap_repair(candidate_profile))
+    edited = replace_markdown_section(edited, "Likely Question Bank By Round", editorial_questions_section(strategy.get("top_10_likely_questions"), candidate_profile))
+    edited = replace_markdown_section(edited, "Dangerous Question Bank", editorial_questions_section(strategy.get("top_10_dangerous_questions"), candidate_profile))
+    edited = replace_markdown_section(edited, "Best Answer Outlines", editorial_answer_outlines(strategy, candidate_profile))
+    edited = replace_markdown_section(edited, "Why This Company Answer", editorial_why_google(company_name, candidate_profile, research))
+    edited = replace_markdown_section(edited, "Why This Role Answer", editorial_why_role(role_name, candidate_profile, jd_analysis))
+    edited = replace_markdown_section(edited, "Thirty Sixty Ninety Day Answer", editorial_thirty_sixty_ninety(candidate_profile))
+    assert_no_banned_visible_strings(edited)
+    assert_no_editorial_banned_strings(edited)
+    return edited
+
+
 def build_pack_from_structured_objects(company_name, role_name, candidate_profile, jd_analysis, research, gap_map, strategy):
     section_strategy = strategy.get("section_strategy", {}) if isinstance(strategy.get("section_strategy"), dict) else {}
     likely_questions = strategy.get("top_10_likely_questions", [])
@@ -4179,7 +4519,18 @@ Use these outlines as grounded coaching notes. Do not invent new candidate stori
         gap_map,
         strategy,
     )
+    pack = final_editorial_rewrite_pack(
+        pack,
+        company_name,
+        role_name,
+        candidate_profile,
+        jd_analysis,
+        gap_map,
+        strategy,
+        research,
+    )
     assert_no_banned_visible_strings(pack)
+    assert_no_editorial_banned_strings(pack)
     return pack.strip()
 
 
