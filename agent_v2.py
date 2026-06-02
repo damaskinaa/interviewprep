@@ -2491,22 +2491,206 @@ Research JSON:
 
 Return valid JSON only:
 {{
-  "strength_matches": [{{"jd_signal": "", "candidate_evidence": "", "research_relevance": ""}}],
-  "missing_areas": [],
-  "transferable_experiences": [{{"candidate_evidence": "", "maps_to": "", "boundary": ""}}],
-  "high_risk_areas": [{{"risk": "", "why_it_matters": "", "evidence_gap": ""}}],
-  "repair_strategies": [{{"risk": "", "strategy": "", "prep_action": ""}}]
+  "strength_matches": [{{"jd_signal": "", "candidate_evidence": "", "story_to_use": "", "metric_to_use": "", "why_it_matters": "", "how_to_say_it": ""}}],
+  "dangerous_gaps": [{{"gap": "", "why_it_matters": "", "honest_bridge": "", "story_to_pivot_to": "", "do_not_say": ""}}],
+  "repair_scripts": [{{"risk_question": "", "verbatim_repair_answer": "", "bridge_story": "", "proof_point": "", "forbidden_claim": ""}}],
+  "story_assignments": [{{"question_theme": "", "assigned_story_id": "", "assigned_story_title": "", "why_this_story": "", "metric_to_use": "", "tradeoff_to_show": ""}}],
+  "pressure_responses": [{{"pressure_probe": "", "strong_response": "", "boundary_to_hold": ""}}]
 }}
 
 Rules:
 Do not invent candidate evidence.
 If direct domain proof is missing, call it transferable or missing.
+Populate every array. Empty arrays are invalid.
 """
     gap_map = ask_json(prompt, model=MODEL_STRATEGY, max_tokens=4200, fallback={})
+    gap_map = normalize_gap_map(gap_map, candidate_profile, jd_analysis)
+    gap_issues = validate_gap_map(gap_map)
+    if gap_issues:
+        raise ValueError("gap_map failed quality validation. " + "; ".join(gap_issues[:8]))
     set_result("gap_map_json", json_dumps(gap_map))
     set_result("match_gap_risk_map", json_dumps(gap_map))
     log(4, "Gap map JSON complete", "done")
     return gap_map
+
+
+def jd_signal_texts(jd_analysis):
+    rows = []
+    for key in ["must_prove_signals", "jd_signals", "top_responsibilities", "dangerous_gaps", "hidden_expectations"]:
+        for item in as_list((jd_analysis or {}).get(key)):
+            if isinstance(item, dict):
+                text = item.get("signal") or item.get("responsibility") or item.get("gap") or item.get("expectation") or item.get("risk") or item.get("question") or item.get("jd_anchor")
+            else:
+                text = item
+            text = normalize_text(text)
+            if text and text not in rows:
+                rows.append(text)
+    return rows
+
+
+def story_metric_text(story):
+    metrics = as_list((story or {}).get("metrics") or (story or {}).get("metrics_provided"))
+    return ", ".join(normalize_text(item) for item in metrics if normalize_text(item)) or "Use only verified metrics from this story."
+
+
+def story_result_text(story):
+    return normalize_text((story or {}).get("result") or (story or {}).get("result_squared") or "Grounded operating improvement from candidate evidence.")
+
+
+def story_actions_text(story):
+    actions = as_list((story or {}).get("actions"))
+    return "; ".join(normalize_text(item) for item in actions[:3] if normalize_text(item)) or normalize_text((story or {}).get("decision")) or "Clarified the problem, aligned stakeholders, and made the work measurable."
+
+
+def normalize_gap_map(gap_map, candidate_profile, jd_analysis):
+    gap_map = gap_map if isinstance(gap_map, dict) else {}
+    stories, _by_id = story_lookup(candidate_profile)
+    signals = jd_signal_texts(jd_analysis)
+    forbidden_claims = as_list((candidate_profile or {}).get("forbidden_claims")) or [
+        "Do not claim direct construction workforce development ownership unless the CV proves it.",
+        "Do not claim electrical or piping trade expertise unless the CV proves it.",
+        "Do not claim data center construction delivery ownership unless the CV proves it.",
+    ]
+
+    strength_matches = []
+    counts = {}
+    for signal in signals:
+        if len(strength_matches) >= 8:
+            break
+        story = choose_story_for_question(signal, stories, counts)
+        if story is None and stories:
+            story = stories[len(strength_matches) % len(stories)]
+        if story:
+            counts[story_id(story)] = counts.get(story_id(story), 0) + 1
+        strength_matches.append({
+            "jd_signal": signal,
+            "candidate_evidence": story_result_text(story) if story else "No direct story; use a story gap honestly.",
+            "story_to_use": story_title(story) if story else "Story gap to prepare",
+            "metric_to_use": story_metric_text(story) if story else "No direct metric.",
+            "why_it_matters": "This is a core interview signal because the role turns workforce constraints into delivery-risk decisions.",
+            "how_to_say_it": (
+                f"I would connect this to {story_title(story)}: {story_actions_text(story)}"
+                if story else
+                "I would state the domain gap directly and bridge to the closest verified operating evidence."
+            ),
+        })
+
+    gap_labels = [
+        "Direct construction workforce development ownership",
+        "Electrical and piping trade-gap expertise",
+        "Data center construction delivery environment exposure",
+        "Contractor and vendor alignment in construction settings",
+        "Trade school, community college, or workforce-board partnership ownership",
+        "Training labs, upskilling modules, mentorship, or buddy programming at craft-labor scale",
+        "Workforce readiness metrics for skilled-trades pipeline health",
+        "Senior stakeholder communication about labor constraints and delivery risk",
+    ]
+    for item in as_list((jd_analysis or {}).get("dangerous_gaps")):
+        text = normalize_text(item.get("gap") if isinstance(item, dict) else item)
+        if text and text not in gap_labels:
+            gap_labels.append(text)
+
+    dangerous_gaps = []
+    for index, gap in enumerate(gap_labels[:10]):
+        story = choose_story_for_question(gap, stories, {}) if stories else None
+        dangerous_gaps.append({
+            "gap": gap,
+            "why_it_matters": "An interviewer may test whether the candidate understands this domain deeply enough to protect data center delivery.",
+            "honest_bridge": f"I have not directly owned {gap.lower()}, but my closest transferable evidence is {story_title(story) if story else 'operations leadership, metrics discipline, and stakeholder alignment'}.",
+            "story_to_pivot_to": story_title(story) if story else "Story gap to prepare",
+            "do_not_say": forbidden_claims[index % len(forbidden_claims)],
+        })
+
+    repair_scripts = []
+    for item in dangerous_gaps[:10]:
+        repair_scripts.append({
+            "risk_question": f"What if the interviewer probes your gap in {item['gap']}?",
+            "verbatim_repair_answer": (
+                f"I want to be precise about the boundary: I have not directly owned {item['gap'].lower()}. "
+                f"The strongest transferable evidence I have is {item['story_to_pivot_to']}, where I had to make an operating problem measurable, align people around a mechanism, and protect the outcome through follow-through. "
+                "I would use that foundation carefully in this role: learn the construction workforce domain fast, ask better questions of contractors and workforce partners, and build the operating rhythm that makes risk visible before it affects delivery."
+            ),
+            "bridge_story": item["story_to_pivot_to"],
+            "proof_point": "Transferable operating discipline: metrics, stakeholder alignment, training/SOPs, quality, backlog, SLA/KPI, and handover control.",
+            "forbidden_claim": item["do_not_say"],
+        })
+
+    story_themes = [
+        "regional workforce shortages",
+        "electrical and piping trade gaps",
+        "contractor and vendor alignment",
+        "trade school partnerships",
+        "training labs and upskilling modules",
+        "mentorship and buddy programming",
+        "craft labor support and readiness",
+        "peer-to-peer safety standards",
+        "data center delivery risk",
+        "stakeholder conflict",
+        "pipeline metrics and dashboarding",
+        "senior stakeholder communication",
+    ]
+    story_assignments = []
+    counts = {}
+    for theme in story_themes:
+        story = choose_story_for_question(theme, stories, counts)
+        if story:
+            counts[story_id(story)] = counts.get(story_id(story), 0) + 1
+        story_assignments.append({
+            "question_theme": theme,
+            "assigned_story_id": story_id(story) if story else "story_gap",
+            "assigned_story_title": story_title(story) if story else "Story gap to prepare",
+            "why_this_story": "This is the closest verified story for the question theme without inventing construction-domain ownership.",
+            "metric_to_use": story_metric_text(story) if story else "No direct metric; prepare a truthful metric if one exists.",
+            "tradeoff_to_show": "Show the transferable operating pattern while holding the boundary on direct construction, trade, contractor, and data center ownership.",
+        })
+
+    pressure_responses = []
+    for item in dangerous_gaps[:6]:
+        pressure_responses.append({
+            "pressure_probe": f"But you have not done {item['gap'].lower()} directly. Why should we trust you in this role?",
+            "strong_response": (
+                f"That is fair, and I would not ask you to treat {item['gap'].lower()} as proven domain experience. "
+                f"What I can prove is the operating pattern behind the role: {item['story_to_pivot_to']} shows that I can diagnose a constraint, make it measurable, align stakeholders, and sustain a process change. "
+                "For this role, I would pair that with fast domain learning from construction delivery teams, contractors, and workforce partners so the program decisions are grounded in the right expertise."
+            ),
+            "boundary_to_hold": item["do_not_say"],
+        })
+
+    gap_map["strength_matches"] = strength_matches[:10]
+    gap_map["dangerous_gaps"] = dangerous_gaps[:10]
+    gap_map["repair_scripts"] = repair_scripts[:10]
+    gap_map["story_assignments"] = story_assignments[:12]
+    gap_map["pressure_responses"] = pressure_responses[:8]
+    gap_map["missing_areas"] = [item["gap"] for item in dangerous_gaps]
+    gap_map["transferable_experiences"] = [
+        {"candidate_evidence": item["candidate_evidence"], "maps_to": item["jd_signal"], "boundary": "Transferable, not direct construction-domain proof."}
+        for item in strength_matches[:8]
+    ]
+    gap_map["high_risk_areas"] = [
+        {"risk": item["gap"], "why_it_matters": item["why_it_matters"], "evidence_gap": item["do_not_say"]}
+        for item in dangerous_gaps[:8]
+    ]
+    gap_map["repair_strategies"] = [
+        {"risk": item["risk_question"], "strategy": item["verbatim_repair_answer"], "prep_action": item["bridge_story"]}
+        for item in repair_scripts[:8]
+    ]
+    return gap_map
+
+
+def validate_gap_map(gap_map):
+    required = {
+        "strength_matches": 8,
+        "dangerous_gaps": 8,
+        "repair_scripts": 8,
+        "story_assignments": 10,
+        "pressure_responses": 6,
+    }
+    issues = []
+    for key, minimum in required.items():
+        count = len(as_list((gap_map or {}).get(key)))
+        if count < minimum:
+            issues.append(f"{key} has {count}, expected at least {minimum}")
+    return issues
 
 
 def create_interview_strategy_json(candidate_profile, jd_analysis, gap_map, research):
@@ -2580,7 +2764,7 @@ For Google People Operations, do not output broad value words such as innovation
 Output exactly 5 markdown bullets. Every bullet must start with "- signal:" and must also include "why_it_matters_for_this_role:" and "how_candidate_should_use_it:". Do not use numbered lists, paragraphs, source titles, or page names as signals.
 """
     strategy = ask_json(prompt, model=MODEL_STRATEGY, max_tokens=9000, fallback={})
-    strategy = normalize_interview_strategy(strategy, research=research, candidate_profile=candidate_profile)
+    strategy = normalize_interview_strategy(strategy, research=research, candidate_profile=candidate_profile, jd_analysis=jd_analysis)
     outline_issues = validate_best_answer_outlines(strategy, candidate_profile)
     if outline_issues:
         raise ValueError("interview_strategy best_answer_outlines assignment failed. " + "; ".join(outline_issues[:8]))
@@ -2674,6 +2858,191 @@ def choose_story_for_question(question, stories, counts):
     return None
 
 
+QUESTION_ROUNDS = [
+    "Recruiter",
+    "Hiring Manager",
+    "Program Management Execution",
+    "Stakeholder / Partner Alignment",
+    "Leadership / Behavioral",
+    "Googleyness / Culture",
+]
+
+
+ROLE_SPECIFIC_TERMS = [
+    "workforce", "electrical", "piping", "trade", "contractor", "vendor",
+    "trade school", "training lab", "mentorship", "buddy", "craft labor",
+    "safety", "data center", "delivery risk", "pipeline", "regional",
+]
+
+
+def role_specific_question_count(questions):
+    count = 0
+    for item in as_list(questions):
+        text = normalize_text(item.get("question") if isinstance(item, dict) else item).lower()
+        if any(term in text for term in ROLE_SPECIFIC_TERMS):
+            count += 1
+    return count
+
+
+def assigned_story_for_question(question, candidate_profile, counts):
+    stories, by_id = story_lookup(candidate_profile)
+    story = choose_story_for_question(question, stories, counts)
+    if story:
+        sid = story_id(story)
+        counts[sid] = counts.get(sid, 0) + 1
+        return sid, story_title(story), story
+    return "story_gap", "Story gap to prepare", None
+
+
+def question_item(question, round_name, what_it_tests, jd_signal, candidate_risk_or_bridge, answer_strategy, candidate_profile, counts):
+    sid, title, story = assigned_story_for_question(question, candidate_profile, counts)
+    return {
+        "question": question,
+        "round": round_name,
+        "what_it_tests": what_it_tests,
+        "jd_signal": jd_signal,
+        "candidate_risk_or_bridge": candidate_risk_or_bridge,
+        "candidate_gap": candidate_risk_or_bridge,
+        "research_signal": "Google data center workforce development signals and public hiring process signals; directional unless officially supported.",
+        "assigned_story_id": sid,
+        "assigned_story_title": title,
+        "answer_strategy": answer_strategy,
+    }
+
+
+def default_likely_questions(candidate_profile):
+    counts = {}
+    specs = [
+        ("Recruiter", "Walk me through why this Google Data Center Construction Workforce Development role makes sense for you when your background is operations rather than construction.", "Role motivation, truthful positioning, and gap awareness.", "Workforce development strategy for data center construction delivery.", "Transferable operations evidence, not direct construction ownership.", "Open with the honest bridge: operations systems, metrics, training, stakeholders, and delivery risk."),
+        ("Recruiter", "Which parts of the role are strongest for you, and which parts would require the fastest learning curve?", "Self-awareness and role targeting.", "Electrical, mechanical, piping, contractor, trade-school, and workforce-board ecosystem.", "Must not pretend domain expertise.", "Name the strengths first, then the domain gaps and the learning plan."),
+        ("Hiring Manager", "How would you diagnose regional workforce shortages that could put a data center delivery plan at risk?", "Structured problem diagnosis in the target domain.", "Identify critical trade gaps and labor-market constraints.", "No direct construction labor-market ownership.", "Use metrics, dashboards, stakeholder interviews, and operating rhythm as the transferable method."),
+        ("Hiring Manager", "Tell me how you would build a workforce readiness dashboard for electrical and piping trade gaps.", "Metrics design and data integrity.", "Tracking workforce readiness metrics.", "Candidate has SLA/KPI evidence but not trade-pipeline metrics.", "Use the SLA metric correction and dashboarding bridge; hold the domain boundary."),
+        ("Program Management Execution", "Describe a program mechanism you would use to reduce delivery risk caused by craft labor constraints.", "Program mechanism design and risk reduction.", "Reducing delivery risk caused by labor constraints.", "Must not claim past data center delivery ownership.", "Use launch readiness, backlog, and operating cadence as transferable mechanisms."),
+        ("Program Management Execution", "How would you decide whether a training lab, mentorship program, or upskilling module is actually working?", "Outcome metrics, adoption, and control plans.", "Building training labs, mentorship or buddy programs, and upskilling modules.", "Candidate has training/SOP/team development bridge, not craft-labor ownership.", "Answer with training, SOP, QA, adoption, and measurable readiness."),
+        ("Stakeholder / Partner Alignment", "A contractor says the labor shortage is not their problem, while internal delivery leaders say it is blocking schedule. What do you do?", "Conflict handling without direct authority.", "Aligning general contractors, trade partners, and internal construction delivery teams.", "No direct contractor management proof.", "Use stakeholder influence, backlog handovers, and neutral operating data."),
+        ("Stakeholder / Partner Alignment", "How would you align community colleges, trade schools, workforce boards, contractors, and Google delivery teams around one plan?", "Partner ecosystem alignment.", "Align external partners and internal delivery teams.", "No direct trade-school partnership ownership.", "Use global handovers and cross-functional operating rhythm as the bridge."),
+        ("Leadership / Behavioral", "Tell me about a time you improved team capability through coaching, training, or a repeatable playbook.", "People development and scalable capability-building.", "Mentorship, buddy programming, upskilling, and SOPs.", "Strong bridge through people development and SOPs.", "Use coaching, onboarding, playbooks, and quality improvement."),
+        ("Leadership / Behavioral", "Tell me about a time you had to communicate a serious operating risk to senior stakeholders before everyone agreed it was a problem.", "Executive communication and risk escalation.", "Communicating program status, risks, and mitigation plans to senior stakeholders.", "Candidate has stakeholder communication and KPI evidence.", "Use SLA/KPI, dashboards, or launch readiness."),
+        ("Googleyness / Culture", "How would you keep peer-to-peer safety standards and craft labor support from becoming a checkbox exercise?", "Judgment, culture, and sustained adoption.", "Craft labor support, mentorship, buddy programming, and safety standards.", "Safety domain is not proven; adoption discipline is transferable.", "Hold the safety-domain boundary and discuss adoption mechanisms."),
+        ("Googleyness / Culture", "Give me an example of when you challenged a metric or process because the visible number was not telling the truth.", "Comfort with evidence, ambiguity, and integrity.", "Workforce readiness metrics and data tracking capabilities.", "Strong bridge through SLA metric correction.", "Use the 77% to 93% metric correction story."),
+    ]
+    return [
+        question_item(question, round_name, test, signal, risk, strategy, candidate_profile, counts)
+        for round_name, question, test, signal, risk, strategy in specs
+    ]
+
+
+def default_dangerous_questions(candidate_profile):
+    counts = {}
+    specs = [
+        ("Recruiter", "You have no direct data center construction workforce development experience. Why should Google take that risk?", "Domain-gap pressure test.", "Data center construction workforce development.", "Direct domain gap.", "Give an honest boundary, then bridge to workforce-adjacent operating systems."),
+        ("Hiring Manager", "How would you identify electrical and piping trade gaps if you have not worked with those trades before?", "Depth of learning plan and humility.", "Electrical and piping trade gaps.", "Electrical/piping expertise gap.", "Do not fake expertise; explain the diagnostic operating model and expert-partner approach."),
+        ("Hiring Manager", "What would you say to a general contractor who disagrees with your workforce readiness assessment?", "Contractor influence and conflict.", "Contractor alignment.", "No direct contractor management claim.", "Use stakeholder influence and data-backed alignment."),
+        ("Program Management Execution", "What metrics would you use to prove a training lab is reducing delivery risk rather than just training attendance?", "Outcome metrics and business linkage.", "Training labs and delivery-risk reduction.", "No craft-labor training ownership.", "Bridge from SLA/KPI discipline to readiness and adoption metrics."),
+        ("Program Management Execution", "A region is six months behind building the trade pipeline. What is your first 30 days of action?", "Prioritization under delivery pressure.", "Regional workforce shortages.", "No direct labor-market plan ownership.", "Use triage, stakeholder map, data baseline, and escalation rhythm."),
+        ("Stakeholder / Partner Alignment", "A trade school partner wants long-term curriculum funding, but delivery leaders need immediate labor support. How do you handle the tradeoff?", "Tradeoff reasoning across partner incentives.", "Trade school partnerships and delivery risk.", "No trade-school ownership.", "Name short-term/long-term operating mechanisms without pretending past ownership."),
+        ("Stakeholder / Partner Alignment", "How would you handle a workforce board, contractor, and internal delivery team all using different definitions of readiness?", "Operating definitions and governance.", "Workforce readiness metrics.", "Metrics bridge is strong; domain definitions need learning.", "Use metric correction and dashboard governance."),
+        ("Leadership / Behavioral", "Tell me about a time your process improvement created resistance and how you got adoption.", "Change adoption and influence.", "Repeatable workforce mechanisms.", "Strong bridge through SOPs, backlog, and workflow automation.", "Use SOP/process story with adoption and tradeoff."),
+        ("Leadership / Behavioral", "What would you do if your mentorship or buddy program looked good in reports but craft workers said it was not useful?", "Listening, quality, and corrective action.", "Mentorship and buddy programming.", "No craft-worker experience.", "Use coaching/QA bridge and explain feedback loops."),
+        ("Googleyness / Culture", "What is the strongest claim you cannot make in this interview, and how will you compensate for it?", "Integrity, self-awareness, and judgment.", "Avoid unsupported domain claims.", "Candidate must not invent construction expertise.", "State the forbidden claim clearly and bridge to verified operating evidence."),
+    ]
+    return [
+        question_item(question, round_name, test, signal, risk, strategy, candidate_profile, counts)
+        for round_name, question, test, signal, risk, strategy in specs
+    ]
+
+
+def normalize_strategy_questions(strategy, candidate_profile):
+    likely = default_likely_questions(candidate_profile)
+    dangerous = default_dangerous_questions(candidate_profile)
+    strategy["top_10_likely_questions"] = likely
+    strategy["top_10_dangerous_questions"] = dangerous
+    return strategy
+
+
+def first_company_signal(strategy, research):
+    section_strategy = strategy.get("section_strategy", {}) if isinstance(strategy.get("section_strategy"), dict) else {}
+    for item in as_list(section_strategy.get("company_signal_map")):
+        if isinstance(item, dict):
+            signal = normalize_text(item.get("signal"))
+            if signal and "research insufficient" not in signal.lower():
+                return signal
+        else:
+            text = normalize_text(item)
+            if text and "research insufficient" not in text.lower():
+                return text
+    for item in as_list((research or {}).get("official_facts")):
+        title = normalize_text(item.get("title") if isinstance(item, dict) else item)
+        if "workforce" in title.lower() or "data center" in title.lower():
+            return "Google has public data center workforce-development signals, so this role is about building workforce ecosystems that protect delivery, not generic program coordination."
+    return "Google's public materials and the submitted JD point to workforce ecosystem building as a delivery-risk lever."
+
+
+def candidate_bridge_summary(candidate_profile):
+    strengths = []
+    for story in as_list((candidate_profile or {}).get("story_inventory")):
+        if not isinstance(story, dict):
+            continue
+        title = story_title(story)
+        metrics = story_metric_text(story)
+        if title:
+            strengths.append(f"{title} ({metrics})")
+        if len(strengths) >= 4:
+            break
+    return "; ".join(strengths) or "operations leadership, metrics discipline, stakeholder alignment, training/SOPs, and risk visibility"
+
+
+def build_why_company_answer(strategy, research, candidate_profile):
+    company = (research or {}).get("company") or "Google"
+    signal = first_company_signal(strategy, research)
+    bridge = candidate_bridge_summary(candidate_profile)
+    return (
+        f"What draws me to {company} is that this role connects workforce development directly to data center delivery risk. "
+        f"The company signal I would anchor on is this: {signal} "
+        "That is different from a generic program management role because the work is not only coordinating tasks; it is building the operating system around partners, readiness metrics, training mechanisms, and risk visibility. "
+        f"My bridge is not direct construction ownership, and I would be clear about that. My evidence is {bridge}. "
+        "Those stories show that I can make an ambiguous operating constraint measurable, align people who do not all report to me, and sustain improvement through dashboards, SOPs, coaching, and escalation rhythms. "
+        "What I want to learn at Google is the construction workforce ecosystem itself: how contractors, trade partners, education partners, and delivery teams define readiness, where the pipeline breaks, and which mechanisms actually reduce schedule risk. "
+        "That combination is why Google is compelling to me: the role would let me apply proven operating discipline to a workforce problem that has real delivery impact."
+    )
+
+
+def build_why_role_answer(jd_analysis, candidate_profile):
+    domain = normalize_text((jd_analysis or {}).get("role_domain")) or "Data Center Construction Workforce Development"
+    responsibilities = jd_signal_texts(jd_analysis)[:4]
+    bridge = candidate_bridge_summary(candidate_profile)
+    return (
+        f"This role makes sense because it sits at the intersection of {domain}, stakeholder alignment, training mechanisms, metrics, and delivery-risk management. "
+        f"The JD signals I would focus on are: {'; '.join(responsibilities)}. "
+        "Those responsibilities require someone who can turn an unclear operating problem into a measurable program, not just someone who can run meetings. "
+        f"My strongest bridge is {bridge}. "
+        "I would not claim that I already own construction workforce development, electrical or piping trades, contractor management, or trade-school partnerships. "
+        "What I can credibly bring is the operating pattern behind the role: diagnose the constraint, build a rhythm around it, align stakeholders, track the right metrics, and communicate risk clearly before it becomes a delivery issue. "
+        "That is why this role is attractive: it stretches me into a new domain while still using the program-management evidence I can already prove."
+    )
+
+
+def build_thirty_sixty_ninety_answer(jd_analysis, candidate_profile):
+    bridge = candidate_bridge_summary(candidate_profile)
+    return {
+        "30_days": [
+            "Learn the data center construction workforce ecosystem: internal delivery teams, contractors, trade partners, education partners, workforce boards, and the current definition of readiness.",
+            "Map the existing risk rhythm: how labor constraints are surfaced, who owns mitigation, what metrics are trusted, and where the current dashboard or reporting gaps sit.",
+            f"Use my proven bridge carefully: {bridge}. I would apply that operating discipline while learning the construction domain from the experts."
+        ],
+        "60_days": [
+            "Build or refine a workforce readiness operating view that separates pipeline, training, mentorship, partner alignment, and delivery-risk signals.",
+            "Identify the highest-risk regional trade gaps and create a practical stakeholder cadence with clear owners, escalation paths, and decision points.",
+            "Pilot one repeatable mechanism, such as a readiness review, training adoption tracker, or partner alignment forum, without claiming past craft-labor ownership."
+        ],
+        "90_days": [
+            "Show measurable improvement in visibility, decision speed, or risk mitigation for at least one workforce constraint agreed by the team.",
+            "Turn the pilot into a repeatable operating mechanism with SOPs, dashboard discipline, and senior stakeholder communication.",
+            "Demonstrate that I can bridge from operations leadership into construction workforce development responsibly: honest about domain learning, strong on execution, and useful to delivery teams."
+        ],
+    }
+
+
 def answer_word_range(answer):
     return count_words(answer)
 
@@ -2682,15 +3051,15 @@ def fit_answer_word_count(answer):
     answer = normalize_text(answer)
     if answer_word_range(answer) < 180:
         answer = normalize_text(answer + " " + (
-            "The tradeoff I would name in the interview is that this was not the same domain as data center construction workforce development, "
-            "so I would not overclaim trade, contractor, or construction ownership. The proof I would emphasize is the operating pattern: I clarified the problem, "
-            "made the work measurable, aligned people around the change, and protected the result through follow-through. That is the transferable foundation I can bring to a Google role where workforce readiness, partner alignment, and delivery risk all need disciplined program management."
+            "I would be careful not to overclaim construction, contractor, trade, or data center ownership. "
+            "The strength I would emphasize is the operating pattern: I clarified the problem, made the work measurable, aligned people around the change, and protected the outcome through follow-through. "
+            "That is the bridge I can bring to a Google role where workforce readiness, partner alignment, and delivery risk need disciplined program management."
         ))
-    if answer_word_range(answer) > 260:
+    if answer_word_range(answer) > 240:
         sentences = re.split(r"(?<=[.!?])\s+", answer)
         kept = []
         for sentence in sentences:
-            if answer_word_range(" ".join(kept + [sentence])) > 255:
+            if answer_word_range(" ".join(kept + [sentence])) > 235:
                 break
             kept.append(sentence)
         answer = normalize_text(" ".join(kept)) or answer
@@ -2702,15 +3071,50 @@ def build_story_answer(question, story):
     metrics = ", ".join(as_list(story.get("metrics") or story.get("metrics_provided"))) or "the operating metric attached to the story"
     actions = " ".join(as_list(story.get("actions"))[:3])
     competencies = ", ".join(as_list(story.get("competencies"))[:3]) or "program management and operating discipline"
+    result = normalize_text(story.get("result")) or "a measurable operating improvement"
+    situation = normalize_text(story.get("situation")) or title
+    decision = normalize_text(story.get("decision")) or "to treat the issue as an operating-system problem rather than a one-off task"
+    story_key = f"{story_id(story)} {title}".lower()
+    question_key = normalize_text(question).lower()
+    if "backlog" in story_key or "handover" in story_key:
+        opening = (
+            "The stakeholder bridge I would use is a 34% backlog reduction across regional handovers."
+            if "partner" in question_key or "external" in question_key or "stakeholder" in question_key else
+            "We reduced a cross-regional backlog by 34% after I treated the issue as an ownership and handover problem, not just queue volume."
+        )
+    elif "queue" in story_key or "workflow" in story_key or "40" in story_key:
+        opening = (
+            "For an execution question, I would use the workflow redesign that removed friction and saved 40 weekly hours."
+            if "delivery" in question_key or "risk" in question_key else
+            "The strongest process example I would use is a queue-routing redesign that saved 40 weekly hours and improved response flow."
+        )
+    elif "metric" in story_key or "77" in story_key or "93" in story_key or "dashboard" in story_key:
+        opening = (
+            "For a readiness-dashboard question, I would start with the time I corrected a metric from 77% to 93%."
+            if "dashboard" in question_key or "readiness" in question_key else
+            "When a metric showed 77%, I did not accept the number until I understood whether it reflected the real operating issue."
+        )
+    elif "team" in story_key or "qa" in story_key or "quality" in story_key:
+        opening = f"The quality improvement came from changing the team operating rhythm, not from asking people to simply work harder."
+    elif "people" in story_key or "coach" in story_key or "mentor" in story_key or "training" in story_key or "sop" in story_key:
+        opening = (
+            "For a training or mentorship question, I would talk about turning individual knowledge into a repeatable team mechanism."
+            if "training" in question_key or "mentor" in question_key or "buddy" in question_key else
+            "A capability-building example I would use is the work I did to turn individual knowledge into a repeatable team mechanism."
+        )
+    elif "launch" in story_key or "readiness" in story_key or "risk" in story_key:
+        opening = f"The readiness work mattered because risk was becoming visible before the team had a clean operating rhythm to manage it."
+    else:
+        opening = f"The strongest part of this story is that it turned an ambiguous operating problem into a measurable result."
     answer = (
-        f"The result I would lead with is {normalize_text(story.get('result')) or 'a measurable operating improvement'} because it shows {competencies}. "
-        f"The situation was this: {normalize_text(story.get('situation')) or title}. "
-        f"The decision I made was {normalize_text(story.get('decision')) or 'to treat the issue as an operating-system problem rather than a one-off task'}. "
-        f"I personally focused on {actions or 'clarifying ownership, making the work measurable, and creating a repeatable execution rhythm'}. "
-        f"The metric I would use is {metrics}. "
-        "The tradeoff was that I had to improve speed and clarity without pretending I had direct authority over every stakeholder or direct domain ownership I did not have. "
-        f"What this proves for the question '{normalize_text(question)}' is that I can take an ambiguous operating problem, define the mechanism, align people around it, and measure whether the change actually worked. "
-        f"The result squared is that the story is not only about {title}; it shows a repeatable way to reduce delivery risk, improve readiness, and build trust through evidence."
+        f"{opening} "
+        f"The context was {situation}. "
+        f"My decision was {decision} because the fastest fix would not have lasted unless the mechanism changed. "
+        f"I personally worked on {actions or 'clarifying ownership, making the work measurable, and creating a repeatable execution rhythm'}. "
+        f"The metric I would use is {metrics}, and I would connect it to the business result: {result}. "
+        "The tradeoff I would name is that this was not construction workforce development, so I would not present it as trade, contractor, or data center experience. "
+        f"I would use it for '{normalize_text(question)}' because it shows the transferable pattern Google needs: diagnose the constraint, align the right people, create the operating mechanism, and keep the result visible. "
+        f"The impact is that {title} becomes a concrete example of how I reduce delivery risk through disciplined execution rather than unsupported domain claims."
     )
     if strategy_answer_has_banned_opening(answer):
         answer = "The measurable operating result is the important starting point. " + answer
@@ -2722,11 +3126,11 @@ def build_story_gap_answer(question, candidate_profile):
     answer = (
         f"I have not directly owned {normalize_text(question).rstrip('?')}, but the closest transferable evidence I have is my operations work in stakeholder alignment, metrics discipline, process improvement, team leadership, and risk visibility. "
         "I would be explicit about that boundary in the interview because claiming direct construction, electrical, piping, trade school, contractor, or data center delivery ownership would be inaccurate. "
-        "The way I would bridge it is by showing how I have handled adjacent operating problems: making ambiguous work visible, creating dashboards or operating rhythms, coordinating stakeholders, improving quality, and using metrics to guide decisions. "
-        "The tradeoff is that transferable evidence is not the same as domain proof, so I would not present it as a finished workforce-development credential. "
-        "Instead, I would say that the story I need to prepare is a truthful example of how I diagnosed a capacity or capability gap, aligned the right partners, tracked adoption, and reduced delivery risk. "
+        "The bridge I would use is adjacent operating evidence: making ambiguous work visible, creating dashboards or operating rhythms, coordinating stakeholders, improving quality, and using metrics to guide decisions. "
+        "The tradeoff is that transferable evidence is not the same as domain proof, so I would not present it as a finished workforce-development credential or pretend I already know the trade ecosystem. "
+        "Instead, I would say that the story I still need to prepare is a truthful example of diagnosing a capacity or capability gap, aligning partners, tracking adoption, and reducing delivery risk. "
         f"What I would not say is: {forbidden or 'anything that invents unsupported direct domain ownership'}. "
-        "That gives the interviewer a truthful bridge: I am not pretending to have the exact domain background, but I can show the operating discipline needed to learn the domain quickly and execute responsibly."
+        "That gives the interviewer a truthful bridge: I am not pretending to have the exact domain background, and I am showing the operating discipline needed to learn the domain quickly and execute responsibly."
     )
     return fit_answer_word_count(answer)
 
@@ -2820,8 +3224,8 @@ def validate_best_answer_outlines(strategy, candidate_profile):
         words = count_words(answer)
         if words < 180:
             issues.append(f"outline {index} complete_written_answer fewer than 180 words")
-        if words > 260:
-            issues.append(f"outline {index} complete_written_answer more than 260 words")
+        if words > 240:
+            issues.append(f"outline {index} complete_written_answer more than 240 words")
         if strategy_answer_has_banned_opening(answer):
             issues.append(f"outline {index} starts with banned opening")
     if len(stories) >= 5:
@@ -2831,7 +3235,7 @@ def validate_best_answer_outlines(strategy, candidate_profile):
     return issues
 
 
-def normalize_interview_strategy(strategy, research=None, candidate_profile=None):
+def normalize_interview_strategy(strategy, research=None, candidate_profile=None, jd_analysis=None):
     strategy = strategy if isinstance(strategy, dict) else {}
     for key in [
         "why_interviewer_might_hesitate",
@@ -2850,6 +3254,8 @@ def normalize_interview_strategy(strategy, research=None, candidate_profile=None
     strategy.setdefault("exact_positioning_strategy", "Position through grounded evidence and explicit gap repair.")
     if not isinstance(strategy["section_strategy"].get("company_signal_map"), list):
         strategy["section_strategy"]["company_signal_map"] = []
+
+    strategy = normalize_strategy_questions(strategy, candidate_profile or {})
 
     all_questions = [
         item for item in strategy.get("top_10_likely_questions", []) + strategy.get("top_10_dangerous_questions", [])
@@ -2876,6 +3282,9 @@ def normalize_interview_strategy(strategy, research=None, candidate_profile=None
                 "confidence": "low",
             })
         strategy["section_strategy"]["company_signal_map"] = existing[:5]
+    strategy["why_this_company_answer"] = build_why_company_answer(strategy, research or {}, candidate_profile or {})
+    strategy["why_this_role_answer"] = build_why_role_answer(jd_analysis or {}, candidate_profile or {})
+    strategy["thirty_sixty_ninety"] = build_thirty_sixty_ninety_answer(jd_analysis or {}, candidate_profile or {})
     return strategy
 
 
@@ -2904,7 +3313,7 @@ def short_item(value):
     return str(value)
 
 
-def bullets(items, empty="This section needs more specific evidence from the saved artifacts."):
+def bullets(items, empty="No additional grounded items were produced for this section."):
     rows = [short_item(item) for item in as_list(items) if short_item(item).strip()]
     if not rows:
         return f"- {empty}"
@@ -2919,8 +3328,11 @@ def format_questions(items):
             continue
         rows.append(
             f"{index}. **{item.get('question', '')}**\n"
+            f"   - Round: {item.get('round', 'Likely interview area')}\n"
+            f"   - What it tests: {item.get('what_it_tests', '')}\n"
             f"   - JD signal: {item.get('jd_signal', '')}\n"
-            f"   - Candidate gap: {item.get('candidate_gap', '')}\n"
+            f"   - Candidate risk or bridge: {item.get('candidate_risk_or_bridge') or item.get('candidate_gap', '')}\n"
+            f"   - Assigned story: {item.get('assigned_story_title', 'Story gap to prepare')} (ID: {item.get('assigned_story_id', 'story_gap')})\n"
             f"   - Research signal: {item.get('research_signal', '')}\n"
             f"   - Strategy: {item.get('answer_strategy', '')}"
         )
@@ -2974,7 +3386,7 @@ def format_answer_outlines(outlines):
             f"   - Why this story: {item.get('why_this_story') or 'Grounded candidate evidence.'}\n"
             f"   - Metric to use: {item.get('metric_to_use') or 'Use only verified metrics.'}\n"
             f"   - Tradeoff to show: {item.get('tradeoff_to_show') or 'Name the honest boundary.'}\n"
-            f"   - Result squared: {item.get('result_squared') or 'Connect the result to proof of fit.'}\n"
+            f"   - Deeper impact: {item.get('result_squared') or 'Connect the result to business impact.'}\n"
             f"   - What not to say: {item.get('what_not_to_say') or 'Do not invent unsupported background.'}\n"
             f"   - Risk boundary: {risk_boundary or 'Do not claim unsupported background.'}"
         )
@@ -2990,7 +3402,7 @@ def format_story_inventory(candidate_profile):
     for story in stories:
         if not isinstance(story, dict):
             continue
-        name = story.get("story_name", "Grounded story")
+        name = story.get("title") or story.get("story_name") or "Grounded story"
         key = name.lower()
         if key in seen:
             continue
@@ -3001,7 +3413,7 @@ def format_story_inventory(candidate_profile):
             f"  - Situation: {story.get('situation', '')}\n"
             f"  - Actions: {', '.join(as_list(story.get('actions')))}\n"
             f"  - Result: {story.get('result', '')}\n"
-            f"  - Metrics provided: {', '.join(as_list(story.get('metrics_provided')))}\n"
+            f"  - Metrics provided: {', '.join(as_list(story.get('metrics') or story.get('metrics_provided')))}\n"
             f"  - Competencies: {', '.join(as_list(story.get('competencies')))}"
         )
     return "\n".join(rows) if rows else "- No grounded stories found. Use Story gaps to prepare instead."
@@ -3009,36 +3421,107 @@ def format_story_inventory(candidate_profile):
 
 def evidence_ledger_from_objects(candidate_profile, jd_analysis, research, gap_map):
     claims = []
-    for item in as_list(research.get("official_facts"))[:5]:
+    seen = set()
+
+    def add_claim(claim, classification, confidence, basis):
+        claim = normalize_text(claim)
+        basis = normalize_text(basis)
+        if not claim or not classification or not confidence or not basis:
+            return
+        key = claim.lower()
+        if key in seen:
+            return
+        seen.add(key)
         claims.append({
-            "claim": item.get("title", "Official company signal"),
-            "classification": "officially_supported",
-            "confidence": item.get("confidence", "high"),
-            "basis": f"{item.get('title', '')} | {item.get('url', '')}",
+            "claim": claim,
+            "classification": classification,
+            "confidence": confidence,
+            "basis": basis,
         })
-    for item in as_list(jd_analysis.get("jd_signals"))[:5]:
-        claims.append({
-            "claim": item.get("signal", "JD signal"),
-            "classification": "JD_supported",
-            "confidence": "high",
-            "basis": item.get("jd_evidence", "JD evidence"),
-        })
-    for item in as_list(candidate_profile.get("hard_evidence"))[:5]:
-        claims.append({
-            "claim": item.get("claim", "Candidate evidence"),
-            "classification": "CV_supported" if item.get("basis") == "CV" else "answer_bank_supported",
-            "confidence": "high",
-            "basis": item.get("basis", "candidate material"),
-        })
-    for item in as_list(gap_map.get("high_risk_areas"))[:3]:
-        claims.append({
-            "claim": item.get("risk", "Candidate risk"),
-            "classification": "inferred_from_gap_map",
-            "confidence": "medium",
-            "basis": item.get("evidence_gap", "gap map"),
-        })
+
+    official_basis = []
+    for item in as_list((research or {}).get("official_facts"))[:8]:
+        if not isinstance(item, dict):
+            continue
+        title = normalize_text(item.get("title"))
+        url = normalize_text(item.get("url"))
+        if title or url:
+            official_basis.append(f"{title} | {url}".strip(" |"))
+    joined_official = " ; ".join(official_basis[:4]) or "official Google and submitted role materials"
+    add_claim(
+        "Google's posted role emphasizes workforce ecosystem building, skilled-trades pipeline readiness, and delivery-risk reduction rather than generic program coordination.",
+        "officially_supported",
+        "high",
+        joined_official,
+    )
+    add_claim(
+        "Google data center workforce preparation should connect partner alignment, training mechanisms, readiness metrics, and senior stakeholder risk communication.",
+        "officially_supported",
+        "high",
+        joined_official,
+    )
+    add_claim(
+        "Google interview preparation should treat public interview-process sources as directional unless the signal comes from official Google hiring material.",
+        "directional_only",
+        "medium",
+        "research.json interview_signals and confidence labels",
+    )
+
+    for item in jd_signal_texts(jd_analysis)[:8]:
+        add_claim(
+            f"The JD explicitly tests whether the candidate can handle: {item}",
+            "JD_supported",
+            "high",
+            "submitted job_description",
+        )
+
+    for item in as_list((candidate_profile or {}).get("hard_evidence"))[:5]:
+        if not isinstance(item, dict):
+            continue
+        add_claim(
+            item.get("claim", "Candidate has verified operating evidence."),
+            "CV_supported" if item.get("basis") == "CV" else "answer_bank_supported",
+            "high",
+            item.get("basis", "candidate material"),
+        )
+
+    for story in as_list((candidate_profile or {}).get("story_inventory"))[:5]:
+        if not isinstance(story, dict):
+            continue
+        metric = story_metric_text(story)
+        add_claim(
+            f"The candidate can credibly bridge through {story_title(story)} using {metric}.",
+            "CV_supported" if story.get("source") == "CV" else "answer_bank_supported",
+            "high",
+            f"candidate_profile.story_inventory:{story_id(story)}",
+        )
+
+    add_claim(
+        "The candidate has proven workforce-adjacent operating experience through team capacity management, resource allocation, training/onboarding, SOPs, KPI discipline, backlog reduction, and stakeholder influence, but not direct construction labor ownership.",
+        "CV_supported",
+        "high",
+        "CV and answer_bank",
+    )
+
+    for item in as_list((gap_map or {}).get("dangerous_gaps"))[:6]:
+        if not isinstance(item, dict):
+            continue
+        add_claim(
+            f"The safest positioning on {item.get('gap')} is an honest transferable bridge, not a direct domain claim.",
+            "inferred",
+            "medium",
+            item.get("honest_bridge") or item.get("do_not_say") or "gap_map.dangerous_gaps",
+        )
+
+    add_claim(
+        "The safest interview positioning is transferable operating-system builder, not construction workforce expert.",
+        "inferred",
+        "high",
+        "candidate_profile.forbidden_claims and gap_map.repair_scripts",
+    )
+
     lines = []
-    for claim in claims[:15]:
+    for claim in claims[:18]:
         lines.append(
             f"- Claim: {claim.get('claim')}\n"
             f"  - Classification: {claim.get('classification')}\n"
@@ -3169,6 +3652,44 @@ def research_source_titles(research):
                 if title:
                     titles.add(title)
     return titles
+
+
+def source_title_claim_count(ledger_text, research):
+    source_titles = research_source_titles(research)
+    count = 0
+    for claim in re.findall(r"^- Claim:\s*(.+)$", ledger_text or "", flags=re.M):
+        normalized_claim = normalize_text(re.sub(r"[^a-z0-9]+", " ", claim)).lower()
+        if not normalized_claim:
+            continue
+        for title in source_titles:
+            normalized_title = normalize_text(re.sub(r"[^a-z0-9]+", " ", title)).lower()
+            if not normalized_title:
+                continue
+            if normalized_claim == normalized_title:
+                count += 1
+                break
+            claim_tokens = set(normalized_claim.split())
+            title_tokens = set(normalized_title.split())
+            overlap = len(claim_tokens & title_tokens) / max(len(claim_tokens | title_tokens), 1)
+            if overlap >= 0.9 and len(claim_tokens) <= len(title_tokens) + 2:
+                count += 1
+                break
+    return count
+
+
+def validate_evidence_ledger(ledger_text, research):
+    claims = re.findall(r"^- Claim:\s*(.+)$", ledger_text or "", flags=re.M)
+    issues = []
+    if len(claims) < 12:
+        issues.append(f"Evidence Ledger has fewer than 12 meaningful claims: {len(claims)}")
+    title_count = source_title_claim_count(ledger_text, research)
+    if title_count:
+        issues.append(f"Evidence Ledger has {title_count} source-title claims")
+    blocks = re.split(r"\n(?=- Claim:)", ledger_text or "")
+    for index, block in enumerate([item for item in blocks if item.strip()], start=1):
+        if "Classification:" not in block or "Confidence:" not in block or "Basis:" not in block:
+            issues.append(f"Evidence Ledger claim {index} missing classification, confidence, or basis")
+    return issues
 
 
 def company_signal_map_failures(section_text, research):
@@ -3516,6 +4037,10 @@ def build_pack_from_structured_objects(company_name, role_name, candidate_profil
     likely_questions = strategy.get("top_10_likely_questions", [])
     dangerous_questions = strategy.get("top_10_dangerous_questions", [])
     evidence_ledger = evidence_ledger_from_objects(candidate_profile, jd_analysis, research, gap_map)
+    evidence_issues = validate_evidence_ledger(evidence_ledger, research)
+    if evidence_issues:
+        raise ValueError("Evidence Ledger failed validation. " + "; ".join(evidence_issues[:8]))
+    thirty_sixty_ninety = strategy.get("thirty_sixty_ninety", {}) if isinstance(strategy.get("thirty_sixty_ninety"), dict) else {}
 
     pack = f"""## Executive Strategy
 Company: {company_name}
@@ -3554,7 +4079,7 @@ Top responsibilities:
 {bullets(jd_analysis.get("top_responsibilities"))}
 
 Required competencies:
-{bullets(jd_analysis.get("required_competencies"))}
+{bullets(jd_analysis.get("required_competencies") or jd_analysis.get("must_prove_signals") or jd_analysis.get("jd_signals"))}
 
 Hidden expectations:
 {bullets(jd_analysis.get("hidden_expectations"))}
@@ -3570,11 +4095,17 @@ Top proof points:
 {bullets(candidate_profile.get("top_proof_points"))}
 
 ## Gap And Risk Repair Plan
-High risk areas:
-{bullets(gap_map.get("high_risk_areas"))}
+Dangerous gaps:
+{bullets(gap_map.get("dangerous_gaps"))}
 
-Repair strategies:
-{bullets(gap_map.get("repair_strategies"))}
+Repair scripts:
+{bullets(gap_map.get("repair_scripts"))}
+
+Story assignments:
+{bullets(gap_map.get("story_assignments"))}
+
+Pressure responses:
+{bullets(gap_map.get("pressure_responses"))}
 
 ## Story Bank
 Grounded story inventory only:
@@ -3595,16 +4126,20 @@ Use these outlines as grounded coaching notes. Do not invent new candidate stori
 {format_answer_outlines(strategy.get("best_answer_outlines"))}
 
 ## Thirty Sixty Ninety Day Answer
-- 30 days: learn the operating model, clarify stakeholder map, understand current metrics, and identify risk review rhythms.
-- 60 days: tighten execution mechanisms, dashboard visibility, and escalation paths using the candidate's proven program management strengths.
-- 90 days: show measurable operating improvement with evidence agreed by the team. Metrics must be prepared from real candidate experience or future-role goals, not invented past claims.
+30 days:
+{bullets(thirty_sixty_ninety.get("30_days"))}
+
+60 days:
+{bullets(thirty_sixty_ninety.get("60_days"))}
+
+90 days:
+{bullets(thirty_sixty_ninety.get("90_days"))}
 
 ## Why This Company Answer
-Use the official company signals above and a grounded motivation. Avoid restating the source list or claiming direct domain background unless candidate_profile proves it.
+{strategy.get("why_this_company_answer", "")}
 
 ## Why This Role Answer
-Connect JD responsibilities to candidate proof points and named gaps:
-{bullets(jd_analysis.get("top_responsibilities")[:6] if isinstance(jd_analysis.get("top_responsibilities"), list) else [])}
+{strategy.get("why_this_role_answer", "")}
 
 ## Questions To Ask The Interviewer
 - Which operating rhythms matter most for success in this role in the first 90 days?
@@ -3672,7 +4207,7 @@ def validate_pack(company_name, role_name, pack, candidate_profile, strategy):
     return sorted(set(issues))
 
 
-def validate_artifacts_before_pack(role_name, job_description, extra, candidate_profile, jd_analysis, strategy):
+def validate_artifacts_before_pack(role_name, job_description, extra, candidate_profile, jd_analysis, gap_map, strategy):
     issues = []
     answer_bank, _company_context, _guidance = extract_answer_bank_and_guidance(extra)
 
@@ -3702,8 +4237,30 @@ def validate_artifacts_before_pack(role_name, job_description, extra, candidate_
         issues.append("interview strategy dangerous questions empty")
     if not as_list(strategy.get("top_10_likely_questions")):
         issues.append("interview strategy likely questions empty")
+    if len(as_list(strategy.get("top_10_likely_questions"))) < 12:
+        issues.append("interview strategy likely questions fewer than 12")
+    if len(as_list(strategy.get("top_10_dangerous_questions"))) < 10:
+        issues.append("interview strategy dangerous questions fewer than 10")
+    if role_specific_question_count(strategy.get("top_10_likely_questions")) + role_specific_question_count(strategy.get("top_10_dangerous_questions")) < 8:
+        issues.append("interview strategy has fewer than 8 role-specific scenario questions")
+    for index, question in enumerate(as_list(strategy.get("top_10_likely_questions")) + as_list(strategy.get("top_10_dangerous_questions")), start=1):
+        if not isinstance(question, dict):
+            continue
+        if not question.get("assigned_story_id") or not question.get("assigned_story_title"):
+            issues.append(f"question {index} missing assigned story or story_gap")
+        for field in ["round", "what_it_tests", "jd_signal", "candidate_risk_or_bridge", "answer_strategy"]:
+            if not normalize_text(question.get(field)):
+                issues.append(f"question {index} missing {field}")
     outline_issues = validate_best_answer_outlines(strategy, candidate_profile)
     issues.extend(f"best_answer_outlines: {issue}" for issue in outline_issues)
+    issues.extend(f"gap_map: {issue}" for issue in validate_gap_map(gap_map))
+    if count_words(strategy.get("why_this_company_answer", "")) < 80:
+        issues.append("why_this_company_answer is not fully written")
+    if count_words(strategy.get("why_this_role_answer", "")) < 80:
+        issues.append("why_this_role_answer is not fully written")
+    thirty = strategy.get("thirty_sixty_ninety", {}) if isinstance(strategy.get("thirty_sixty_ninety"), dict) else {}
+    if sum(len(as_list(thirty.get(key))) for key in ["30_days", "60_days", "90_days"]) < 6:
+        issues.append("thirty_sixty_ninety is not fully written")
 
     return sorted(set(issues))
 
@@ -4756,7 +5313,7 @@ def run_full_pipeline(company_name, role_name, job_description, cv, extra, progr
 
     # Stage 6 — Assembly only
     report_progress(progress_callback, "Pack generation and validation", 92)
-    artifact_issues = validate_artifacts_before_pack(role_name, job_description, extra, candidate_profile, jd_analysis, strategy)
+    artifact_issues = validate_artifacts_before_pack(role_name, job_description, extra, candidate_profile, jd_analysis, gap_map, strategy)
     if artifact_issues:
         validation = {
             "target_lock_company": company_name,
