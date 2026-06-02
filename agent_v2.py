@@ -199,6 +199,8 @@ EDITORIAL_BANNED_STRINGS = [
     "The result I would lead with is",
     "Use the official company signals above",
     "This section needs more specific evidence",
+    "because the fastest fix would not have lasted unless the mechanism changed",
+    "that is the kind of disciplined program management I can bring while learning the construction workforce domain fast",
 ]
 
 STAGE_QUALITY_INSTRUCTION = (
@@ -252,7 +254,7 @@ def assert_no_editorial_banned_strings(markdown):
     for needle in EDITORIAL_BANNED_STRINGS:
         if needle.lower() in lowered:
             found.append(needle)
-    copied_question_pattern = re.compile(r"I have not directly owned\s+[^.\n?]{45,}[?.]", flags=re.I)
+    copied_question_pattern = re.compile(r"I have not directly owned(?:\s+\S+){9,}", flags=re.I)
     if copied_question_pattern.search(text):
         found.append("I have not directly owned followed by a copied question")
     if found:
@@ -2777,6 +2779,17 @@ No generic questions.
 No new candidate stories or metrics.
 
 For best_answer_outlines:
+Read the question carefully before writing the answer. The question is asking about a specific angle: risk escalation, stakeholder conflict, metrics design, training adoption, or capability building. Use the assigned story to answer that specific angle. Do not write the same answer structure for every question that shares a story. Vary the opening, the decision emphasis, and the result based on what the question is actually testing.
+If the question tests metrics design, lead with the metric problem and the diagnostic decision.
+If the question tests stakeholder conflict, lead with the misaligned incentives and how shared data resolved them.
+If the question tests training adoption, lead with the behavior change and the mechanism that made it stick.
+If the question tests risk escalation, lead with the moment the risk became visible and what you did before others agreed it was a problem.
+When assigned_story_id is story_gap, open the answer with a natural honest bridge that does not repeat the question text. Use one of these patterns:
+Name the specific operating evidence that is closest: "The closest transferable evidence I have for this is the backlog handover work, because..."
+Name the gap honestly then bridge immediately: "I have not built a contractor partnership directly. The operating pattern I would apply is..."
+State the approach: "My first move would be to get the constraint visible before prescribing a solution. The way I have done that is..."
+Never copy the question into the answer. Never start with "I have not directly owned" followed by the question text.
+Never use the phrases "The context was", "because the fastest fix would not have lasted unless the mechanism changed", or "that is the kind of disciplined program management I can bring while learning the construction workforce domain fast".
 For each of the top 10 questions write a complete 150 to 200 word answer using only the candidate stories and metrics in candidate_profile.json. Do not write placeholders. Do not write story to use colon story name. Write the full answer as if the candidate is speaking it out loud in the interview. Include the situation in one sentence, the decision they made and why, the specific action they took personally, a realistic metric from the CV, the business result, and one tradeoff or difficulty they navigated. End with the business result or the interviewer signal. The last sentence of every answer must be the impact or the proof of fit, not a coaching note to the interviewer. Never write "The key takeaway for you is". If a story does not exist for that question write story gap to prepare and explain what story the candidate needs to build.
 The full_answer field is invalid if it is under 150 words. Count the words before output. Do not compress the answer into a summary.
 
@@ -3093,52 +3106,42 @@ def fit_answer_word_count(answer):
 def build_story_answer(question, story):
     title = story_title(story)
     metrics = ", ".join(as_list(story.get("metrics") or story.get("metrics_provided"))) or "the operating metric attached to the story"
-    actions = " ".join(as_list(story.get("actions"))[:3])
+    actions = as_list(story.get("actions"))[:3]
     competencies = ", ".join(as_list(story.get("competencies"))[:3]) or "program management and operating discipline"
     result = normalize_text(story.get("result")) or "a measurable operating improvement"
     situation = normalize_text(story.get("situation")) or title
     decision = normalize_text(story.get("decision")) or "to treat the issue as an operating-system problem rather than a one-off task"
-    story_key = f"{story_id(story)} {title}".lower()
-    question_key = normalize_text(question).lower()
-    if "backlog" in story_key or "handover" in story_key:
-        opening = (
-            "The stakeholder bridge I would use is a 34% backlog reduction across regional handovers."
-            if "partner" in question_key or "external" in question_key or "stakeholder" in question_key else
-            "We reduced a cross-regional backlog by 34% after I treated the issue as an ownership and handover problem, not just queue volume."
-        )
-    elif "queue" in story_key or "workflow" in story_key or "40" in story_key:
-        opening = (
-            "For an execution question, I would use the workflow redesign that removed friction and saved 40 weekly hours."
-            if "delivery" in question_key or "risk" in question_key else
-            "The strongest process example I would use is a queue-routing redesign that saved 40 weekly hours and improved response flow."
-        )
-    elif "metric" in story_key or "77" in story_key or "93" in story_key or "dashboard" in story_key:
-        opening = (
-            "For a readiness-dashboard question, I would start with the time I corrected a metric from 77% to 93%."
-            if "dashboard" in question_key or "readiness" in question_key else
-            "When a metric showed 77%, I did not accept the number until I understood whether it reflected the real operating issue."
-        )
-    elif "team" in story_key or "qa" in story_key or "quality" in story_key:
-        opening = f"The quality improvement came from changing the team operating rhythm, not from asking people to simply work harder."
-    elif "people" in story_key or "coach" in story_key or "mentor" in story_key or "training" in story_key or "sop" in story_key:
-        opening = (
-            "For a training or mentorship question, I would talk about turning individual knowledge into a repeatable team mechanism."
-            if "training" in question_key or "mentor" in question_key or "buddy" in question_key else
-            "A capability-building example I would use is the work I did to turn individual knowledge into a repeatable team mechanism."
-        )
-    elif "launch" in story_key or "readiness" in story_key or "risk" in story_key:
-        opening = f"The readiness work mattered because risk was becoming visible before the team had a clean operating rhythm to manage it."
+    opening = story_answer_opening(question, story)
+    action_sentence = story_action_sentence(actions)
+    angle = question_angle(question)
+    if angle == "metrics_design":
+        angle_sentence = "For Google, I would translate that into a readiness metric only after agreeing what decision the metric should improve and which domain expert owns the definition."
+        tradeoff = "The tradeoff is speed versus accuracy: a fast dashboard is dangerous if the metric drives the wrong behavior."
+    elif angle == "stakeholder_conflict":
+        angle_sentence = "For Google, I would use the same pattern with contractors and internal delivery teams: separate opinion from evidence, agree the readiness definition, and make the next decision explicit."
+        tradeoff = "The tradeoff is that alignment can feel slower at first, but it prevents people from optimizing against different versions of the problem."
+    elif angle == "training_adoption":
+        angle_sentence = "For Google, I would apply that to training labs or mentorship by measuring adoption, behavior change, and whether the mechanism reduces delivery risk."
+        tradeoff = "The tradeoff is activity versus impact: attendance is easy to count, but readiness is what matters."
+    elif angle == "risk_escalation":
+        angle_sentence = "For Google, I would use that pattern to move labor constraints from informal concern to visible delivery risk with owners, cadence, and escalation."
+        tradeoff = "The tradeoff is raising risk early without overstating certainty; I would rather create visibility while the team can still act."
+    elif angle == "domain_bridge":
+        angle_sentence = "For Google, I would be explicit that this is transferable operating evidence, then show how I would learn the construction workforce domain from the people closest to it."
+        tradeoff = "The tradeoff is credibility versus ambition: I need to stretch into the domain without pretending I have already owned it."
     else:
-        opening = f"The strongest part of this story is that it turned an ambiguous operating problem into a measurable result."
+        angle_sentence = "For Google, I would apply the same operating discipline: clarify the constraint, make ownership visible, and create a mechanism that survives beyond one escalation."
+        tradeoff = "The tradeoff is solving the immediate pressure while still fixing the operating mechanism underneath it."
     answer = (
         f"{opening} "
-        f"The context was {situation}. "
-        f"My decision was {decision} because the fastest fix would not have lasted unless the mechanism changed. "
-        f"I personally worked on {actions or 'clarifying ownership, making the work measurable, and creating a repeatable execution rhythm'}. "
+        f"In that example, {situation}. "
+        f"The decision I made was {decision}. "
+        f"{action_sentence} "
         f"The metric I would use is {metrics}, and I would connect it to the business result: {result}. "
-        "The tradeoff I would name is that this was not construction workforce development, so I would not present it as trade, contractor, or data center experience. "
-        f"I would use it for '{normalize_text(question)}' because it shows the transferable pattern Google needs: diagnose the constraint, align the right people, create the operating mechanism, and keep the result visible. "
-        f"The impact is that {title} becomes a concrete example of how I reduce delivery risk through disciplined execution rather than unsupported domain claims."
+        f"{tradeoff} "
+        "I would also be clear that this was not construction workforce development, so I would not present it as trade, contractor, or data center delivery experience. "
+        f"{angle_sentence} "
+        f"{story_answer_closing(question, story, result)}"
     )
     if strategy_answer_has_banned_opening(answer):
         answer = "The measurable operating result is the important starting point. " + answer
@@ -3147,14 +3150,35 @@ def build_story_answer(question, story):
 
 def build_story_gap_answer(question, candidate_profile):
     forbidden = "; ".join(as_list((candidate_profile or {}).get("forbidden_claims"))[:3])
+    angle = question_angle(question)
+    if "contractor" in normalize_text(question).lower():
+        opening = "I have not built a contractor partnership directly. The operating pattern I would apply is to make the constraint visible before trying to force agreement."
+        bridge = "The closest transferable evidence is stakeholder alignment through backlog and handover work, where different groups needed one shared view of the operating problem."
+        close = "That is the honest answer: I would bring structure, shared facts, and escalation discipline, while learning the contractor context from the experts."
+    elif any(term in normalize_text(question).lower() for term in ["trade school", "community college", "workforce board"]):
+        opening = "I have not owned trade-school or workforce-board partnerships directly. The bridge I would use is repeatable training, SOP, stakeholder, and adoption work."
+        bridge = "The closest transferable evidence is building mechanisms that make knowledge transfer and operating expectations clearer for a team."
+        close = "That shows the interviewer I can build the operating rhythm around partners without inventing education-partnership ownership."
+    elif any(term in normalize_text(question).lower() for term in ["electrical", "piping", "trade gap"]):
+        opening = "I have not owned electrical or piping trade planning. My first move would be to learn the constraint from domain experts and turn it into a metric the program can act on."
+        bridge = "The closest transferable evidence is the SLA and dashboard work, where I challenged whether the visible number reflected the real operating issue."
+        close = "That keeps the boundary honest while still showing how I would make the trade gap measurable and actionable."
+    elif angle == "domain_bridge":
+        opening = "The closest transferable evidence I have for this is the backlog handover work, because it shows how I handle ambiguity, ownership gaps, and delivery risk."
+        bridge = "I would name the domain gap directly, then show the operating pattern I can prove: metrics, handovers, capacity visibility, stakeholder alignment, and follow-through."
+        close = "The interviewer should hear both parts: no false domain claim, and a credible operating foundation for learning the domain quickly."
+    else:
+        opening = "My first move would be to get the constraint visible before prescribing a solution. The way I have done that is through operations work where unclear ownership and weak metrics were creating delivery risk."
+        bridge = "The closest transferable evidence is making ambiguous work measurable, creating dashboards or operating rhythms, coordinating stakeholders, and using metrics to guide decisions."
+        close = "That is the bridge I would use: not domain ownership, but disciplined problem diagnosis and accountable execution."
     answer = (
-        f"I have not directly owned {normalize_text(question).rstrip('?')}, but the closest transferable evidence I have is my operations work in stakeholder alignment, metrics discipline, process improvement, team leadership, and risk visibility. "
+        f"{opening} "
         "I would be explicit about that boundary in the interview because claiming direct construction, electrical, piping, trade school, contractor, or data center delivery ownership would be inaccurate. "
-        "The bridge I would use is adjacent operating evidence: making ambiguous work visible, creating dashboards or operating rhythms, coordinating stakeholders, improving quality, and using metrics to guide decisions. "
+        f"{bridge} "
         "The tradeoff is that transferable evidence is not the same as domain proof, so I would not present it as a finished workforce-development credential or pretend I already know the trade ecosystem. "
         "Instead, I would say that the story I still need to prepare is a truthful example of diagnosing a capacity or capability gap, aligning partners, tracking adoption, and reducing delivery risk. "
         f"What I would not say is: {forbidden or 'anything that invents unsupported direct domain ownership'}. "
-        "That gives the interviewer a truthful bridge: I am not pretending to have the exact domain background, and I am showing the operating discipline needed to learn the domain quickly and execute responsibly."
+        f"{close}"
     )
     return fit_answer_word_count(answer)
 
@@ -4127,6 +4151,78 @@ def metric_sentence(story):
     return f"The metrics I would use are {', '.join(metrics[:3])}, because they show the change was measurable rather than anecdotal."
 
 
+def question_angle(question):
+    text = normalize_text(question).lower()
+    if any(term in text for term in ["dashboard", "metric", "measure", "readiness", "definition", "data"]):
+        return "metrics_design"
+    if any(term in text for term in ["contractor", "disagrees", "partner", "community college", "trade school", "workforce board", "alignment"]):
+        return "stakeholder_conflict"
+    if any(term in text for term in ["training", "mentorship", "buddy", "upskilling", "coaching", "playbook", "capability"]):
+        return "training_adoption"
+    if any(term in text for term in ["risk", "six months behind", "delivery", "shortage", "labor constraint", "escalation"]):
+        return "risk_escalation"
+    if any(term in text for term in ["background", "strongest", "learning curve", "why should google", "claim you cannot make"]):
+        return "domain_bridge"
+    return "program_execution"
+
+
+def story_action_sentence(actions):
+    actions = [normalize_text(item).rstrip(".") for item in as_list(actions) if normalize_text(item)]
+    if not actions:
+        return "I clarified ownership, made the work measurable, and created a repeatable follow-up rhythm."
+    if len(actions) == 1:
+        return f"I personally {actions[0][0].lower() + actions[0][1:] if actions[0] else actions[0]}."
+    if len(actions) == 2:
+        return f"I personally {actions[0][0].lower() + actions[0][1:] if actions[0] else actions[0]}, and {actions[1][0].lower() + actions[1][1:] if actions[1] else actions[1]}."
+    first = actions[0][0].lower() + actions[0][1:] if actions[0] else actions[0]
+    second = actions[1][0].lower() + actions[1][1:] if actions[1] else actions[1]
+    third = actions[2][0].lower() + actions[2][1:] if actions[2] else actions[2]
+    return f"I personally {first}, {second}, and {third}."
+
+
+def story_answer_opening(question, story):
+    angle = question_angle(question)
+    title = story_title(story).lower()
+    if angle == "metrics_design":
+        if "metric" in title or "dashboard" in title or "77" in title or "93" in title:
+            return "The answer starts with data integrity: I once found that a visible SLA number was not telling the full operating truth."
+        return "For a metrics question, I would start by defining what decision the metric is supposed to improve."
+    if angle == "stakeholder_conflict":
+        if "backlog" in title or "handover" in title:
+            return "The stakeholder issue I would lead with was a cross-regional backlog where different teams were seeing the problem differently."
+        return "For a partner-conflict question, I would lead with shared facts before trying to force agreement."
+    if angle == "training_adoption":
+        if "mentor" in title or "training" in title or "sop" in title or "quality" in title:
+            return "For a training-adoption question, I would focus on behavior change rather than activity."
+        return "For capability building, I would show how I turned informal execution into a repeatable mechanism."
+    if angle == "risk_escalation":
+        if "launch" in title or "readiness" in title or "risk" in title:
+            return "The risk became important when readiness gaps were visible before the team had a clean rhythm to manage them."
+        return "The moment I would emphasize is when the operating risk became visible enough that waiting would have made the problem harder."
+    if angle == "domain_bridge":
+        return "I would answer that by being clear about the boundary first and then showing the closest operating evidence."
+    if "queue" in title or "workflow" in title or "40" in title:
+        return "The process example I would use is a queue-routing redesign that freed 40 weekly hours."
+    if "backlog" in title:
+        return "The strongest execution example I would use is the backlog handover work that reduced volume by 34%."
+    return "The strongest part of this example is that it turned ambiguity into a controlled operating mechanism."
+
+
+def story_answer_closing(question, story, result):
+    angle = question_angle(question)
+    if angle == "metrics_design":
+        return f"The result was {result}, and the interviewer signal is that I protect decision quality before asking teams to act on a number."
+    if angle == "stakeholder_conflict":
+        return f"The result was {result}, and the point I would land is that shared visibility makes disagreement easier to turn into action."
+    if angle == "training_adoption":
+        return f"The result was {result}, and I would connect that to building mechanisms people actually adopt, not programs that only look good on paper."
+    if angle == "risk_escalation":
+        return f"The result was {result}, and the proof is that I know how to surface risk early enough for leaders to make better tradeoffs."
+    if angle == "domain_bridge":
+        return f"The result was {result}, and that is the honest bridge I would bring: operating discipline first, domain learning with humility."
+    return f"The result was {result}, and I would use it to show that my value is turning unclear work into accountable execution."
+
+
 def editorial_opening_for_question(question, story):
     text = normalize_text(question).lower()
     if "background is operations" in text or "why should google take that risk" in text:
@@ -4171,31 +4267,9 @@ def fit_editorial_answer(answer):
 
 
 def editorial_answer_for_question(question, story, candidate_profile):
-    opening = editorial_opening_for_question(question, story)
-    title = story_label_for_visible(story)
-    situation = normalize_text((story or {}).get("situation")) or "the work involved several groups, uneven visibility, and rising execution risk"
-    decision = normalize_text((story or {}).get("decision")) or "to turn the issue into a measurable operating problem instead of treating it as a one-off escalation"
-    actions = [normalize_text(item) for item in as_list((story or {}).get("actions")) if normalize_text(item)]
-    action_text = "; ".join(actions[:3]) or "clarified ownership, created a rhythm for follow-up, and made the work visible through metrics"
-    result = normalize_text((story or {}).get("result")) or "the team had a clearer mechanism for managing the work"
-    metric = metric_sentence(story)
-    evidence_sentence = (
-        f"The story behind that bridge is {title}, and the operating problem was similar: unclear ownership, different stakeholder incentives, and risk building up before the team had a shared view of it."
-        if "closest evidence" in opening.lower() else
-        f"The closest evidence I would use is {title}, because the operating problem was similar: unclear ownership, different stakeholder incentives, and risk building up before the team had a shared view of it."
-    )
-    answer = (
-        f"{opening} "
-        f"{evidence_sentence} "
-        f"In that story, {situation}. "
-        f"The decision I made was {decision}. "
-        f"I personally focused on {action_text}. "
-        f"{metric} "
-        "The tradeoff I would name is that speed matters, but credibility matters more; I would rather be precise about the boundary than pretend I have construction, contractor, trade-school, electrical, piping, or data-center delivery ownership that I do not have. "
-        f"For Google, I would translate the lesson carefully: use the domain experts for the trade-specific judgment, then build the operating mechanism that makes gaps, owners, metrics, and delivery risk visible. "
-        f"The impact was {result}, and that is the kind of disciplined program management I can bring while learning the construction workforce domain fast."
-    )
-    return fit_editorial_answer(answer)
+    if story:
+        return build_story_answer(question, story)
+    return build_story_gap_answer(question, candidate_profile)
 
 
 def editorial_executive_strategy(company_name, role_name, candidate_profile, jd_analysis, gap_map, strategy):
