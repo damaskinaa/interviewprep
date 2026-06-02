@@ -4224,10 +4224,10 @@ def story_answer_opening(question, story):
             return "The answer starts with data integrity: I once found that a visible SLA number was not telling the full operating truth."
         return "For a metrics question, I would start by defining what decision the metric is supposed to improve."
     if angle == "stakeholder_conflict":
-        if "contractor" in text:
-            return "For a contractor disagreement, I would start by moving the conversation away from blame and toward the shared delivery risk."
         if "community college" in text or "trade school" in text or "workforce board" in text:
             return "For a partner ecosystem question, I would lead with the need for one shared plan across groups with different incentives."
+        if "contractor" in text:
+            return "For a contractor disagreement, I would start by moving the conversation away from blame and toward the shared delivery risk."
         if "backlog" in title or "handover" in title:
             return "The stakeholder issue I would lead with was a cross-regional backlog where different teams were seeing the problem differently."
         return "For a partner-conflict question, I would lead with shared facts before trying to force agreement."
@@ -4277,10 +4277,10 @@ def story_answer_closing(question, story, result):
             return f"The result was {result}, and I would land the point that I do not let a clean-looking number hide a real operating risk."
         return f"The result was {result}, and the interviewer signal is that I protect decision quality before asking teams to act on a number."
     if angle == "stakeholder_conflict":
-        if "contractor" in text:
-            return f"The result was {result}, and I would close by showing that I can turn contractor disagreement into a fact-based decision path."
         if "community college" in text or "trade school" in text or "workforce board" in text:
             return f"The result was {result}, and I would connect it to building one operating plan across partners without pretending I have owned that exact ecosystem before."
+        if "contractor" in text:
+            return f"The result was {result}, and I would close by showing that I can turn contractor disagreement into a fact-based decision path."
         return f"The result was {result}, and the point I would land is that shared visibility makes disagreement easier to turn into action."
     if angle == "training_adoption":
         if "training lab" in text or "upskilling" in text:
