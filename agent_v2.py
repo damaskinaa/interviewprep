@@ -226,7 +226,7 @@ def assert_no_banned_visible_strings(markdown):
         lowered = line.lower()
         for needle in BANNED_VISIBLE_STRINGS + PACK_QUALITY_BANNED_STRINGS:
             if needle == "id: S":
-                if re.search(r"(^|\s)id:\s*S\d*\b", line):
+                if re.search(r"(^|\s)id:\s*S\d*\b", line, flags=re.I):
                     found.append(f"{needle} on line {line_number}")
                 continue
             if needle.lower() in lowered:
@@ -3300,12 +3300,12 @@ def short_item(value):
     if isinstance(value, dict):
         parts = []
         for key, item in value.items():
-            if key in {"id", "source_type", "excerpt", "raw", "content"}:
+            if key in {"id", "source_type", "excerpt", "raw", "content"} or key.endswith("_id"):
                 continue
             if item in ("", [], {}, None):
                 continue
             if isinstance(item, dict):
-                item = ", ".join(f"{k}: {v}" for k, v in item.items() if v not in ("", [], {}, None) and k not in {"id", "source_type", "excerpt", "raw", "content"})
+                item = ", ".join(f"{k}: {v}" for k, v in item.items() if v not in ("", [], {}, None) and k not in {"id", "source_type", "excerpt", "raw", "content"} and not k.endswith("_id"))
             if isinstance(item, list):
                 item = ", ".join(short_item(entry) for entry in item[:4] if entry not in ("", [], {}, None))
             parts.append(f"{key}: {item}")
@@ -3332,7 +3332,7 @@ def format_questions(items):
             f"   - What it tests: {item.get('what_it_tests', '')}\n"
             f"   - JD signal: {item.get('jd_signal', '')}\n"
             f"   - Candidate risk or bridge: {item.get('candidate_risk_or_bridge') or item.get('candidate_gap', '')}\n"
-            f"   - Assigned story: {item.get('assigned_story_title', 'Story gap to prepare')} (ID: {item.get('assigned_story_id', 'story_gap')})\n"
+            f"   - Assigned story: {item.get('assigned_story_title', 'Story gap to prepare')}\n"
             f"   - Research signal: {item.get('research_signal', '')}\n"
             f"   - Strategy: {item.get('answer_strategy', '')}"
         )
@@ -3374,14 +3374,16 @@ def format_answer_outlines(outlines):
         full_answer = (item.get("complete_written_answer") or item.get("full_answer") or item.get("answer") or item.get("direct_answer") or "").strip()
         if not full_answer:
             full_answer = "Story gap to prepare: build a specific answer from verified candidate evidence before practicing this question."
-        evidence = ", ".join(str(entry) for entry in as_list(item.get("evidence_used")) if str(entry).strip())
+        evidence = ", ".join(
+            str(entry) for entry in as_list(item.get("evidence_used"))
+            if str(entry).strip() and not re.match(r"^S\d", str(entry).strip())
+        )
         risk_boundary = item.get("risk_boundary", "")
         story_label = item.get("assigned_story_title") or item.get("assigned_story") or "Story gap to prepare"
-        story_id_value = item.get("assigned_story_id") or "story_gap"
         rows.append(
             f"{index}. **{question}**\n"
             f"{full_answer}\n"
-            f"   - Evidence used: Assigned story: {story_label} (ID: {story_id_value})"
+            f"   - Evidence used: Assigned story: {story_label}"
             f"{', ' + evidence if evidence else ''}\n"
             f"   - Why this story: {item.get('why_this_story') or 'Grounded candidate evidence.'}\n"
             f"   - Metric to use: {item.get('metric_to_use') or 'Use only verified metrics.'}\n"
