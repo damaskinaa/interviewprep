@@ -4184,7 +4184,7 @@ def metric_sentence(story):
 
 def question_angle(question):
     text = normalize_text(question).lower()
-    if any(term in text for term in ["dashboard", "metric", "measure", "readiness", "definition", "data"]):
+    if any(term in text for term in ["dashboard", "metric", "measure", "readiness", "definition", "visible number"]):
         return "metrics_design"
     if any(term in text for term in ["contractor", "disagrees", "partner", "community college", "trade school", "workforce board", "alignment"]):
         return "stakeholder_conflict"
@@ -4213,24 +4213,51 @@ def story_action_sentence(actions):
 
 def story_answer_opening(question, story):
     angle = question_angle(question)
+    text = normalize_text(question).lower()
     title = story_title(story).lower()
     if angle == "metrics_design":
+        if "electrical" in text or "piping" in text:
+            return "For an electrical and piping readiness dashboard, I would start by making sure the metric reflects the real constraint, not just what is easy to count."
+        if "visible number" in text or "telling the truth" in text:
+            return "The metric example I would use is the moment I challenged a visible number because it was not telling the operating truth."
         if "metric" in title or "dashboard" in title or "77" in title or "93" in title:
             return "The answer starts with data integrity: I once found that a visible SLA number was not telling the full operating truth."
         return "For a metrics question, I would start by defining what decision the metric is supposed to improve."
     if angle == "stakeholder_conflict":
+        if "contractor" in text:
+            return "For a contractor disagreement, I would start by moving the conversation away from blame and toward the shared delivery risk."
+        if "community college" in text or "trade school" in text or "workforce board" in text:
+            return "For a partner ecosystem question, I would lead with the need for one shared plan across groups with different incentives."
         if "backlog" in title or "handover" in title:
             return "The stakeholder issue I would lead with was a cross-regional backlog where different teams were seeing the problem differently."
         return "For a partner-conflict question, I would lead with shared facts before trying to force agreement."
     if angle == "training_adoption":
+        if "training lab" in text or "upskilling" in text:
+            return "For a training lab or upskilling question, I would focus on whether the program changes readiness rather than whether it simply runs."
+        if "playbook" in text or "improved team capability" in text:
+            return "For a coaching and playbook question, I would show how I turned individual performance feedback into a repeatable team mechanism."
+        if "safety" in text or "buddy" in text:
+            return "For a safety or buddy-program question, I would focus on adoption quality rather than a checkbox rollout."
         if "mentor" in title or "training" in title or "sop" in title or "quality" in title:
             return "For a training-adoption question, I would focus on behavior change rather than activity."
         return "For capability building, I would show how I turned informal execution into a repeatable mechanism."
     if angle == "risk_escalation":
+        if "regional workforce" in text or "shortage" in text:
+            return "For regional workforce shortages, I would lead with the schedule risk and then work backward to the constraint."
+        if "serious operating risk" in text or "senior stakeholders" in text:
+            return "For a senior-stakeholder risk question, I would lead with the moment the risk became visible before everyone agreed it was urgent."
+        if "craft labor" in text or "labor constraints" in text:
+            return "For craft labor constraints, I would frame the answer around the program mechanism that turns an early warning into accountable action."
         if "launch" in title or "readiness" in title or "risk" in title:
             return "The risk became important when readiness gaps were visible before the team had a clean rhythm to manage them."
         return "The moment I would emphasize is when the operating risk became visible enough that waiting would have made the problem harder."
     if angle == "domain_bridge":
+        if "strongest" in text or "learning curve" in text:
+            return "I would separate the answer into two parts: where my evidence is strongest and where the learning curve is real."
+        if "why should google take that risk" in text:
+            return "I would answer the risk question by naming the gap plainly and then showing the closest operating evidence."
+        if "claim you cannot make" in text:
+            return "The strongest claim I cannot make is direct construction workforce ownership, and I would say that plainly."
         return "I would answer that by being clear about the boundary first and then showing the closest operating evidence."
     if "queue" in title or "workflow" in title or "40" in title:
         return "The process example I would use is a queue-routing redesign that freed 40 weekly hours."
@@ -4241,15 +4268,39 @@ def story_answer_opening(question, story):
 
 def story_answer_closing(question, story, result):
     angle = question_angle(question)
+    text = normalize_text(question).lower()
+    result = normalize_text(result).rstrip(".")
     if angle == "metrics_design":
+        if "electrical" in text or "piping" in text:
+            return f"The result was {result}, and I would use that to show Google I can make workforce-readiness metrics decision-grade before teams rely on them."
+        if "visible number" in text or "telling the truth" in text:
+            return f"The result was {result}, and I would land the point that I do not let a clean-looking number hide a real operating risk."
         return f"The result was {result}, and the interviewer signal is that I protect decision quality before asking teams to act on a number."
     if angle == "stakeholder_conflict":
+        if "contractor" in text:
+            return f"The result was {result}, and I would close by showing that I can turn contractor disagreement into a fact-based decision path."
+        if "community college" in text or "trade school" in text or "workforce board" in text:
+            return f"The result was {result}, and I would connect it to building one operating plan across partners without pretending I have owned that exact ecosystem before."
         return f"The result was {result}, and the point I would land is that shared visibility makes disagreement easier to turn into action."
     if angle == "training_adoption":
+        if "training lab" in text or "upskilling" in text:
+            return f"The result was {result}, and I would connect that to measuring whether training changes readiness rather than just counting participation."
+        if "playbook" in text or "improved team capability" in text:
+            return f"The result was {result}, and I would close on the proof that capability improves when coaching becomes a repeatable mechanism."
+        if "safety" in text or "buddy" in text:
+            return f"The result was {result}, and I would use it to show that adoption quality has to be tested through feedback, not assumed from rollout."
         return f"The result was {result}, and I would connect that to building mechanisms people actually adopt, not programs that only look good on paper."
     if angle == "risk_escalation":
+        if "regional workforce" in text or "shortage" in text:
+            return f"The result was {result}, and I would close by showing that I can turn a capacity signal into an action plan before it becomes schedule damage."
+        if "senior stakeholders" in text or "serious operating risk" in text:
+            return f"The result was {result}, and the proof is that I can communicate risk early without overstating certainty."
         return f"The result was {result}, and the proof is that I know how to surface risk early enough for leaders to make better tradeoffs."
     if angle == "domain_bridge":
+        if "strongest" in text or "learning curve" in text:
+            return f"The result was {result}, and that is how I would balance confidence in my operating evidence with honesty about the domain learning curve."
+        if "claim you cannot make" in text:
+            return f"The result was {result}, and I would use that boundary to build trust rather than weaken the answer with overclaiming."
         return f"The result was {result}, and that is the honest bridge I would bring: operating discipline first, domain learning with humility."
     return f"The result was {result}, and I would use it to show that my value is turning unclear work into accountable execution."
 
