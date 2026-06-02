@@ -3330,6 +3330,37 @@ def normalize_interview_strategy(strategy, research=None, candidate_profile=None
                 "confidence": "low",
             })
         strategy["section_strategy"]["company_signal_map"] = existing[:5]
+    if not normalize_text(strategy.get("exact_positioning_strategy")):
+        strategy["exact_positioning_strategy"] = (
+            "Position as a transferable operating-systems builder: honest about not owning data center construction workforce development directly, "
+            "strong on capacity visibility, KPI discipline, stakeholder alignment, SOPs, training, handovers, launch readiness, and risk escalation."
+        )
+    if not strategy["why_interviewer_might_hesitate"]:
+        strategy["why_interviewer_might_hesitate"] = [
+            "The candidate has not directly owned data center construction workforce development.",
+            "The candidate does not have proven electrical, piping, contractor, trade-school, or craft-labor domain ownership.",
+            "The interviewer may worry the candidate will overtranslate general operations experience into a specialized construction workforce role.",
+        ]
+    if not strategy["how_candidate_wins"]:
+        bridge = candidate_bridge_summary(candidate_profile or {})
+        strategy["how_candidate_wins"] = [
+            f"Use the strongest grounded bridge stories: {bridge}.",
+            "Translate each story into the role's real operating problem: workforce visibility, partner alignment, readiness metrics, training adoption, and delivery-risk reduction.",
+            "Hold the domain boundary clearly while showing a practical learning plan for contractors, trade partners, education partners, and data center delivery teams.",
+        ]
+    if not strategy["must_emphasize"]:
+        signals = jd_signal_texts(jd_analysis or {})[:4]
+        strategy["must_emphasize"] = [
+            "Capacity, quality, handover, dashboard, and risk-management evidence from the real CV and answer bank.",
+            "A clear operating mechanism: diagnose the constraint, define the metric, align owners, create cadence, and escalate risk early.",
+            "Role-specific signals from the JD: " + ("; ".join(signals) if signals else "workforce development strategy, trade-gap diagnosis, partner alignment, training mechanisms, readiness metrics, and senior stakeholder communication."),
+        ]
+    if not strategy["must_avoid"]:
+        strategy["must_avoid"] = [
+            "Do not claim direct construction workforce development ownership.",
+            "Do not claim electrical, piping, contractor, trade-school, craft-labor, or data center delivery expertise unless the CV proves it.",
+            "Do not turn transferable operations stories into fake domain stories; label them as bridges.",
+        ]
     strategy["why_this_company_answer"] = build_why_company_answer(strategy, research or {}, candidate_profile or {})
     strategy["why_this_role_answer"] = build_why_role_answer(jd_analysis or {}, candidate_profile or {})
     strategy["thirty_sixty_ninety"] = build_thirty_sixty_ninety_answer(jd_analysis or {}, candidate_profile or {})
