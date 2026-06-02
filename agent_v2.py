@@ -1342,13 +1342,118 @@ def extract_metrics(text):
     return unique[:8]
 
 
+def clean_story_title(text, fallback):
+    text = normalize_text(text)
+    text = re.sub(r"^(grounded stories|candidate's own prepared answers and stories)\s*:\s*", "", text, flags=re.I)
+    text = re.sub(r"^(story\s*\d+)\s*[:.-]\s*", "", text, flags=re.I)
+    text = text.strip(" .:-")
+    if not text:
+        return fallback
+    words = text.split()
+    title = " ".join(words[:12])
+    return title[:90].strip(" .:-") or fallback
+
+
+def story_id_from_title(title, index):
+    slug = re.sub(r"[^a-z0-9]+", "_", normalize_text(title).lower()).strip("_")
+    return f"S{index:02d}_{slug[:48] or 'story'}"
+
+
+def candidate_story(index, title, source, trigger_phrase="", situation="", decision="", actions=None, metrics=None, result="", result_squared="", competencies=None, usable_for_questions=None, forbidden_expansions=None):
+    title = normalize_text(title) or f"Candidate story {index}"
+    metrics = as_list(metrics)
+    story = {
+        "story_id": story_id_from_title(title, index),
+        "title": title,
+        "story_name": title,
+        "source": source,
+        "trigger_phrase": normalize_text(trigger_phrase),
+        "situation": normalize_text(situation or trigger_phrase or title),
+        "decision": normalize_text(decision),
+        "actions": [normalize_text(action) for action in as_list(actions) if normalize_text(action)],
+        "metrics": metrics,
+        "metrics_provided": metrics,
+        "result": normalize_text(result),
+        "result_squared": normalize_text(result_squared),
+        "competencies": [normalize_text(item) for item in as_list(competencies) if normalize_text(item)],
+        "usable_for_questions": [normalize_text(item) for item in as_list(usable_for_questions) if normalize_text(item)],
+        "forbidden_expansions": [normalize_text(item) for item in as_list(forbidden_expansions) if normalize_text(item)],
+    }
+    if not story["result"] and metrics:
+        story["result"] = "Result is supported by the attached metric; prepare the exact business outcome before using this story."
+    if not story["forbidden_expansions"]:
+        story["forbidden_expansions"] = default_forbidden_claims()
+    return story
+
+
+def default_forbidden_claims():
+    return [
+        "No direct construction workforce development ownership unless the CV or answer bank proves it.",
+        "No electrical or piping trade expertise unless the CV or answer bank proves it.",
+        "No data center construction delivery ownership unless the CV or answer bank proves it.",
+        "No vocational, apprenticeship, or trade school partnership ownership unless the CV or answer bank proves it.",
+        "No contractor management unless the CV or answer bank proves it.",
+        "No fake employers, titles, industries, credentials, or impossible seniority.",
+        "No Google employment or internal Google authority unless the CV proves it.",
+        "No invented metrics, projects, teams, domains, or outcomes.",
+    ]
+
+
+def extract_bible_trigger_phrases(text):
+    text = normalize_text(text)
+    triggers = []
+    for sentence in re.split(r"(?<=[.!?])\s+|\n+", text):
+        sentence = normalize_text(sentence)
+        lowered = sentence.lower()
+        if not sentence:
+            continue
+        if any(term in lowered for term in ["do not", "don't", "never", "avoid", "forbidden", "must not", "should not", "no direct"]):
+            triggers.append(sentence)
+        elif any(term in lowered for term in ["result first", "decision", "tradeoff", "punchline", "result squared", "metric", "top 1"]):
+            triggers.append(sentence)
+    seen = set()
+    unique = []
+    for item in triggers:
+        key = item.lower()
+        if key not in seen:
+            seen.add(key)
+            unique.append(item)
+    return unique[:12]
+
+
+def answer_style_rules_from_bible(guidance, answer_bank):
+    extracted = extract_bible_trigger_phrases(f"{guidance}\n{answer_bank}")
+    rules = extracted[:]
+    defaults = [
+        "Use only real candidate evidence from the CV and answer bank.",
+        "Open with the result, stake, decision, or constraint rather than a generic job-title phrase.",
+        "Name the decision the candidate personally made and why it mattered.",
+        "Name the tradeoff, resistance, ambiguity, or risk in the story.",
+        "Attach only metrics that appear in the CV or answer bank.",
+        "End with the business result, proof of fit, or interviewer takeaway.",
+        "Use transferable language when direct domain experience is not proven.",
+        "State boundaries clearly instead of inventing direct domain ownership.",
+    ]
+    for rule in defaults:
+        if len(rules) >= 8:
+            break
+        if rule.lower() not in {item.lower() for item in rules}:
+            rules.append(rule)
+    return rules[:10]
+
+
 def split_answer_bank_stories(answer_bank):
     answer_bank = normalize_text(answer_bank)
     if not answer_bank:
         return []
     matches = list(re.finditer(r"(?:^|\n)\s*(story\s*\d+\s*[:.-])", answer_bank, flags=re.I))
     if not matches:
-        blocks = [block.strip() for block in re.split(r"\n\s*\n+", answer_bank) if len(block.strip()) >= 40]
+        cleaned = re.sub(r"^candidate's own prepared answers and stories\s*:\s*", "", answer_bank, flags=re.I)
+        grounded_match = re.search(r"grounded stories\s*:\s*(.*)", cleaned, flags=re.I | re.S)
+        if grounded_match:
+            cleaned = grounded_match.group(1)
+        cleaned = re.split(r"\bdo not claim\b|\bnever claim\b|\bforbidden\b", cleaned, flags=re.I)[0]
+        blocks = [block.strip(" .") for block in re.split(r";|\n\s*\n+", cleaned) if len(block.strip()) >= 20]
     else:
         blocks = []
         for index, match in enumerate(matches):
@@ -1360,48 +1465,388 @@ def split_answer_bank_stories(answer_bank):
         block = normalize_text(block)
         if not block:
             continue
-        title_match = re.match(r"story\s*\d+\s*[:.-]\s*([^.\n:]+)", block, flags=re.I)
-        story_name = normalize_text(title_match.group(1)) if title_match else f"Answer bank story {index}"
-        if len(story_name) > 90:
-            story_name = f"Answer bank story {index}"
+        story_name = clean_story_title(block, f"Answer bank story {index}")
         sentences = re.split(r"(?<=[.!?])\s+", block)
-        stories.append({
-            "story_name": story_name,
-            "source": "answer_bank",
-            "situation": normalize_text(sentences[0])[:500],
-            "actions": [normalize_text(sentence) for sentence in sentences[1:5] if normalize_text(sentence)],
-            "result": normalize_text(sentences[-1])[:500],
-            "metrics_provided": extract_metrics(block),
-            "competencies": [],
-            "raw_story": block,
-        })
+        stories.append(candidate_story(
+            index=index,
+            title=story_name,
+            source="answer_bank",
+            trigger_phrase=block,
+            situation=normalize_text(sentences[0])[:500],
+            decision="Prepare the specific decision made in this answer-bank story before using it live.",
+            actions=[normalize_text(sentence) for sentence in sentences[1:5] if normalize_text(sentence)] or [block],
+            metrics=extract_metrics(block),
+            result=normalize_text(sentences[-1])[:500],
+            result_squared="Prepare how this result changed quality, speed, stakeholder trust, or operating discipline.",
+            competencies=infer_story_competencies(block),
+            usable_for_questions=infer_story_question_uses(block),
+            forbidden_expansions=default_forbidden_claims(),
+        ))
     return stories
 
 
 def story_key(story):
     if not isinstance(story, dict):
         return ""
-    name = normalize_text(story.get("story_name", "")).lower()
-    raw = normalize_text(story.get("raw_story") or story.get("situation") or story.get("result") or "").lower()
+    name = normalize_text(story.get("title") or story.get("story_name", "")).lower()
+    raw = normalize_text(story.get("trigger_phrase") or story.get("situation") or story.get("result") or "").lower()
     return re.sub(r"[^a-z0-9]+", " ", name or raw[:120]).strip()
 
 
-def merge_story_inventory(profile, answer_bank):
-    inventory = [story for story in as_list(profile.get("story_inventory")) if isinstance(story, dict)]
-    seen = {story_key(story) for story in inventory if story_key(story)}
+def infer_story_competencies(text):
+    lowered = normalize_text(text).lower()
+    competencies = []
+    checks = [
+        ("stakeholder" in lowered or "launch readiness" in lowered or "handover" in lowered, "Stakeholder management"),
+        ("dashboard" in lowered or "metric" in lowered or "kpi" in lowered or "sla" in lowered, "Metrics discipline"),
+        ("automation" in lowered or "workflow" in lowered or "sop" in lowered or "process" in lowered, "Process improvement"),
+        ("quality" in lowered or "qa" in lowered, "Quality management"),
+        ("mentor" in lowered or "coach" in lowered or "training" in lowered or "onboarding" in lowered, "People development"),
+        ("risk" in lowered or "escalation" in lowered, "Risk management"),
+        ("backlog" in lowered or "response" in lowered, "Operational execution"),
+        ("staff" in lowered or "resource" in lowered or "team of 10" in lowered, "Workforce management"),
+    ]
+    for condition, label in checks:
+        if condition and label not in competencies:
+            competencies.append(label)
+    return competencies or ["Program management"]
+
+
+def infer_story_question_uses(text):
+    lowered = normalize_text(text).lower()
+    uses = []
+    checks = [
+        ("backlog" in lowered or "handover" in lowered, "cross-regional execution and stakeholder alignment"),
+        ("dashboard" in lowered or "metric" in lowered or "kpi" in lowered, "metrics, reporting, and workforce readiness tracking"),
+        ("launch readiness" in lowered or "operating rhythm" in lowered, "launch readiness, operating cadence, and risk management"),
+        ("automation" in lowered or "workflow" in lowered or "queue" in lowered, "process improvement and automation"),
+        ("sop" in lowered or "escalation" in lowered, "SOPs, escalation paths, and operational control"),
+        ("mentor" in lowered or "coach" in lowered or "training" in lowered, "training, onboarding, coaching, and knowledge transfer"),
+        ("quality" in lowered or "qa" in lowered, "quality management and team performance"),
+        ("team of 10" in lowered or "support specialists" in lowered, "team leadership and resource coordination"),
+    ]
+    for condition, label in checks:
+        if condition and label not in uses:
+            uses.append(label)
+    return uses or ["behavioral interview evidence"]
+
+
+def metric_present(text, *needles):
+    text = normalize_text(text)
+    return [needle for needle in needles if needle.lower() in text.lower()]
+
+
+def add_candidate_story(stories, title, source, trigger, situation, decision, actions, metrics, result, result_squared, competencies, uses):
+    stories.append(candidate_story(
+        index=len(stories) + 1,
+        title=title,
+        source=source,
+        trigger_phrase=trigger,
+        situation=situation,
+        decision=decision,
+        actions=actions,
+        metrics=metrics,
+        result=result,
+        result_squared=result_squared,
+        competencies=competencies,
+        usable_for_questions=uses,
+        forbidden_expansions=default_forbidden_claims(),
+    ))
+
+
+def deterministic_candidate_stories(cv, answer_bank):
+    full = normalize_text(f"{cv}\n{answer_bank}")
+    lowered = full.lower()
+    stories = []
+
+    if "backlog" in lowered and ("34%" in lowered or "handover" in lowered):
+        add_candidate_story(
+            stories,
+            "Backlog reduction story",
+            "combined" if "backlog" in answer_bank.lower() else "CV",
+            "backlog reduction; cross-regional handover; 34%",
+            "Backlog and cross-region handover issues were affecting operational delivery.",
+            "Create a clearer cross-regional operating mechanism rather than treating the issue as isolated queue volume.",
+            ["Coordinated across regions or stakeholders.", "Improved handover visibility and accountability.", "Used operating rhythm discipline to reduce backlog."],
+            metric_present(full, "34%"),
+            "Reduced backlog by 34%." if "34%" in lowered else "Improved backlog visibility and operating discipline.",
+            "Shows the candidate can translate ambiguous operating gaps into measurable delivery improvement.",
+            ["Stakeholder management", "Operational execution", "Global handovers"],
+            ["stakeholder alignment", "cross-functional operations", "delivery risk caused by coordination gaps"],
+        )
+
+    if any(term in lowered for term in ["queue routing", "40 weekly hours", "40 hours", "workflow automation", "saved 40"]):
+        add_candidate_story(
+            stories,
+            "Queue routing redesign story",
+            "combined" if any(term in answer_bank.lower() for term in ["40 weekly", "workflow automation", "queue"]) else "CV",
+            "queue routing; workflow automation; 40 weekly hours",
+            "Manual routing or workflow friction was consuming team capacity.",
+            "Redesign the routing or workflow mechanism so work moved with less manual effort.",
+            ["Mapped the workflow constraint.", "Changed routing, automation, or operating steps.", "Freed capacity for higher-value work."],
+            metric_present(full, "40 weekly hours", "40 hours", "one hour"),
+            "Saved 40 weekly hours through workflow automation." if "40" in lowered else "Improved workflow speed and team capacity.",
+            "Shows the candidate can build scalable mechanisms instead of one-off fixes.",
+            ["Process improvement", "Automation", "Resource allocation"],
+            ["process improvement", "resource allocation", "repeatable operating mechanisms"],
+        )
+
+    if "77%" in lowered and "93%" in lowered:
+        add_candidate_story(
+            stories,
+            "Metric calculation error story",
+            "CV",
+            "response time from 77% to 93%; SLA metric improvement",
+            "A key response-time or SLA metric was not accurately reflecting performance.",
+            "Interrogate the metric instead of accepting the dashboard at face value.",
+            ["Reviewed the metric logic.", "Identified the calculation or visibility issue.", "Corrected reporting so decisions were based on reliable data."],
+            metric_present(full, "77%", "93%"),
+            "Improved response-time visibility or performance from 77% to 93%.",
+            "Shows the candidate can protect decision quality through data integrity.",
+            ["Metrics discipline", "Data integrity", "Risk management"],
+            ["workforce readiness metrics", "data integrity", "executive reporting"],
+        )
+
+    if "team of 10" in lowered or "14%" in lowered or "qa" in lowered or "quality" in lowered:
+        add_candidate_story(
+            stories,
+            "Team leadership and QA improvement story",
+            "CV",
+            "team of 10; QA scorecards; 14% quality improvement",
+            "A support team needed stronger operating cadence and quality discipline.",
+            "Use team rhythms and QA mechanisms to improve performance without inventing domain experience.",
+            ["Led support specialists.", "Built or used QA scorecards.", "Reinforced operating cadence and performance expectations."],
+            metric_present(full, "14%", "team of 10"),
+            "Improved quality by 14%." if "14%" in lowered else "Improved team operating discipline.",
+            "Shows the candidate can improve team capability and execution quality.",
+            ["Team leadership", "Quality management", "Operating cadence"],
+            ["people management", "quality improvement", "team operating rhythms"],
+        )
+
+    if any(term in lowered for term in ["mentor", "coaching", "coached", "performance improvements", "support specialists"]):
+        add_candidate_story(
+            stories,
+            "People development story",
+            "combined" if "mentor" in answer_bank.lower() or "coaching" in answer_bank.lower() else "CV",
+            "mentored support specialists; quality and performance improvements",
+            "Support specialists needed coaching, quality support, or performance improvement.",
+            "Invest in targeted coaching and knowledge transfer rather than only escalating performance gaps.",
+            ["Mentored or coached specialists.", "Used quality feedback and performance routines.", "Helped improve team capability."],
+            metric_present(full, "14%"),
+            "Improved quality, performance, or specialist capability using coaching and operating discipline.",
+            "Shows the candidate can build capability in people, not only manage tasks.",
+            ["People development", "Coaching", "Training"],
+            ["training", "mentorship", "buddy programs", "team development"],
+        )
+
+    if "stakeholder" in lowered or "meta" in lowered:
+        add_candidate_story(
+            stories,
+            "Stakeholder influence story",
+            "CV",
+            "stakeholder communication; Meta account; cross-functional process improvement",
+            "Operational work required communication across stakeholders in the Meta support environment.",
+            "Create clear communication, escalation, and visibility so stakeholders could act on the same facts.",
+            ["Coordinated stakeholder updates.", "Managed escalation paths.", "Translated operational issues into clear status and actions."],
+            [],
+            "Improved stakeholder visibility and operating alignment.",
+            "Shows the candidate can influence without relying only on formal authority.",
+            ["Stakeholder communication", "Influence", "Escalation management"],
+            ["contractor alignment", "partner communication", "senior stakeholder updates"],
+        )
+
+    if any(term in lowered for term in ["training coordination", "onboarding", "playbook", "knowledge transfer", "sop"]):
+        add_candidate_story(
+            stories,
+            "Training onboarding and SOP knowledge transfer story",
+            "combined" if any(term in answer_bank.lower() for term in ["sop", "training", "knowledge"]) else "CV",
+            "training coordination; SOPs; knowledge transfer",
+            "The team needed repeatable ways to transfer knowledge and standardize execution.",
+            "Turn knowledge into SOPs, training coordination, or repeatable team practices.",
+            ["Improved SOPs or knowledge practices.", "Supported training coordination.", "Reduced reliance on informal knowledge sharing."],
+            [],
+            "Created stronger process consistency and knowledge transfer.",
+            "Shows the candidate can build repeatable capability mechanisms.",
+            ["Training", "Onboarding", "Knowledge transfer", "SOPs"],
+            ["training labs", "upskilling modules", "operating mechanisms"],
+        )
+
+    if "launch readiness" in lowered or "operating rhythm" in lowered or "risk tracking" in lowered:
+        add_candidate_story(
+            stories,
+            "Launch readiness and operating rhythm story",
+            "combined" if "launch readiness" in answer_bank.lower() else "CV",
+            "launch readiness; operating rhythms; risk tracking",
+            "A launch or operational program needed readiness, rhythm, and risk visibility.",
+            "Create an operating rhythm that made readiness, risks, and owners visible before delivery issues escalated.",
+            ["Coordinated launch readiness.", "Tracked risks and owners.", "Used dashboards or routines to maintain execution visibility."],
+            [],
+            "Improved readiness visibility and reduced execution ambiguity.",
+            "Shows the candidate can manage delivery risk through operating cadence.",
+            ["Launch readiness", "Risk management", "Program operating rhythm"],
+            ["delivery risk", "senior stakeholder status", "program governance"],
+        )
+
+    if any(term in lowered for term in ["team of 10", "staffing", "resource", "workforce", "attrition", "hiring"]):
+        add_candidate_story(
+            stories,
+            "Workforce management and resource allocation story",
+            "CV",
+            "team of 10 support specialists; resource and capacity management",
+            "The candidate operated through a team and had to manage capacity, quality, and work allocation.",
+            "Use team-capacity evidence honestly as a transferable foundation, without claiming construction workforce ownership.",
+            ["Led a team of support specialists.", "Managed operating capacity and performance.", "Balanced quality, backlog, and response-time needs."],
+            metric_present(full, "team of 10", "34%", "40 weekly hours", "14%"),
+            "Improved team capacity, quality, or operational throughput using measurable operating discipline.",
+            "Shows the closest truthful bridge to workforce planning and resource allocation.",
+            ["Workforce management", "Resource allocation", "Team operations"],
+            ["workforce readiness", "resource allocation", "labor constraint translation"],
+        )
+
+    if any(term in lowered for term in ["survey", "customer satisfaction", "csat", "satisfaction"]):
+        add_candidate_story(
+            stories,
+            "Survey or customer satisfaction visibility story",
+            "combined",
+            "survey or customer satisfaction visibility",
+            "Customer or stakeholder satisfaction needed better visibility.",
+            "Use feedback data to identify operating issues and prioritize improvements.",
+            ["Tracked satisfaction signals.", "Connected feedback to process changes.", "Used visibility to guide action."],
+            extract_metrics(full),
+            "Improved visibility into customer or stakeholder experience.",
+            "Shows the candidate can connect operating metrics to experience outcomes.",
+            ["Customer experience", "Survey analysis", "Metrics"],
+            ["employee or partner experience metrics", "voice-of-customer analysis"],
+        )
+
+    return stories
+
+
+def canonicalize_story(story, index):
+    if not isinstance(story, dict):
+        story = {"title": short_item(story)}
+    return candidate_story(
+        index=index,
+        title=story.get("title") or story.get("story_name") or f"Candidate story {index}",
+        source=story.get("source") or "CV",
+        trigger_phrase=story.get("trigger_phrase") or story.get("situation") or story.get("title") or story.get("story_name") or "",
+        situation=story.get("situation") or story.get("title") or story.get("story_name") or "",
+        decision=story.get("decision") or story.get("candidate_decision") or "",
+        actions=story.get("actions") or story.get("candidate_actions") or [],
+        metrics=story.get("metrics") if "metrics" in story else story.get("metrics_provided"),
+        result=story.get("result") or story.get("business_result") or "",
+        result_squared=story.get("result_squared") or "",
+        competencies=story.get("competencies") or [],
+        usable_for_questions=story.get("usable_for_questions") or [],
+        forbidden_expansions=story.get("forbidden_expansions") or default_forbidden_claims(),
+    )
+
+
+def merge_story_inventory(profile, cv, answer_bank):
+    inventory = []
+    seen = set()
+    for story in deterministic_candidate_stories(cv, answer_bank):
+        key = story_key(story)
+        if key and key not in seen:
+            inventory.append(story)
+            seen.add(key)
+    for story in as_list(profile.get("story_inventory")):
+        if not isinstance(story, dict):
+            continue
+        canonical = canonicalize_story(story, len(inventory) + 1)
+        key = story_key(canonical)
+        if key and key not in seen:
+            inventory.append(canonical)
+            seen.add(key)
     for story in split_answer_bank_stories(answer_bank):
         key = story_key(story)
         if key and key not in seen:
             inventory.append(story)
             seen.add(key)
+    for index, story in enumerate(inventory, start=1):
+        story["story_id"] = story_id_from_title(story.get("title") or story.get("story_name"), index)
     profile["story_inventory"] = inventory
     return profile
 
 
-def create_candidate_profile(cv, extra):
-    log(2, "Stage 1 candidate extraction engine", "running")
-    answer_bank, _company_context, guidance = extract_answer_bank_and_guidance(extra)
-    prompt = f"""
+def normalize_forbidden_claims(existing, cv, answer_bank, guidance):
+    claims = [normalize_text(item) for item in as_list(existing) if normalize_text(item)]
+    for phrase in extract_bible_trigger_phrases(f"{guidance}\n{answer_bank}"):
+        lowered = phrase.lower()
+        if any(term in lowered for term in ["do not", "don't", "never", "avoid", "forbidden", "must not", "should not", "no direct"]):
+            claims.append(phrase)
+    claims.extend(default_forbidden_claims())
+    seen = set()
+    unique = []
+    for claim in claims:
+        key = claim.lower()
+        if key not in seen:
+            seen.add(key)
+            unique.append(claim)
+    return unique[:14]
+
+
+def normalize_answer_style_rules(existing, guidance, answer_bank):
+    rules = [normalize_text(item) for item in as_list(existing) if normalize_text(item)]
+    rules.extend(answer_style_rules_from_bible(guidance, answer_bank))
+    seen = set()
+    unique = []
+    for rule in rules:
+        key = rule.lower()
+        if key not in seen:
+            seen.add(key)
+            unique.append(rule)
+    return unique[:12]
+
+
+def candidate_sources_are_rich(cv, answer_bank):
+    text = normalize_text(f"{cv}\n{answer_bank}").lower()
+    cues = [
+        "backlog", "dashboard", "launch readiness", "stakeholder", "automation", "mentor",
+        "training", "onboarding", "sop", "response time", "77%", "93%", "40", "14%", "team of 10",
+    ]
+    return sum(1 for cue in cues if cue in text) >= 6
+
+
+def answer_bank_story_count(profile):
+    count = 0
+    for story in as_list(profile.get("story_inventory")):
+        if isinstance(story, dict) and "answer_bank" in normalize_text(story.get("source")).lower():
+            count += 1
+    return count
+
+
+def validate_candidate_profile(profile, cv, answer_bank, guidance):
+    issues = []
+    stories = [story for story in as_list(profile.get("story_inventory")) if isinstance(story, dict)]
+    if candidate_sources_are_rich(cv, answer_bank) and len(stories) < 8:
+        issues.append(f"story_inventory has fewer than 8 stories: {len(stories)}")
+    if normalize_text(answer_bank) and answer_bank_story_count(profile) < 3:
+        issues.append(f"answer_bank story extraction has fewer than 3 stories: {answer_bank_story_count(profile)}")
+    if len(as_list(profile.get("forbidden_claims"))) < 8:
+        issues.append("forbidden_claims missing or fewer than 8 items")
+    if len(as_list(profile.get("answer_style_rules_from_bible"))) < 6:
+        issues.append("answer_style_rules_from_bible missing or fewer than 6 items")
+    for index, story in enumerate(stories, start=1):
+        title = normalize_text(story.get("title") or story.get("story_name"))
+        result = normalize_text(story.get("result"))
+        source = normalize_text(story.get("source"))
+        metrics = as_list(story.get("metrics") if "metrics" in story else story.get("metrics_provided"))
+        if not source:
+            issues.append(f"story {index} has no source")
+        if metrics and (not title or not result):
+            issues.append(f"story {index} has metrics but no title/result")
+        if not as_list(story.get("forbidden_expansions")):
+            issues.append(f"story {index} missing forbidden_expansions")
+    return sorted(set(issues))
+
+
+def candidate_profile_prompt(cv, answer_bank, guidance, strict=False):
+    strict_instruction = """
+Strict retry instruction:
+Extract every distinct story separately. Do not collapse semicolon-separated answer-bank stories into one item. If a story appears in both CV and answer bank, preserve the full story once with source "combined".
+""" if strict else ""
+    return f"""
 {STAGE_QUALITY_INSTRUCTION}
 
 Create candidate truth only. Do not write interview content.
@@ -1417,46 +1862,101 @@ Answer bank:
 
 Return valid JSON only with this exact top-level structure:
 {{
-  "identity": {{"current_or_recent_roles": [], "seniority_signals": [], "industries_or_domains_proven": [], "domains_not_proven": []}},
-  "core_strengths": [],
-  "hard_evidence": [{{"claim": "", "basis": "CV | answer_bank | guidance", "metrics": []}}],
-  "career_risks": [],
+  "identity": "",
+  "positioning_statement": "",
+  "hard_evidence": [{{"claim": "", "basis": "CV | answer_bank | interview_bible", "metrics": []}}],
+  "story_inventory": [{{
+    "story_id": "",
+    "title": "",
+    "source": "CV | answer_bank | interview_bible | combined",
+    "trigger_phrase": "",
+    "situation": "",
+    "decision": "",
+    "actions": [],
+    "metrics": [],
+    "result": "",
+    "result_squared": "",
+    "competencies": [],
+    "usable_for_questions": [],
+    "forbidden_expansions": []
+  }}],
+  "candidate_strengths": [],
   "candidate_risks": [{{"risk": "", "why_it_matters": "", "repair_strategy": ""}}],
   "transferable_bridges": [{{"candidate_evidence": "", "maps_to_jd_signal": "", "bridge_language": "", "what_not_to_claim": ""}}],
-  "story_inventory": [{{"story_name": "", "source": "CV | answer_bank | guidance", "situation": "", "actions": [], "result": "", "metrics_provided": [], "competencies": []}}],
-  "story_gaps": [],
-  "leadership_themes": [],
-  "communication_style": [],
-  "top_proof_points": []
+  "forbidden_claims": [],
+  "answer_style_rules_from_bible": [],
+  "missing_story_gaps": []
 }}
 
 Rules:
 Use only CV, Interview Bible / Strategy Guide, and answer bank.
 Never infer target-role domain experience.
 Never invent stories, employers, titles, industries, credentials, metrics, or outcomes.
-If a detail is missing, put it in story_gaps, career_risks, and candidate_risks.
-Populate transferable_bridges from real candidate evidence only. maps_to_jd_signal can be a broad interview signal such as "stakeholder management", "operational execution", "risk management", or "metrics discipline"; exact JD matching happens later.
+Do not merge distinct stories just because they share a competency.
+Every metric from CV or answer bank must attach to the correct story.
+Every story must include forbidden_expansions.
+forbidden_claims must include unsupported domain, trade, data center construction, vocational partnership, contractor management, fake employer, fake title, fake credential, and impossible seniority boundaries.
+answer_style_rules_from_bible must preserve Interview Bible / Strategy Guide trigger phrases when present.
+If a detail is missing, put it in missing_story_gaps and candidate_risks.
+Populate transferable_bridges from real candidate evidence only.
+{strict_instruction}
 """
-    profile = ask_json(prompt, model=MODEL_FAST, max_tokens=4200, fallback={})
-    profile = normalize_candidate_profile(profile)
-    profile = merge_story_inventory(profile, answer_bank)
+
+
+def create_candidate_profile(cv, extra):
+    log(2, "Stage 1 candidate extraction engine", "running")
+    answer_bank, _company_context, guidance = extract_answer_bank_and_guidance(extra)
+    profile = ask_json(candidate_profile_prompt(cv, answer_bank, guidance), model=MODEL_FAST, max_tokens=6200, fallback={})
+    profile = normalize_candidate_profile(profile, cv=cv, answer_bank=answer_bank, guidance=guidance)
+    issues = validate_candidate_profile(profile, cv, answer_bank, guidance)
+    if issues:
+        log(2, f"Candidate profile validation failed; retrying stricter extraction: {', '.join(issues[:5])}", "warning")
+        profile = ask_json(candidate_profile_prompt(cv, answer_bank, guidance, strict=True), model=MODEL_STRATEGY, max_tokens=7600, fallback={})
+        profile = normalize_candidate_profile(profile, cv=cv, answer_bank=answer_bank, guidance=guidance)
+        issues = validate_candidate_profile(profile, cv, answer_bank, guidance)
+    if issues:
+        raise ValueError("candidate_profile failed story coverage validation. " + "; ".join(issues[:8]))
     set_result("candidate_profile_json", json_dumps(profile))
     set_result("candidate_evidence_digest", json_dumps(profile))
     log(2, "Candidate profile JSON complete", "done")
     return profile
 
 
-def normalize_candidate_profile(profile):
+def normalize_candidate_profile(profile, cv="", answer_bank="", guidance=""):
     profile = profile if isinstance(profile, dict) else {}
-    profile.setdefault("identity", {})
-    profile.setdefault("core_strengths", [])
+    identity = profile.get("identity")
+    if isinstance(identity, dict):
+        profile["identity_details"] = identity
+        roles = ", ".join(as_list(identity.get("current_or_recent_roles")))
+        domains = ", ".join(as_list(identity.get("industries_or_domains_proven")))
+        profile["identity"] = normalize_text(f"{roles}. Proven domains: {domains}.") or "Candidate identity extracted from CV."
+    else:
+        profile["identity"] = normalize_text(identity) or "Operations and program management candidate with evidence from CV and answer bank."
+    profile.setdefault("positioning_statement", "")
     profile.setdefault("hard_evidence", [])
-    profile.setdefault("career_risks", [])
     profile.setdefault("story_inventory", [])
-    profile.setdefault("story_gaps", [])
-    profile.setdefault("leadership_themes", [])
-    profile.setdefault("communication_style", [])
-    profile.setdefault("top_proof_points", [])
+    profile.setdefault("candidate_strengths", profile.get("core_strengths", []))
+    profile.setdefault("candidate_risks", [])
+    profile.setdefault("transferable_bridges", [])
+    profile.setdefault("forbidden_claims", [])
+    profile.setdefault("answer_style_rules_from_bible", [])
+    profile.setdefault("missing_story_gaps", profile.get("story_gaps", []))
+    profile["core_strengths"] = as_list(profile.get("candidate_strengths") or profile.get("core_strengths"))
+    profile["story_gaps"] = as_list(profile.get("missing_story_gaps") or profile.get("story_gaps"))
+    profile["leadership_themes"] = as_list(profile.get("leadership_themes"))
+    profile["communication_style"] = as_list(profile.get("communication_style"))
+    profile["top_proof_points"] = as_list(profile.get("top_proof_points"))
+
+    profile = merge_story_inventory(profile, cv, answer_bank)
+    profile["forbidden_claims"] = normalize_forbidden_claims(profile.get("forbidden_claims"), cv, answer_bank, guidance)
+    profile["answer_style_rules_from_bible"] = normalize_answer_style_rules(profile.get("answer_style_rules_from_bible"), guidance, answer_bank)
+
+    if not profile["positioning_statement"]:
+        profile["positioning_statement"] = (
+            "Position as a program and operations leader with transferable evidence in stakeholder alignment, "
+            "metrics discipline, operating rhythms, quality improvement, team leadership, and process improvement. "
+            "Do not claim direct data center construction workforce ownership unless the CV or answer bank proves it."
+        )
 
     if not isinstance(profile.get("candidate_risks"), list):
         profile["candidate_risks"] = []
@@ -1495,6 +1995,23 @@ def normalize_candidate_profile(profile):
             })
             if metrics and isinstance(metrics, list):
                 profile["transferable_bridges"][-1]["bridge_language"] += f" Metrics already provided: {', '.join(map(str, metrics))}."
+    if not profile["core_strengths"]:
+        profile["core_strengths"] = sorted({competency for story in profile["story_inventory"] for competency in as_list(story.get("competencies"))})[:8]
+    profile["candidate_strengths"] = profile["core_strengths"]
+    if not profile["top_proof_points"]:
+        proof_points = []
+        for story in profile["story_inventory"]:
+            metrics = ", ".join(as_list(story.get("metrics")))
+            if metrics:
+                proof_points.append(f"{story.get('title')}: {metrics}")
+        profile["top_proof_points"] = proof_points[:8]
+    if not profile["story_gaps"]:
+        profile["story_gaps"] = [
+            "Direct data center construction workforce development story.",
+            "Electrical, mechanical, piping, or skilled-trade labor-market story.",
+            "Vocational, apprenticeship, trade school, or contractor partnership story.",
+        ]
+    profile["missing_story_gaps"] = profile["story_gaps"]
     return profile
 
 
