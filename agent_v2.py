@@ -1322,6 +1322,82 @@ def extract_answer_bank_and_guidance(extra):
     return answer_bank, company_context, normalize_text(clean_extra)
 
 
+def extract_metrics(text):
+    text = normalize_text(text)
+    patterns = [
+        r"\b\d+(?:\.\d+)?\s?%",
+        r"\b\d+(?:\.\d+)?\s?(?:hours?|days?|weeks?|months?|years?)\b",
+        r"\b\d+(?:\.\d+)?\s?(?:SLAs?|cases?|regions?|team members?|people|FTEs?)\b",
+    ]
+    metrics = []
+    for pattern in patterns:
+        metrics.extend(re.findall(pattern, text, flags=re.I))
+    seen = set()
+    unique = []
+    for metric in metrics:
+        key = metric.lower()
+        if key not in seen:
+            seen.add(key)
+            unique.append(metric)
+    return unique[:8]
+
+
+def split_answer_bank_stories(answer_bank):
+    answer_bank = normalize_text(answer_bank)
+    if not answer_bank:
+        return []
+    matches = list(re.finditer(r"(?:^|\n)\s*(story\s*\d+\s*[:.-])", answer_bank, flags=re.I))
+    if not matches:
+        blocks = [block.strip() for block in re.split(r"\n\s*\n+", answer_bank) if len(block.strip()) >= 40]
+    else:
+        blocks = []
+        for index, match in enumerate(matches):
+            start = match.start()
+            end = matches[index + 1].start() if index + 1 < len(matches) else len(answer_bank)
+            blocks.append(answer_bank[start:end].strip())
+    stories = []
+    for index, block in enumerate(blocks, start=1):
+        block = normalize_text(block)
+        if not block:
+            continue
+        title_match = re.match(r"story\s*\d+\s*[:.-]\s*([^.\n:]+)", block, flags=re.I)
+        story_name = normalize_text(title_match.group(1)) if title_match else f"Answer bank story {index}"
+        if len(story_name) > 90:
+            story_name = f"Answer bank story {index}"
+        sentences = re.split(r"(?<=[.!?])\s+", block)
+        stories.append({
+            "story_name": story_name,
+            "source": "answer_bank",
+            "situation": normalize_text(sentences[0])[:500],
+            "actions": [normalize_text(sentence) for sentence in sentences[1:5] if normalize_text(sentence)],
+            "result": normalize_text(sentences[-1])[:500],
+            "metrics_provided": extract_metrics(block),
+            "competencies": [],
+            "raw_story": block,
+        })
+    return stories
+
+
+def story_key(story):
+    if not isinstance(story, dict):
+        return ""
+    name = normalize_text(story.get("story_name", "")).lower()
+    raw = normalize_text(story.get("raw_story") or story.get("situation") or story.get("result") or "").lower()
+    return re.sub(r"[^a-z0-9]+", " ", name or raw[:120]).strip()
+
+
+def merge_story_inventory(profile, answer_bank):
+    inventory = [story for story in as_list(profile.get("story_inventory")) if isinstance(story, dict)]
+    seen = {story_key(story) for story in inventory if story_key(story)}
+    for story in split_answer_bank_stories(answer_bank):
+        key = story_key(story)
+        if key and key not in seen:
+            inventory.append(story)
+            seen.add(key)
+    profile["story_inventory"] = inventory
+    return profile
+
+
 def create_candidate_profile(cv, extra):
     log(2, "Stage 1 candidate extraction engine", "running")
     answer_bank, _company_context, guidance = extract_answer_bank_and_guidance(extra)
@@ -1363,6 +1439,7 @@ Populate transferable_bridges from real candidate evidence only. maps_to_jd_sign
 """
     profile = ask_json(prompt, model=MODEL_FAST, max_tokens=4200, fallback={})
     profile = normalize_candidate_profile(profile)
+    profile = merge_story_inventory(profile, answer_bank)
     set_result("candidate_profile_json", json_dumps(profile))
     set_result("candidate_evidence_digest", json_dumps(profile))
     log(2, "Candidate profile JSON complete", "done")
@@ -1421,20 +1498,76 @@ def normalize_candidate_profile(profile):
     return profile
 
 
-def create_jd_analysis_json(job_description):
-    log(3, "Stage 2 JD analysis engine", "running")
-    prompt = f"""
+WRONG_JD_DOMAIN_TERMS = [
+    "supply chain",
+    "order management",
+    "erp",
+    "sap",
+    "o9",
+    "fulfillment",
+    "cloud capacity",
+    "software engineering",
+    "leetcode",
+    "data structures",
+    "algorithms",
+]
+
+
+JD_STOP_WORDS = {
+    "the", "and", "for", "with", "from", "that", "this", "role", "will", "you", "are",
+    "have", "has", "into", "across", "within", "about", "your", "their", "they", "them",
+    "program", "manager", "google", "lead", "manage", "work", "team", "teams",
+}
+
+
+def content_terms(text):
+    return {
+        token for token in re.split(r"[^a-z0-9]+", normalize_text(text).lower())
+        if len(token) >= 4 and token not in JD_STOP_WORDS
+    }
+
+
+def raw_jd_anchor_phrases(job_description):
+    sentences = [
+        normalize_text(sentence)
+        for sentence in re.split(r"(?<=[.!?])\s+|\n+", normalize_text(job_description))
+        if len(normalize_text(sentence).split()) >= 5
+    ]
+    return sentences[:10]
+
+
+def jd_analysis_prompt(job_description, role_name="", strict=False):
+    strict_rules = """
+Extra strict retry rules:
+Use only exact wording or clearly implied wording from the submitted JD.
+If you cannot prove a responsibility from the raw JD, omit it.
+Do not use company search results, source manifests, Tavily research, or general knowledge.
+""" if strict else ""
+    return f"""
 {STAGE_QUALITY_INSTRUCTION}
 
-Analyze the job description only. Do not use candidate information, company research, or assumptions outside the JD.
+Analyze the submitted job description only. Do not use candidate information, company research, source manifests, Tavily results, company search results, or assumptions outside the JD.
+
+Submitted role name:
+{normalize_text(role_name) or "Not supplied."}
 
 Job description:
 {trim_text(job_description, 20000)}
 
+Raw JD anchor phrases you must preserve:
+{json_dumps(raw_jd_anchor_phrases(job_description))}
+
 Return valid JSON only with this exact top-level structure:
 {{
+  "submitted_role_name": "{normalize_text(role_name)}",
+  "extracted_role_title": "",
+  "role_domain": "",
   "top_responsibilities": [],
+  "must_prove_signals": [{{"signal": "", "jd_evidence": "", "why_it_matters": ""}}],
   "hidden_expectations": [],
+  "dangerous_gaps": [],
+  "scenario_question_seeds": [{{"question": "", "jd_anchor": "", "why_this_question_matters": ""}}],
+  "raw_jd_anchor_phrases": [],
   "likely_interviewer_concerns": [],
   "required_competencies": [],
   "likely_behavioral_themes": [],
@@ -1447,8 +1580,104 @@ Return valid JSON only with this exact top-level structure:
 Rules:
 Do not add requirements not present in the JD.
 Do not mention the candidate.
+top_responsibilities must be copied from or tightly paraphrased from the raw JD.
+raw_jd_anchor_phrases must contain exact phrases from the submitted JD.
+Wrong-domain terms are forbidden unless they appear verbatim in the submitted JD: {", ".join(WRONG_JD_DOMAIN_TERMS)}.
+{strict_rules}
 """
-    analysis = ask_json(prompt, model=MODEL_FAST, max_tokens=3600, fallback={})
+
+
+def validate_jd_target_lock(analysis, role_name, job_description):
+    analysis = analysis if isinstance(analysis, dict) else {}
+    jd_text = normalize_text(job_description).lower()
+    role_text = normalize_text(role_name).lower()
+    issues = []
+    serialized = json_dumps(analysis).lower()
+
+    for term in WRONG_JD_DOMAIN_TERMS:
+        if term in serialized and term not in jd_text:
+            issues.append(f"wrong domain term not in submitted JD: {term}")
+
+    extracted_title = normalize_text(analysis.get("extracted_role_title", "")).lower()
+    role_domain = normalize_text(analysis.get("role_domain", "")).lower()
+    role_tokens = [token for token in re.split(r"[^a-z0-9]+", role_text) if len(token) >= 4 and token not in {"google"}]
+    if role_tokens and extracted_title:
+        missing_role_tokens = [token for token in role_tokens if token not in extracted_title and token not in role_domain and token not in jd_text]
+        if missing_role_tokens:
+            issues.append(f"extracted role title/domain missed submitted role tokens: {', '.join(missing_role_tokens)}")
+
+    if "people operations" in jd_text and "people" not in f"{extracted_title} {role_domain}":
+        issues.append("role_domain missed People Operations anchor from submitted JD")
+
+    jd_terms = content_terms(job_description)
+    for responsibility in as_list(analysis.get("top_responsibilities")):
+        text = short_item(responsibility)
+        resp_terms = content_terms(text)
+        if resp_terms and len(resp_terms.intersection(jd_terms)) < 2:
+            issues.append(f"top responsibility not grounded in submitted JD: {text[:120]}")
+        for term in WRONG_JD_DOMAIN_TERMS:
+            if term in text.lower() and term not in jd_text:
+                issues.append(f"top responsibility contains wrong-domain term: {term}")
+
+    anchors = as_list(analysis.get("raw_jd_anchor_phrases"))
+    if not anchors:
+        issues.append("raw_jd_anchor_phrases missing")
+    for anchor in anchors[:10]:
+        anchor_text = normalize_text(anchor).lower()
+        if anchor_text and anchor_text not in jd_text:
+            issues.append(f"raw JD anchor phrase not found in submitted JD: {anchor_text[:120]}")
+
+    required_lists = ["top_responsibilities", "must_prove_signals", "hidden_expectations", "dangerous_gaps", "scenario_question_seeds"]
+    for key in required_lists:
+        if not as_list(analysis.get(key)):
+            issues.append(f"{key} missing or empty")
+
+    return sorted(set(issues))
+
+
+def normalize_jd_analysis(analysis, role_name, job_description):
+    analysis = analysis if isinstance(analysis, dict) else {}
+    analysis["submitted_role_name"] = normalize_text(analysis.get("submitted_role_name") or role_name)
+    analysis.setdefault("extracted_role_title", normalize_text(role_name))
+    analysis.setdefault("role_domain", "")
+    anchors = raw_jd_anchor_phrases(job_description)
+    if not as_list(analysis.get("raw_jd_anchor_phrases")):
+        analysis["raw_jd_anchor_phrases"] = anchors[:6]
+    if not isinstance(analysis.get("must_prove_signals"), list):
+        analysis["must_prove_signals"] = as_list(analysis.get("jd_signals"))
+    if not isinstance(analysis.get("jd_signals"), list):
+        analysis["jd_signals"] = as_list(analysis.get("must_prove_signals"))
+    for key in [
+        "top_responsibilities",
+        "must_prove_signals",
+        "hidden_expectations",
+        "dangerous_gaps",
+        "scenario_question_seeds",
+        "likely_interviewer_concerns",
+        "required_competencies",
+        "likely_behavioral_themes",
+        "technical_expectations",
+        "success_profile",
+        "failure_profile",
+        "jd_signals",
+    ]:
+        if not isinstance(analysis.get(key), list):
+            analysis[key] = []
+    return analysis
+
+
+def create_jd_analysis_json(job_description, role_name=""):
+    log(3, "Stage 2 JD analysis engine", "running")
+    analysis = ask_json(jd_analysis_prompt(job_description, role_name), model=MODEL_FAST, max_tokens=5200, fallback={})
+    analysis = normalize_jd_analysis(analysis, role_name, job_description)
+    issues = validate_jd_target_lock(analysis, role_name, job_description)
+    if issues:
+        log(3, f"JD target lock failed; retrying stricter analysis: {', '.join(issues[:5])}", "warning")
+        analysis = ask_json(jd_analysis_prompt(job_description, role_name, strict=True), model=MODEL_STRATEGY, max_tokens=5200, fallback={})
+        analysis = normalize_jd_analysis(analysis, role_name, job_description)
+        issues = validate_jd_target_lock(analysis, role_name, job_description)
+    if issues:
+        raise ValueError("JD analysis failed target lock. " + "; ".join(issues[:8]))
     set_result("jd_analysis_json", json_dumps(analysis))
     set_result("job_description_decode", json_dumps(analysis))
     log(3, "JD analysis JSON complete", "done")
@@ -2476,6 +2705,40 @@ def validate_pack(company_name, role_name, pack, candidate_profile, strategy):
     return sorted(set(issues))
 
 
+def validate_artifacts_before_pack(role_name, job_description, extra, candidate_profile, jd_analysis, strategy):
+    issues = []
+    answer_bank, _company_context, _guidance = extract_answer_bank_and_guidance(extra)
+
+    jd_issues = validate_jd_target_lock(jd_analysis, role_name, job_description)
+    issues.extend(f"JD target lock: {issue}" for issue in jd_issues)
+
+    expected_answer_bank_stories = split_answer_bank_stories(answer_bank)
+    actual_story_count = len(as_list(candidate_profile.get("story_inventory")))
+    if expected_answer_bank_stories and actual_story_count < len(expected_answer_bank_stories):
+        issues.append(
+            f"candidate story inventory incomplete: expected at least {len(expected_answer_bank_stories)} answer-bank stories, found {actual_story_count}"
+        )
+    if not as_list(candidate_profile.get("story_inventory")):
+        issues.append("candidate story inventory empty")
+
+    if not as_list(jd_analysis.get("top_responsibilities")):
+        issues.append("JD top_responsibilities empty")
+    if not as_list(jd_analysis.get("must_prove_signals")) and not as_list(jd_analysis.get("jd_signals")):
+        issues.append("JD role signals empty")
+
+    if not normalize_text(strategy.get("exact_positioning_strategy")):
+        issues.append("interview strategy exact_positioning_strategy empty")
+    for key in ["why_interviewer_might_hesitate", "how_candidate_wins", "must_emphasize", "must_avoid"]:
+        if not as_list(strategy.get(key)):
+            issues.append(f"interview strategy {key} empty")
+    if not as_list(strategy.get("top_10_dangerous_questions")):
+        issues.append("interview strategy dangerous questions empty")
+    if not as_list(strategy.get("top_10_likely_questions")):
+        issues.append("interview strategy likely questions empty")
+
+    return sorted(set(issues))
+
+
 SESSION_MODULES = {
     "company_intelligence",
     "role_intelligence",
@@ -3495,7 +3758,7 @@ def run_full_pipeline(company_name, role_name, job_description, cv, extra, progr
 
     # Stage 2 — JD truth
     report_progress(progress_callback, "JD analysis engine", 18)
-    jd_analysis = create_jd_analysis_json(job_description)
+    jd_analysis = create_jd_analysis_json(job_description, role_name)
     jd_analysis = checkpoint_json(workspace, "jd_analysis.json", jd_analysis)
     set_result("jd_analysis_json", json_dumps(jd_analysis))
     set_result("job_description_decode", json_dumps(jd_analysis))
@@ -3524,6 +3787,18 @@ def run_full_pipeline(company_name, role_name, job_description, cv, extra, progr
 
     # Stage 6 — Assembly only
     report_progress(progress_callback, "Pack generation and validation", 92)
+    artifact_issues = validate_artifacts_before_pack(role_name, job_description, extra, candidate_profile, jd_analysis, strategy)
+    if artifact_issues:
+        validation = {
+            "target_lock_company": company_name,
+            "target_lock_role": role_name,
+            "issues": artifact_issues,
+            "status": "failed",
+        }
+        validation = checkpoint_json(workspace, "pack_validation.json", validation)
+        set_result("pack_validation_json", json_dumps(validation))
+        raise ValueError("Prep pack artifact validation failed. " + "; ".join(artifact_issues[:8]))
+
     final_pack = build_pack_from_structured_objects(
         company_name,
         role_name,
@@ -3539,10 +3814,12 @@ def run_full_pipeline(company_name, role_name, job_description, cv, extra, progr
         "target_lock_company": company_name,
         "target_lock_role": role_name,
         "issues": validation_issues,
-        "status": "pass" if not validation_issues else "review_required",
+        "status": "pass" if not validation_issues else "failed",
     }
     validation = checkpoint_json(workspace, "pack_validation.json", validation)
     set_result("pack_validation_json", json_dumps(validation))
+    if validation_issues:
+        raise ValueError("Prep pack validation failed. " + "; ".join(validation_issues[:8]))
     set_result("final_prep_pack", final_pack)
     set_result("story_bank", format_story_inventory(candidate_profile))
     set_result("question_answer_bank", format_questions(strategy.get("top_10_likely_questions")) + "\n\n### Dangerous questions\n" + format_questions(strategy.get("top_10_dangerous_questions")))
