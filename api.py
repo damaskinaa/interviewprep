@@ -12,6 +12,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 
+from answer_generator import generate_answer_options
 from agent_v2 import run_pipeline, run_session_module
 from job_store import create_job, create_session, get_job, get_session, update_job
 from lua_coach import build_lua_coach_response
@@ -101,6 +102,16 @@ class SessionCreateRequest(BaseModel):
 class ModuleRunRequest(BaseModel):
     session_id: str = Field(min_length=1, max_length=160)
     module_name: str = Field(min_length=1, max_length=80)
+
+
+class AnswerGenerateRequest(BaseModel):
+    session_id: str = Field(min_length=1, max_length=160)
+    question: str = Field(min_length=1, max_length=4000)
+    round_name: str = Field(default="", max_length=240)
+    assigned_story_id: str = Field(default="", max_length=240)
+    assigned_story_title: str = Field(default="", max_length=500)
+    company_name: str = Field(default="", max_length=120)
+    role_name: str = Field(default="", max_length=120)
 
 
 def require_app_key(x_app_key: str = Header(default="")):
@@ -348,6 +359,20 @@ def prepare_status(job_id: str):
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")
     return job
+
+
+@app.post("/answers/generate", dependencies=[Depends(require_app_key)])
+def answers_generate(req: AnswerGenerateRequest):
+    payload = req.model_dump() if hasattr(req, "model_dump") else req.dict()
+    session = get_session(req.session_id, include_raw=True)
+    if not session:
+        raise HTTPException(status_code=404, detail="Session not found")
+    try:
+        return generate_answer_options(session, payload)
+    except FileNotFoundError as error:
+        raise HTTPException(status_code=400, detail=str(error)) from error
+    except Exception as error:
+        raise HTTPException(status_code=500, detail=str(error)) from error
 
 
 @app.post("/lua-coach")
