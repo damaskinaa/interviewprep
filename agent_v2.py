@@ -12,6 +12,7 @@ from dotenv import load_dotenv
 from openai import OpenAI
 from pathlib import Path
 from lua_brief_builder import build_lua_mock_interview_brief
+import research_config
 
 load_dotenv()
 
@@ -4811,34 +4812,77 @@ def tavily_post(endpoint, payload, timeout=20):
     try:
         with urllib.request.urlopen(req, timeout=timeout) as res:
             return json.loads(res.read().decode("utf8", errors="replace"))
+    except urllib.error.HTTPError as e:
+        raise  # let caller handle HTTP errors (e.g. 429)
     except Exception:
         return {}
 
 
+def tavily_with_retry(query):
+    """
+    Call tavily_search with 429 rate-limit retry logic.
+    Attempt 1 → on 429 wait 2s → Attempt 2 → on 429 wait 5s → Attempt 3 → log and return [].
+    Never raises. Never crashes.
+    """
+    cfg = research_config.get_config()
+    search_depth = cfg.get("search_depth", "basic")
+    wait_schedule = [2, 5]  # seconds to wait before attempt 2, then attempt 3
+
+    for attempt, wait in enumerate([-1] + wait_schedule):
+        if wait >= 0:
+            time.sleep(wait)
+        try:
+            if not TAVILY_API_KEY:
+                return []
+            data_bytes = json.dumps({
+                "query": query,
+                "search_depth": search_depth,
+                "max_results": 8,
+                "include_answer": False,
+                "include_raw_content": False,
+            }).encode("utf8")
+            req = urllib.request.Request(
+                "https://api.tavily.com/search",
+                data=data_bytes,
+                headers={
+                    "Content-Type": "application/json",
+                    "Authorization": f"Bearer {TAVILY_API_KEY}",
+                },
+                method="POST",
+            )
+            with urllib.request.urlopen(req, timeout=20) as res:
+                parsed = json.loads(res.read().decode("utf8", errors="replace"))
+            rows = []
+            for item in parsed.get("results", []) if isinstance(parsed, dict) else []:
+                url = item.get("url", "")
+                if not url:
+                    continue
+                rows.append({
+                    "title": item.get("title", ""),
+                    "url": url,
+                    "content": item.get("content", "") or item.get("snippet", ""),
+                    "query": query,
+                })
+            return rows
+        except urllib.error.HTTPError as e:
+            if e.code == 429:
+                if attempt < len(wait_schedule):
+                    continue  # will sleep on next iteration
+                # Third attempt also 429 — give up
+                log(0, f"tavily_with_retry: 429 on all 3 attempts for query={query[:80]!r}", "warning")
+                return []
+            # Non-429 HTTP error — log and return empty
+            log(0, f"tavily_with_retry: HTTP {e.code} for query={query[:80]!r}", "warning")
+            return []
+        except Exception as exc:
+            log(0, f"tavily_with_retry: exception for query={query[:80]!r} — {exc}", "warning")
+            return []
+    return []
+
+
 def tavily_search(query):
-    data = tavily_post(
-        "search",
-        {
-            "query": query,
-            "search_depth": "advanced",
-            "max_results": 8,
-            "include_answer": False,
-            "include_raw_content": False,
-        },
-        timeout=20,
-    )
-    rows = []
-    for item in data.get("results", []) if isinstance(data, dict) else []:
-        url = item.get("url", "")
-        if not url:
-            continue
-        rows.append({
-            "title": item.get("title", ""),
-            "url": url,
-            "content": item.get("content", "") or item.get("snippet", ""),
-            "query": query,
-        })
-    return rows
+    """Thin wrapper — kept for backward compatibility with collect_company_research."""
+    return tavily_with_retry(query)
 
 
 def tavily_extract(urls):
@@ -5114,16 +5158,21 @@ def extract_round_reported_questions(sources):
 
 def collect_per_round_research(company_name, role_name, round_name, round_type, what_it_tests):
     """
-    Run 20-25 targeted searches for ONE specific interview round.
-    Returns {sources, reported_questions, round_name}.
+    Run targeted searches for ONE specific interview round.
+    Search counts driven by research_config.get_config().
     Runs entirely on Daytona — no Vercel timeout constraint.
     """
+    cfg = research_config.get_config()
+    round_searches = cfg["round_searches"]
+    round_extracts = cfg["round_extracts"]
+
     queries = build_round_queries(company_name, role_name, round_name, round_type, what_it_tests)
-    log(5, f"Per-round research: {round_name} — {len(queries)} queries", "running")
+    queries = queries[:round_searches]
+    log(5, f"Per-round research: {round_name} — {len(queries)} queries (tier={research_config.RESEARCH_TIER})", "running")
 
     discovered = []
-    with ThreadPoolExecutor(max_workers=20) as executor:
-        future_map = {executor.submit(tavily_search, q): q for q in queries}
+    with ThreadPoolExecutor(max_workers=min(len(queries), 20)) as executor:
+        future_map = {executor.submit(tavily_with_retry, q): q for q in queries}
         for future in as_completed(future_map, timeout=50):
             try:
                 rows = future.result(timeout=2)
@@ -5146,8 +5195,8 @@ def collect_per_round_research(company_name, role_name, round_name, round_type, 
 
     sources.sort(key=lambda s: source_score(s.get("source_type", ""), s.get("content", "")), reverse=True)
 
-    # Extract full content from top sources
-    extract_urls = [s["url"] for s in sources[:30] if "youtube" not in s["url"]][:20]
+    # Extract full content — count driven by tier config
+    extract_urls = [s["url"] for s in sources[:round_extracts * 10] if "youtube" not in s["url"]][:round_extracts * 5]
     extracted_map = {canonical_source_key(r.get("url", "")): r for r in tavily_extract(extract_urls)}
 
     enriched = []
