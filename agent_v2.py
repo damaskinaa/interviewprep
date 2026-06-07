@@ -4955,22 +4955,42 @@ def tavily_extract(urls):
 
 def collect_company_research(company_name, role_name):
     domain = company_domain_hint(company_name)
+    c, r = company_name.strip(), role_name.strip()
     queries = [
-        f"{company_name} official interview process site:{domain}" if domain else f"{company_name} official interview process",
-        f"{company_name} {role_name} interview questions site:glassdoor.com",
-        f"{company_name} interview experience site:reddit.com",
-        f"{company_name} values culture leadership principles",
-        f"{company_name} careers how we hire",
-        f"{company_name} {role_name} interview rounds behavioral",
-        f"{company_name} interview site:blind.app",
-        f"{company_name} {role_name} interview experience 2024 2025",
+        # Official
+        f"{c} official interview process site:{domain}" if domain else f"{c} official interview process",
+        f"{c} careers how we hire",
+        f"{c} values leadership principles culture",
+        f"{c} {r} job requirements 2025",
+        # Glassdoor
+        f'site:glassdoor.com "{c}" "{r}" interview questions',
+        f'site:glassdoor.com "{c}" interview experience 2024 2025',
+        f'site:glassdoor.com "{c}" interview rounds process',
+        # Blind
+        f'site:teamblind.com "{c}" interview process',
+        f'site:teamblind.com "{c}" "{r}" interview',
+        # Reddit
+        f'site:reddit.com "{c}" "{r}" interview questions asked',
+        f'site:reddit.com "{c}" interview experience 2024 2025',
+        f'site:reddit.com "{c}" behavioral interview',
+        # LinkedIn / Indeed
+        f'site:linkedin.com/interview-questions "{c}" "{r}"',
+        f'site:indeed.com "{c}" "{r}" interview questions',
+        # Round-specific
+        f'"{c}" behavioral interview STAR method questions',
+        f'"{c}" googliness OR "culture fit" interview questions',
+        f'"{c}" hiring manager interview questions',
+        f'"{c}" cross functional stakeholder interview',
+        # YouTube
+        f'site:youtube.com "{c}" "{r}" interview preparation',
+        f'site:youtube.com "{c}" interview questions mock',
     ]
     discovered = []
-    with ThreadPoolExecutor(max_workers=8) as executor:
+    with ThreadPoolExecutor(max_workers=20) as executor:
         future_map = {executor.submit(tavily_search, query): query for query in queries}
-        for future in as_completed(future_map, timeout=22):
+        for future in as_completed(future_map, timeout=45):
             try:
-                discovered.extend(future.result(timeout=1))
+                discovered.extend(future.result(timeout=2))
             except Exception:
                 continue
     seen = set()
@@ -4986,12 +5006,12 @@ def collect_company_research(company_name, role_name):
         unique.append(row)
     unique.sort(key=lambda row: source_score(row.get("source_type", ""), row.get("content", "")), reverse=True)
     extract_urls = [
-        row["url"] for row in unique[:28]
+        row["url"] for row in unique[:50]
         if "youtube.com" not in row["url"].lower() and "youtu.be" not in row["url"].lower()
-    ][:20]
+    ][:40]
     extracted = {canonical_source_key(row.get("url", "")): row for row in tavily_extract(extract_urls)}
     enriched = []
-    for row in unique[:35]:
+    for row in unique[:60]:
         key = canonical_source_key(row.get("url", ""))
         content = extracted.get(key, {}).get("content") or row.get("content", "")
         title = extracted.get(key, {}).get("title") or row.get("title", "")
@@ -5002,6 +5022,274 @@ def collect_company_research(company_name, role_name):
         row["content"] = trim_text(content, 5000)
         enriched.append(row)
     return enriched
+
+
+# ── ROUND DISCOVERY ──────────────────────────────────────────────────────────
+
+def discover_interview_rounds(company_intelligence, role_intelligence, company_name, role_name):
+    """
+    Extract the confirmed/reported interview round structure from existing artifacts.
+    Returns list of {round_name, round_type, what_it_tests, search_focus, confidence}.
+    Used as the seed for per-round deep research.
+    """
+    rounds = []
+    seen = set()
+
+    def add(name, rtype, tests, focus, conf):
+        key = normalize_text(name).lower()
+        if key and key not in seen:
+            seen.add(key)
+            rounds.append({
+                "round_name": name,
+                "round_type": rtype,
+                "what_it_tests": tests,
+                "search_focus": focus,
+                "confidence": conf,
+            })
+
+    # Pull from role_intelligence.interview_round_map (JD-inferred)
+    for item in as_list(role_intelligence.get("interview_round_map")):
+        if not isinstance(item, dict):
+            continue
+        name = normalize_text(item.get("round_name", ""))
+        if not name:
+            continue
+        add(name, "jd_inferred", item.get("what_it_tests", ""), name, item.get("confidence", "inferred"))
+
+    # Pull from company_intelligence.interview_process_signals (research-backed)
+    for item in as_list(company_intelligence.get("interview_process_signals")):
+        if not isinstance(item, dict):
+            continue
+        name = normalize_text(item.get("signal", "") or item.get("process_area", ""))
+        if not name or len(name.split()) > 8:
+            continue
+        conf = item.get("source_type", "inferred")
+        add(name, "company_intel", item.get("what_it_tests", ""), name, conf)
+
+    # If we got nothing, fall back to standard known structure for major tech companies
+    if not rounds:
+        defaults = [
+            ("Recruiter Screen",          "behavioral",   "Fit, motivation, comp, logistics",            "recruiter screen phone"),
+            ("Hiring Manager Interview",   "behavioral",   "Leadership, execution, role fit",             "hiring manager interview questions"),
+            ("Behavioral / Leadership",    "behavioral",   "STAR stories, leadership principles",         "behavioral leadership interview STAR"),
+            ("Cross-functional Stakeholder","stakeholder", "Influence, alignment, conflict resolution",   "cross functional stakeholder interview"),
+            ("Technical / Domain Screen",  "technical",    "Role-specific knowledge and execution",       "technical domain interview questions"),
+            ("Culture / Values Fit",       "values",       "Company values alignment, googliness",        "culture fit values interview questions"),
+        ]
+        for name, rtype, tests, focus in defaults:
+            add(name, rtype, tests, focus, "default_fallback")
+
+    return rounds
+
+
+# ── PER-ROUND DEEP RESEARCH ──────────────────────────────────────────────────
+
+def build_round_queries(company, role, round_name, round_type, what_it_tests):
+    """Generate 20 targeted search queries for a specific interview round."""
+    c, r = company.strip(), role.strip()
+    rn = round_name.strip()
+    focus = what_it_tests[:80] if what_it_tests else rn
+
+    base = [
+        # Community — real questions reported for this exact round
+        f'site:glassdoor.com "{c}" "{rn}" interview questions',
+        f'site:glassdoor.com "{c}" "{r}" {rn} interview',
+        f'site:teamblind.com "{c}" "{rn}" interview',
+        f'site:reddit.com "{c}" "{rn}" interview questions asked',
+        f'site:reddit.com "{c}" {rn} interview what they ask',
+        f'site:linkedin.com/interview-questions "{c}" {rn}',
+        f'site:indeed.com "{c}" {rn} interview questions',
+        # Prep resources targeting this round
+        f'"{c}" "{rn}" interview questions {r}',
+        f'"{c}" {rn} interview preparation guide 2024 2025',
+        f'"{c}" {rn} interview questions examples answers',
+        # Behavioral / STAR targeting
+        f'"{c}" {round_type} interview questions STAR method',
+        f'"{c}" {focus} interview questions',
+        f'{c} {rn} interview questions igotanoffer OR exponent',
+        # YouTube for this round
+        f'site:youtube.com "{c}" {rn} interview preparation',
+        f'"{c}" {rn} interview tips mock answers',
+    ]
+
+    # Round-type specific additions
+    if "behavioral" in round_type.lower() or "leadership" in round_type.lower():
+        base += [
+            f'"{c}" behavioral interview tell me about a time',
+            f'"{c}" leadership interview STAR examples',
+            f'"{c}" behavioral interview questions answers 2024',
+            f'"{c}" tell me about a time {r}',
+            f'"{c}" {r} behavioral interview failure conflict',
+        ]
+    elif "technical" in round_type.lower() or "domain" in round_type.lower():
+        base += [
+            f'"{c}" technical interview {r} questions',
+            f'"{c}" {r} execution interview case study',
+            f'"{c}" technical screen {r} preparation',
+            f'"{c}" {r} technical questions metrics analytics',
+            f'"{c}" {r} domain knowledge interview questions',
+        ]
+    elif "stakeholder" in round_type.lower() or "cross" in round_type.lower():
+        base += [
+            f'"{c}" stakeholder interview conflict resolution questions',
+            f'"{c}" cross functional influence without authority interview',
+            f'"{c}" {r} alignment prioritization interview',
+            f'"{c}" stakeholder management interview STAR examples',
+            f'"{c}" influencing without authority interview questions',
+        ]
+    elif "values" in round_type.lower() or "culture" in round_type.lower() or "googlin" in round_type.lower():
+        base += [
+            f'"{c}" culture interview values questions',
+            f'"{c}" googliness interview questions examples',
+            f'"{c}" culture fit interview what they ask',
+            f'"{c}" values alignment interview questions 2024',
+            f'"{c}" culture interview behavioral examples',
+        ]
+    else:
+        base += [
+            f'"{c}" {rn} interview frequently asked questions',
+            f'"{c}" {rn} interview what to expect',
+            f'"{c}" {rn} interview tips how to pass',
+            f'"{c}" {r} {rn} common questions',
+            f'"{c}" {rn} interview questions and answers',
+        ]
+
+    # Deduplicate
+    seen_q = set()
+    out = []
+    for q in base:
+        k = q.lower().strip()
+        if k not in seen_q:
+            seen_q.add(k)
+            out.append(q)
+    return out[:25]
+
+
+def extract_round_reported_questions(sources):
+    """
+    Extract literal interview questions from community sources for a specific round.
+    Matches both question-mark questions AND common imperative interview formats.
+    """
+    # Patterns that match real interview questions — both ? and imperative
+    patterns = [
+        re.compile(r'(?:^|\n|•|-|\d+[\).]\s*)([A-Z][^.!?\n]{15,200}\?)', re.M),
+        re.compile(r'(?:^|\n|•|-|\d+[\).]\s*)((?:Tell|Describe|Walk|Give|Share|Explain|Talk|Think|What would|How would|What did|How did)[^.!?\n]{15,200})', re.M | re.I),
+    ]
+    seen = set()
+    results = []
+
+    community_types = {"Glassdoor directional theme", "Reddit directional theme",
+                       "Blind directional theme", "LinkedIn directional theme",
+                       "Indeed directional theme", "Public prep or candidate experience"}
+
+    for source in sources:
+        if source.get("source_type") not in community_types:
+            continue
+        text = source.get("content", "") or source.get("snippet", "")
+        if not text:
+            continue
+        for pat in patterns:
+            for m in pat.finditer(text):
+                q = m.group(1).strip().rstrip(".,;")
+                if len(q.split()) < 5 or len(q.split()) > 50:
+                    continue
+                # Skip non-interview content
+                if any(skip in q.lower() for skip in ["salary", "compensation", "relocation", "cookie", "privacy", "sign in", "log in", "subscribe", "click here"]):
+                    continue
+                key = re.sub(r'\s+', ' ', q.lower())
+                if key not in seen:
+                    seen.add(key)
+                    results.append({"question": q, "source_url": source.get("url", ""), "source_type": source.get("source_type", "")})
+
+    return results
+
+
+def collect_per_round_research(company_name, role_name, round_name, round_type, what_it_tests):
+    """
+    Run 20-25 targeted searches for ONE specific interview round.
+    Returns {sources, reported_questions, round_name}.
+    Runs entirely on Daytona — no Vercel timeout constraint.
+    """
+    queries = build_round_queries(company_name, role_name, round_name, round_type, what_it_tests)
+    log(5, f"Per-round research: {round_name} — {len(queries)} queries", "running")
+
+    discovered = []
+    with ThreadPoolExecutor(max_workers=20) as executor:
+        future_map = {executor.submit(tavily_search, q): q for q in queries}
+        for future in as_completed(future_map, timeout=50):
+            try:
+                rows = future.result(timeout=2)
+                discovered.extend(rows)
+            except Exception:
+                continue
+
+    # Dedupe + classify
+    seen = set()
+    sources = []
+    for row in discovered:
+        key = canonical_source_key(row.get("url", ""))
+        if not key or key in seen:
+            continue
+        seen.add(key)
+        source_type = classify_source(company_name, row.get("url", ""), row.get("title", ""), row.get("content", ""))
+        row["source_type"] = source_type
+        row["round_name"] = round_name
+        sources.append(row)
+
+    sources.sort(key=lambda s: source_score(s.get("source_type", ""), s.get("content", "")), reverse=True)
+
+    # Extract full content from top sources
+    extract_urls = [s["url"] for s in sources[:30] if "youtube" not in s["url"]][:20]
+    extracted_map = {canonical_source_key(r.get("url", "")): r for r in tavily_extract(extract_urls)}
+
+    enriched = []
+    for s in sources[:40]:
+        key = canonical_source_key(s.get("url", ""))
+        full = extracted_map.get(key, {})
+        s = dict(s)
+        s["content"] = trim_text(full.get("content") or s.get("content", ""), 4000)
+        if any(blocked in s["content"].lower() for blocked in ["just a moment", "enable javascript", "access denied"]):
+            continue
+        enriched.append(s)
+
+    reported_questions = extract_round_reported_questions(enriched)
+    log(5, f"Per-round research: {round_name} — {len(enriched)} sources, {len(reported_questions)} reported Qs", "done")
+
+    return {
+        "round_name": round_name,
+        "round_type": round_type,
+        "what_it_tests": what_it_tests,
+        "sources": enriched,
+        "reported_questions": reported_questions,
+    }
+
+
+def run_all_rounds_research(company_name, role_name, rounds):
+    """
+    Run per-round research for ALL rounds IN PARALLEL using ThreadPoolExecutor.
+    Returns list of round_research dicts (one per round).
+    """
+    log(5, f"Starting per-round research for {len(rounds)} rounds", "running")
+    results = []
+    with ThreadPoolExecutor(max_workers=min(len(rounds), 6)) as executor:
+        future_map = {
+            executor.submit(
+                collect_per_round_research,
+                company_name, role_name,
+                r["round_name"], r["round_type"], r["what_it_tests"],
+            ): r["round_name"]
+            for r in rounds
+        }
+        for future in as_completed(future_map, timeout=180):
+            round_name = future_map[future]
+            try:
+                result = future.result(timeout=5)
+                results.append(result)
+                log(5, f"Round research done: {round_name}", "done")
+            except Exception as e:
+                log(5, f"Round research failed: {round_name} — {e}", "warning")
+                results.append({"round_name": round_name, "sources": [], "reported_questions": []})
+    return results
 
 
 def run_company_intelligence_module(session, progress_callback=None):
@@ -5477,18 +5765,18 @@ def normalize_modular_strategy(strategy, session, company_intelligence, role_int
     for round_item in as_list(strategy.get("questions_by_round")):
         if not isinstance(round_item, dict):
             continue
-        questions = as_list(round_item.get("questions"))[:6]
-        if len(questions) < 4:
+        questions = as_list(round_item.get("questions"))[:15]
+        if len(questions) < 6:
             questions.extend(generate_additional_round_questions(
                 session,
                 round_item,
-                4 - len(questions),
+                8 - len(questions),
                 company_intelligence,
                 role_intelligence,
                 candidate_profile,
                 gap_map,
             ))
-        round_item["questions"] = questions[:6]
+        round_item["questions"] = questions[:15]
         for item in as_list(round_item.get("questions")):
             if not isinstance(item, dict):
                 continue
@@ -5514,45 +5802,94 @@ def normalize_modular_strategy(strategy, session, company_intelligence, role_int
 
 def run_interview_strategy_module(session, progress_callback=None):
     session_id = session["session_id"]
+    company_name = session["company_name"]
+    role_name = session["role_name"]
     company_intelligence = read_module_artifact(session_id, "company_intelligence")
     role_intelligence = read_module_artifact(session_id, "role_intelligence")
     candidate_profile = read_module_artifact(session_id, "candidate_profile")
     gap_map = read_module_artifact(session_id, "gap_map")
-    report_progress(progress_callback, "Executive strategy and round plan", 20)
+
+    # ── PHASE 1: Round discovery ──────────────────────────────────────────────
+    report_progress(progress_callback, "Discovering interview rounds", 8)
+    rounds = discover_interview_rounds(company_intelligence, role_intelligence, company_name, role_name)
+    log(5, f"Discovered {len(rounds)} interview rounds: {[r['round_name'] for r in rounds]}", "done")
+
+    # ── PHASE 2: Per-round deep research (parallel, all on Daytona) ───────────
+    report_progress(progress_callback, f"Deep research: {len(rounds)} rounds in parallel", 15)
+    per_round_research = run_all_rounds_research(company_name, role_name, rounds)
+
+    # Build a compact per-round brief for the strategy prompt
+    round_research_brief = []
+    for rr in per_round_research:
+        rname = rr.get("round_name", "Unknown")
+        qs = rr.get("reported_questions", [])
+        srcs = rr.get("sources", [])
+        reported_q_text = "\n".join(f"  - {q['question']} [{q.get('source_type','')}]" for q in qs[:20]) if qs else "  No community-reported questions found."
+        source_summary = f"{len(srcs)} sources ({len([s for s in srcs if 'glassdoor' in s.get('url','').lower()])} Glassdoor, {len([s for s in srcs if 'reddit' in s.get('url','').lower()])} Reddit, {len([s for s in srcs if 'blind' in s.get('url','').lower()])} Blind)"
+        round_research_brief.append(
+            f"### {rname}\n"
+            f"Sources: {source_summary}\n"
+            f"Reported questions (real candidates reported these):\n{reported_q_text}"
+        )
+
+    round_research_block = "\n\n".join(round_research_brief)
+    report_progress(progress_callback, "Executive strategy and round plan", 45)
+    # Pull real candidate stories from candidate_profile for dynamic story assignment
+    story_names = [
+        normalize_text(s.get("story_name", "")) for s in as_list(candidate_profile.get("story_inventory"))
+        if isinstance(s, dict) and normalize_text(s.get("story_name", ""))
+    ]
+    story_list_text = "\n".join(f"- {s}" for s in story_names[:8]) if story_names else "- No stories extracted yet. Use gap_map transferable_bridges."
+
     prompt = f"""
 {STAGE_QUALITY_INSTRUCTION}
 
 This is the most important module. Produce interview_strategy.json for this exact candidate and role.
 
-Company: {session["company_name"]}
-Role: {session["role_name"]}
+Company: {company_name}
+Role: {role_name}
+
+=== PER-ROUND RESEARCH (real data scraped from Glassdoor, Blind, Reddit, LinkedIn, Indeed per round) ===
+RULES:
+1. The reported questions below are REAL — actual candidates reported being asked these at {company_name}.
+2. Each reported question MUST appear in questions_by_round for its correct round. Do not drop them.
+3. Questions reported by multiple sources are HIGH PROBABILITY — flag them.
+4. After placing all reported questions, fill remaining slots with high-probability inferred questions.
+5. Target 8–15 questions per round. Do not cap at 6.
+
+{trim_text(round_research_block, 10000)}
+
+=== CANDIDATE STORIES (use ONLY these — do not invent new stories) ===
+{story_list_text}
 
 Raw JD:
-{trim_text(session.get("raw_jd"), 12000)}
+{trim_text(session.get("raw_jd"), 10000)}
 
 Raw CV:
-{trim_text(session.get("raw_cv"), 12000)}
+{trim_text(session.get("raw_cv"), 10000)}
 
 Raw answer bank:
-{trim_text(session.get("raw_answer_bank"), 12000) or "None supplied."}
+{trim_text(session.get("raw_answer_bank"), 8000) or "None supplied."}
 
 company_intelligence.json:
-{trim_text(json_dumps(company_intelligence), 13000)}
+{trim_text(json_dumps(company_intelligence), 10000)}
 
 role_intelligence.json:
-{trim_text(json_dumps(role_intelligence), 12000)}
+{trim_text(json_dumps(role_intelligence), 8000)}
 
 candidate_profile.json:
-{trim_text(json_dumps(candidate_profile), 16000)}
+{trim_text(json_dumps(candidate_profile), 14000)}
 
 gap_map.json:
-{trim_text(json_dumps(gap_map), 14000)}
+{trim_text(json_dumps(gap_map), 12000)}
 
 Return valid JSON only with this exact structure:
 {{
   "executive_win_strategy": "",
   "round_by_round_plan": [{{"round_name": "", "what_this_round_tests": "", "likely_interviewer": "", "what_they_are_evaluating": "", "stories_to_use": [], "gaps_to_expect": [], "repair_scripts": [], "success_looks_like": "", "failure_looks_like": "", "specific_preparation_actions": []}}],
-  "questions_by_round": [{{"round_name": "", "questions": [{{"question": "", "what_it_is_really_testing": "", "assigned_story": "", "danger_to_avoid": "", "complete_written_answer": "", "delivery_notes": ""}}]}}],
+  "questions_by_round": [{{"round_name": "", "questions": [{{"question": "", "what_it_is_really_testing": "", "assigned_story": "", "danger_to_avoid": "", "complete_written_answer": "", "delivery_notes": "", "source": "reported by candidates | jd-inferred | company-values | inferred"}}]}}],
+  "top_10_likely_questions": [{{"question": "", "jd_signal": "", "research_signal": "", "answer_strategy": ""}}],
+  "top_10_dangerous_questions": [{{"question": "", "jd_signal": "", "research_signal": "", "answer_strategy": ""}}],
   "dangerous_questions": [{{"question": "", "script": "", "why_it_is_dangerous": ""}}],
   "pressure_followups": [{{"dangerous_question": "", "interviewer_followup": "", "candidate_response": ""}}],
   "do_not_say": [{{"item": "", "reason": ""}}],
@@ -5565,8 +5902,7 @@ Return valid JSON only with this exact structure:
 
 Requirements:
 executive_win_strategy must be at least 400 words.
-Each round must have minimum 4 questions and maximum 6 questions. This is mandatory. Do not produce fewer than 4 questions for any round.
-If the JD does not provide enough signal to generate 4 questions for a round, generate the remaining questions from company_intelligence directional_themes and label them as likely based on public patterns inside what_it_is_really_testing.
+Each round must have minimum 8 questions. Place all reported questions first. Fill remaining with inferred. Do not cap at 6.
 Each complete_written_answer must be 200 to 250 words.
 Each answer must open differently.
 Ban these opening phrases across all answers in the same pack:
