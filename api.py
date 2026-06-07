@@ -14,7 +14,7 @@ from pydantic import BaseModel, Field
 
 from answer_generator import generate_answer_options
 from agent_v2 import run_pipeline, run_session_module
-from job_store import create_job, create_session, get_job, get_session, update_job
+from job_store import create_job, create_session, find_running_module_job, get_job, get_session, update_job
 from lua_coach import build_lua_coach_response
 from lua_benchmark_coach import build_benchmark_question, build_selected_answer_training_card, build_benchmark_practice_feedback
 from lua_benchmark_store import save_benchmark_event, load_benchmark_session
@@ -305,6 +305,18 @@ def module_run(req: ModuleRunRequest):
     session = get_session(req.session_id, include_raw=False)
     if not session:
         raise HTTPException(status_code=404, detail="Session not found")
+    # Idempotency guard: return existing running job instead of spawning a duplicate
+    existing_job_id = find_running_module_job(req.session_id, req.module_name)
+    if existing_job_id:
+        existing = get_job(existing_job_id)
+        return {
+            "job_id": existing_job_id,
+            "session_id": req.session_id,
+            "module_name": req.module_name,
+            "status": existing["status"],
+            "stage": existing["stage"],
+            "progress": existing["progress"],
+        }
     job_id = "mod_" + datetime.now().strftime("%Y%m%d_%H%M%S_") + uuid.uuid4().hex[:8]
     payload = {"session_id": req.session_id, "module_name": req.module_name}
     job = create_job(job_id, payload)

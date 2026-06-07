@@ -149,6 +149,22 @@ def get_job(job_id):
     }
 
 
+def find_running_module_job(session_id, module_name):
+    """Return job_id of an existing running job for this session+module, or None."""
+    with _connect() as con:
+        row = con.execute(
+            """
+            SELECT job_id FROM jobs
+            WHERE status = 'running'
+              AND json_extract(input_payload, '$.session_id') = ?
+              AND json_extract(input_payload, '$.module_name') = ?
+            LIMIT 1
+            """,
+            (session_id, module_name),
+        ).fetchone()
+    return row["job_id"] if row else None
+
+
 def create_session(session_id, payload):
     now = _now()
     with _connect() as con:
