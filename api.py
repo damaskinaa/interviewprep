@@ -239,6 +239,34 @@ def _run_prepare_job(job_id, payload):
 
 @app.post("/session/create", dependencies=[Depends(require_app_key)])
 def session_create(req: SessionCreateRequest):
+    # Payload size guard — reject before touching the DB
+    _PAYLOAD_LIMIT = 25_000
+    field_lengths = {
+        "company_name":       len(req.company_name),
+        "role_name":          len(req.role_name),
+        "job_description":    len(req.job_description),
+        "cv":                 len(req.cv),
+        "answer_bank":        len(req.answer_bank),
+        "company_description": len(req.company_description),
+        "youtube_transcripts": len(req.youtube_transcripts),
+    }
+    total = sum(field_lengths.values())
+    if total > _PAYLOAD_LIMIT:
+        oversized = sorted(
+            ((k, v) for k, v in field_lengths.items() if v > 500),
+            key=lambda x: x[1],
+            reverse=True,
+        )
+        detail_lines = ", ".join(f"{k} ({v} chars)" for k, v in oversized[:4])
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"Payload too large: {total} characters total (limit {_PAYLOAD_LIMIT}). "
+                f"Shorten these fields: {detail_lines}. "
+                "Recommended limits: job_description 8000, cv 8000, answer_bank 4000, "
+                "company_description 2000, youtube_transcripts 4000."
+            ),
+        )
     payload = req.model_dump() if hasattr(req, "model_dump") else req.dict()
     session_id = "sess_" + datetime.now().strftime("%Y%m%d_%H%M%S_") + uuid.uuid4().hex[:8]
     session = create_session(session_id, payload)

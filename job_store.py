@@ -1,7 +1,35 @@
 import json
+import logging
 import sqlite3
 from datetime import datetime
 from pathlib import Path
+
+logger = logging.getLogger(__name__)
+
+_SESSION_LIMITS = {
+    "company_name":          200,
+    "role_name":             200,
+    "raw_jd":               8000,
+    "raw_cv":               8000,
+    "raw_answer_bank":      4000,
+    "raw_company_context":  2000,
+    "raw_youtube_transcripts": 4000,
+}
+
+def _truncate_session_fields(**fields):
+    """Truncate session fields to their storage limits. Logs a warning per truncated field."""
+    result = {}
+    for key, value in fields.items():
+        limit = _SESSION_LIMITS.get(key)
+        if limit and isinstance(value, str) and len(value) > limit:
+            logger.warning(
+                "create_session: field '%s' truncated from %d to %d characters",
+                key, len(value), limit,
+            )
+            result[key] = value[:limit]
+        else:
+            result[key] = value
+    return result
 
 
 DB_PATH = Path("nailit_jobs.db")
@@ -167,6 +195,15 @@ def find_running_module_job(session_id, module_name):
 
 def create_session(session_id, payload):
     now = _now()
+    safe = _truncate_session_fields(
+        company_name=payload.get("company_name", ""),
+        role_name=payload.get("role_name", ""),
+        raw_jd=payload.get("job_description", ""),
+        raw_cv=payload.get("cv", ""),
+        raw_answer_bank=payload.get("answer_bank", ""),
+        raw_company_context=payload.get("company_description", ""),
+        raw_youtube_transcripts=payload.get("youtube_transcripts", ""),
+    )
     with _connect() as con:
         con.execute(
             """
@@ -178,13 +215,13 @@ def create_session(session_id, payload):
             """,
             (
                 session_id,
-                payload.get("company_name", ""),
-                payload.get("role_name", ""),
-                payload.get("job_description", ""),
-                payload.get("cv", ""),
-                payload.get("answer_bank", ""),
-                payload.get("company_description", ""),
-                payload.get("youtube_transcripts", ""),
+                safe["company_name"],
+                safe["role_name"],
+                safe["raw_jd"],
+                safe["raw_cv"],
+                safe["raw_answer_bank"],
+                safe["raw_company_context"],
+                safe["raw_youtube_transcripts"],
                 now,
                 now,
             ),
