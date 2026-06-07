@@ -304,6 +304,12 @@ def extract_youtube_transcripts(extra):
     return normalize_text(extract_marked_block(extra, "YOUTUBE_TRANSCRIPTS"))
 
 
+def extract_reported_questions(extra):
+    """Pull the REPORTED_QUESTIONS block Vercel extracted from Glassdoor/Blind/Reddit/LinkedIn/Indeed."""
+    block = extract_marked_block(extra or "", "REPORTED_QUESTIONS")
+    return block.strip() if block else ""
+
+
 def source_host(url):
     try:
         return urlparse(url or "").netloc.lower().replace("www.", "")
@@ -318,6 +324,8 @@ def classify_source(company_name, url, title, content, provided_type=""):
         "directional_glassdoor": "Glassdoor directional theme",
         "directional_reddit": "Reddit directional theme",
         "directional_blind": "Blind directional theme",
+        "directional_linkedin": "LinkedIn directional theme",
+        "directional_indeed": "Indeed directional theme",
         "directional_blog": "Blog directional theme",
         "directional_prep": "Public prep or candidate experience",
         "youtube_source": "YouTube public theme",
@@ -1108,71 +1116,92 @@ List needed stories or metrics the user should prepare because the evidence is m
     return output
 
 
-def create_question_and_answer_bank(company_name, role_name, company_intel, job_decode, match_gap_map, story_bank):
+def create_question_and_answer_bank(company_name, role_name, company_intel, job_decode, match_gap_map, story_bank, reported_questions=""):
     log(6, "Creating question and answer bank", "running")
+
+    reported_block = f"""
+Reported questions — literal questions that real candidates reported being asked at {company_name}.
+These come from Glassdoor, Blind, Reddit, LinkedIn, and Indeed reviews.
+PRIORITY RULE: Use these as the primary seed for the question bank. Do not replace them with invented questions.
+If a question appears here, it must appear in the question bank for the correct round.
+If you do not have enough reported questions for a round, fill with high-probability inferred questions based on the JD and role type.
+
+{trim_text(reported_questions, 4000)}
+""".strip() if reported_questions else "No reported questions extracted from community sources. Build entirely from JD decode, role type, and company intelligence."
 
     prompt = f"""
 You are building the premium question and answer bank for Nailit.
 
-Company:
-{company_name}
+Company: {company_name}
+Role: {role_name}
 
-Role:
-{role_name}
+{reported_block}
 
 Company intelligence:
-{trim_text(company_intel, 8000)}
+{trim_text(company_intel, 6000)}
 
 Job description decode:
-{trim_text(job_decode, 9000)}
+{trim_text(job_decode, 7000)}
 
 Match gap risk map:
-{trim_text(match_gap_map, 9000)}
+{trim_text(match_gap_map, 6000)}
 
 Story bank:
-{trim_text(story_bank, 10000)}
+{trim_text(story_bank, 8000)}
 
-Create a serious interview question bank by likely interview area. Use the JD as the targeting core. If interview rounds are not official, label them as likely interview areas, observed public patterns, or possible round types rather than factual rounds.
+TASK: Build the full interview question bank, structured by interview round.
 
-For Google or similar companies, include these round types if relevant:
-Recruiter screen
-Hiring manager screen
-Program management execution
-Cross functional stakeholder interview
-Leadership and behavioral interview
-Googliness or culture interview
-Team fit or final round
-Role specific technical or domain screen
+ROUND IDENTIFICATION RULES:
+1. If official sources confirm exact rounds, use them and label as CONFIRMED.
+2. If Glassdoor/Blind/Reddit candidates described rounds, use those patterns and label as REPORTED PATTERN.
+3. If rounds are inferred from JD and role type only, label as INFERRED.
+4. Never present inferred rounds as confirmed fact.
+5. For Google and similar large tech companies, standard rounds include: Recruiter screen, Hiring manager screen, Execution/PM round, Cross-functional/stakeholder round, Leadership & behavioral round, Googliness/culture round, Team fit or final round, Domain/technical screen. Map to CONFIRMED or REPORTED PATTERN evidence where available.
 
-For each round include:
-Purpose of the round
-What they are testing
-Likely questions
-Best story to use
-Strong answer outline
-Follow up questions
-Red flags
-Answer repair note
+QUESTION BANK RULES:
+1. Reported questions from Glassdoor/Blind/Reddit/LinkedIn/Indeed are REAL — they go into the bank first, attributed to the correct round.
+2. Each round must have 8 to 15 questions minimum.
+3. Target 40 to 60 questions total across all rounds.
+4. Every question must be assigned to one round only.
+5. Do not duplicate questions across rounds.
+6. Flag questions that appear in multiple community sources as HIGH PROBABILITY.
 
-Return this structure:
+For each round provide:
+- Round name and label (CONFIRMED / REPORTED PATTERN / INFERRED)
+- What this round is testing
+- Source evidence (which sources confirm or suggest this round)
+- Questions (mark HIGH PROBABILITY where reported by multiple sources)
+- The type of question: behavioral, situational, competency, values, technical, case
+
+Return this exact structure:
 
 ### Interview round map
+For each round: name, label, what it tests, evidence source, question count.
+
 ### Question bank by round
-Give 30 to 45 questions total across rounds.
+For each round, list all questions. Mark HIGH PROBABILITY questions.
+Format each question as:
+Q: [question text]
+Type: [behavioral / situational / competency / values / technical / case]
+Source: [reported by candidates / JD-inferred / company values / role type]
+Round: [round name]
+
 ### Highest probability questions
-Top 12 with best answer outline.
-### Best answer outlines
-Use candidate evidence, not generic advice.
+Top 15 questions most likely to appear. Pull from HIGH PROBABILITY flags first.
+
 ### Questions that target candidate risks
+Questions where the gap map shows weakness. Be specific about the risk.
+
 ### Questions to ask the interviewer
-### Mock interview order
+5 to 8 smart questions per round type.
 
 Rules:
-Do not present an exact number or sequence of rounds unless official sources confirm it.
-Use candidate evidence only for answer outlines. If direct domain evidence is missing, frame the answer outline around transferable program management evidence and name the domain gap honestly.
 Do not invent candidate metrics or stories.
+Use candidate evidence only for answer outlines.
+If direct domain evidence is missing, frame around transferable evidence and name the gap.
+Label every round's confidence level.
 """
-    output = ask_llm(prompt, model=MODEL_STRATEGY, max_tokens=6500, retries=3)
+    output = ask_llm(prompt, model=MODEL_STRATEGY, max_tokens=8000, retries=3)
     set_result("question_answer_bank", output)
     log(6, "Question and answer bank complete", "done")
     return output
@@ -2719,9 +2748,26 @@ def validate_gap_map(gap_map):
     return issues
 
 
-def create_interview_strategy_json(candidate_profile, jd_analysis, gap_map, research):
+def create_interview_strategy_json(candidate_profile, jd_analysis, gap_map, research, reported_questions=""):
     log(5, "Stage 5 interview strategist engine", "running")
+
+    reported_block = ""
+    if reported_questions and reported_questions.strip():
+        reported_block = f"""
+REPORTED QUESTIONS FROM COMMUNITY SOURCES (Glassdoor, Blind, Reddit, LinkedIn, Indeed):
+These are literal questions that real candidates reported being asked at this company.
+RULES:
+- Include ALL of these questions in top_10_likely_questions or top_10_dangerous_questions where they fit.
+- These take priority over AI-inferred questions. Do not drop them.
+- Label each one with research_signal: "reported by candidates on [source type]"
+- Questions reported multiple times across sources are HIGH PROBABILITY — flag them.
+- Assign each reported question to the correct interview round based on question type and context.
+
+{trim_text(reported_questions, 3500)}
+"""
+
     prompt = f"""
+{reported_block}
 You have 5 distinct candidate stories. You must distribute them across the 10 answer outlines. No story may be used more than twice. Assign stories to questions before writing any answer.
 Use this assignment:
 
@@ -5802,10 +5848,15 @@ def run_full_pipeline(company_name, role_name, job_description, cv, extra, progr
     report_progress(progress_callback, "Research engine source collection", 28)
     sources = collect_sources(company_name, role_name, job_description, extra)
     youtube_transcripts = extract_youtube_transcripts(extra)
+    reported_questions = extract_reported_questions(extra)
     research = create_research_json(company_name, role_name, sources, youtube_transcripts=youtube_transcripts)
     research = checkpoint_json(workspace, "research.json", research)
     set_result("research_json", json_dumps(research))
     set_result("intel_report", json_dumps(research))
+    if reported_questions:
+        log(3, f"Reported questions extracted from community sources ({len(reported_questions)} chars)", "done")
+    else:
+        log(3, "No reported questions extracted from community sources", "warning")
 
     # Stage 4 — Gap map
     report_progress(progress_callback, "Gap engine", 52)
@@ -5816,7 +5867,7 @@ def run_full_pipeline(company_name, role_name, job_description, cv, extra, progr
 
     # Stage 5 — Strategy
     report_progress(progress_callback, "Interview strategist engine", 74)
-    strategy = create_interview_strategy_json(candidate_profile, jd_analysis, gap_map, research)
+    strategy = create_interview_strategy_json(candidate_profile, jd_analysis, gap_map, research, reported_questions=reported_questions)
     strategy = checkpoint_json(workspace, "interview_strategy.json", strategy)
     set_result("interview_strategy_json", json_dumps(strategy))
 
