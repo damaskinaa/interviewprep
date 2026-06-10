@@ -224,6 +224,20 @@ Return only valid JSON with this exact schema:
         }
 
 
+def adapt_lua_response(raw):
+    """Map internal lua_coach keys to the frontend contract shape."""
+    return {
+        "structure_score": raw.get("score_out_of_10", 5),
+        "content_score": min(10, len(raw.get("what_worked", "") or "") // 20),
+        "company_alignment_score": raw.get("score_out_of_10", 5),
+        "overall": (raw.get("what_worked", "") or "")[:120],
+        "what_was_strong": raw.get("what_worked", ""),
+        "what_to_improve": raw.get("what_was_weak", ""),
+        "better_version": raw.get("top_1_percent_answers", ""),
+        "next_action": "Try again" if (raw.get("score_out_of_10", 5) or 5) < 7 else "Ready for next question",
+    }
+
+
 if __name__ == "__main__":
     demo = build_lua_coach_response(
         company="Google",

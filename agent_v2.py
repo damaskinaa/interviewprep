@@ -1,6 +1,7 @@
 import os
 import re
 import json
+import logging as _logging
 import time
 import urllib.request
 import urllib.error
@@ -4758,7 +4759,11 @@ def read_module_artifact(session_id, module_name):
         raise FileNotFoundError(f"Required module artifact missing: {module_name}")
     if path.suffix == ".md":
         return path.read_text(encoding="utf8")
-    return json.loads(path.read_text(encoding="utf8"))
+    content = path.read_text(encoding="utf8")
+    try:
+        return json.loads(content)
+    except json.JSONDecodeError:
+        raise ValueError(f"Artifact '{module_name}' is corrupted or unreadable")
 
 
 def write_module_json(session_id, module_name, data):
@@ -4869,13 +4874,13 @@ def tavily_with_retry(query):
                 if attempt < len(wait_schedule):
                     continue  # will sleep on next iteration
                 # Third attempt also 429 — give up
-                log(0, f"tavily_with_retry: 429 on all 3 attempts for query={query[:80]!r}", "warning")
+                _logging.warning("tavily_with_retry: 429 on all 3 attempts for query=%r", query[:80])
                 return []
             # Non-429 HTTP error — log and return empty
-            log(0, f"tavily_with_retry: HTTP {e.code} for query={query[:80]!r}", "warning")
+            _logging.warning("tavily_with_retry: HTTP %s for query=%r", e.code, query[:80])
             return []
         except Exception as exc:
-            log(0, f"tavily_with_retry: exception for query={query[:80]!r} — {exc}", "warning")
+            _logging.warning("tavily_with_retry: exception for query=%r — %s", query[:80], exc)
             return []
     return []
 
@@ -5761,6 +5766,28 @@ def run_interview_strategy_module(session, progress_callback=None):
     session_id = session["session_id"]
     company_name = session["company_name"]
     role_name = session["role_name"]
+
+    # ── DEPENDENCY CHECK ─────────────────────────────────────────────────────
+    # Each upstream artifact must exist, be non-empty, and contain at least 3
+    # keys before the strategy module is allowed to start.  Failing early with
+    # a clear message prevents silent bad output from incomplete artifacts.
+    _required = [
+        ("role_intelligence",  "role_intelligence module must complete before interview_strategy can run"),
+        ("candidate_profile",  "candidate_profile module must complete before interview_strategy can run"),
+        ("gap_map",            "gap_map module must complete before interview_strategy can run"),
+    ]
+    for module_name, error_message in _required:
+        try:
+            artifact = read_module_artifact(session_id, module_name)
+        except FileNotFoundError:
+            raise ValueError(error_message)
+        if not isinstance(artifact, dict) or len(artifact) < 3:
+            raise ValueError(
+                f"{error_message} (artifact '{module_name}' is empty or incomplete — "
+                f"found {len(artifact) if isinstance(artifact, dict) else 0} keys, need at least 3)"
+            )
+    # ── END DEPENDENCY CHECK ─────────────────────────────────────────────────
+
     company_intelligence = read_module_artifact(session_id, "company_intelligence")
     role_intelligence = read_module_artifact(session_id, "role_intelligence")
     candidate_profile = read_module_artifact(session_id, "candidate_profile")

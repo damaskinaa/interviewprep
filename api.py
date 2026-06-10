@@ -14,8 +14,8 @@ from pydantic import BaseModel, Field
 
 from answer_generator import generate_answer_options
 from agent_v2 import run_pipeline, run_session_module
-from job_store import create_job, create_session, find_running_module_job, get_job, get_session, update_job
-from lua_coach import build_lua_coach_response
+from job_store import create_job, create_session, delete_old_jobs, find_running_module_job, get_job, get_session, update_job
+from lua_coach import build_lua_coach_response, adapt_lua_response
 from lua_benchmark_coach import build_benchmark_question, build_selected_answer_training_card, build_benchmark_practice_feedback
 from lua_benchmark_store import save_benchmark_event, load_benchmark_session
 from lua_mastery_store import update_mastery, get_mastery, question_key
@@ -37,6 +37,19 @@ if FRONTEND_ORIGIN:
 allowed_origins.append("http://localhost:3000")
 
 app = FastAPI()
+
+from fastapi.responses import JSONResponse
+
+@app.exception_handler(HTTPException)
+async def http_exception_handler(request, exc):
+    return JSONResponse(
+        status_code=exc.status_code,
+        content={"error": exc.detail, "status_code": exc.status_code},
+    )
+
+@app.on_event("startup")
+async def startup_cleanup():
+    delete_old_jobs(days=7)
 
 DB_PATH = Path("lua_sessions.db")
 
@@ -424,7 +437,7 @@ async def lua_coach(payload: dict):
         candidate_answer=payload.get("candidate_answer", ""),
         lua_brief=payload.get("lua_brief", {}),
     )
-    return response
+    return adapt_lua_response(response)
 
 
 
@@ -480,9 +493,10 @@ async def lua_coach_resume(payload: dict):
     )
 
     save_lua_turn(session_id, "coach", json.dumps(response, ensure_ascii=False))
-    response["session_id"] = session_id
-    response["conversation"] = load_lua_session(session_id)
-    return response
+    adapted = adapt_lua_response(response)
+    adapted["session_id"] = session_id
+    adapted["conversation"] = load_lua_session(session_id)
+    return adapted
 
 
 
@@ -539,9 +553,10 @@ Latest final answer:
         meta={"type": "coach_feedback"},
     )
 
-    coach["session_id"] = session_id
-    coach["conversation"] = load_session(session_id)
-    return coach
+    adapted_coach = adapt_lua_response(coach)
+    adapted_coach["session_id"] = session_id
+    adapted_coach["conversation"] = load_session(session_id)
+    return adapted_coach
 
 
 @app.get("/lua-call-session/{session_id}")

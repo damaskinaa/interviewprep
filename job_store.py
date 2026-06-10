@@ -1,7 +1,8 @@
 import json
 import logging
+import shutil
 import sqlite3
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 
 logger = logging.getLogger(__name__)
@@ -261,3 +262,29 @@ def get_session(session_id, include_raw=False):
             "raw_youtube_transcripts": row["raw_youtube_transcripts"],
         })
     return session
+
+
+def delete_old_jobs(days=7):
+    """Delete jobs and their workspace directories older than `days` days."""
+    cutoff = (datetime.utcnow() - timedelta(days=days)).isoformat()
+    with _connect() as con:
+        rows = con.execute(
+            "SELECT json_extract(input_payload, '$.session_id') AS session_id "
+            "FROM jobs WHERE created_at < ?",
+            (cutoff,),
+        ).fetchall()
+        for row in rows:
+            sid = row[0]
+            if sid:
+                workspace = Path("jobs") / sid
+                if workspace.exists():
+                    try:
+                        shutil.rmtree(workspace)
+                        logger.info("delete_old_jobs: removed workspace %s", workspace)
+                    except Exception as exc:
+                        logger.warning("delete_old_jobs: could not remove %s — %s", workspace, exc)
+        deleted = con.execute(
+            "DELETE FROM jobs WHERE created_at < ?", (cutoff,)
+        ).rowcount
+        con.commit()
+    logger.info("delete_old_jobs: deleted %d job(s) older than %d days", deleted, days)
