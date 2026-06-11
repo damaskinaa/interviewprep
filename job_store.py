@@ -88,6 +88,7 @@ def _connect():
             raw_youtube_transcripts TEXT NOT NULL DEFAULT '',
             user_email TEXT DEFAULT NULL,
             followup_sent DATETIME DEFAULT NULL,
+            user_id TEXT DEFAULT NULL,
             created_at TEXT NOT NULL,
             updated_at TEXT NOT NULL
         )
@@ -96,6 +97,7 @@ def _connect():
     for col, definition in [
         ("user_email",    "TEXT DEFAULT NULL"),
         ("followup_sent", "DATETIME DEFAULT NULL"),
+        ("user_id",       "TEXT DEFAULT NULL"),
     ]:
         try:
             con.execute(f"ALTER TABLE sessions ADD COLUMN {col} {definition}")
@@ -423,3 +425,92 @@ def deduct_credits(user_id: str, amount: int, description: str = "") -> None:
         (str(_uuid.uuid4()), user_id, amount, description, now),
     )
     conn.commit()
+
+
+def delete_old_sessions(days=90):
+    """Delete session records older than `days` days (GDPR retention limit)."""
+    cutoff = (datetime.utcnow() - timedelta(days=days)).isoformat()
+    with _connect() as con:
+        rows = con.execute(
+            "SELECT session_id FROM sessions WHERE updated_at < ?",
+            (cutoff,),
+        ).fetchall()
+        for row in rows:
+            workspace = Path("jobs") / row[0]
+            if workspace.exists():
+                try:
+                    shutil.rmtree(workspace)
+                    logger.info("delete_old_sessions: removed workspace %s", row[0])
+                except Exception as exc:
+                    logger.warning("delete_old_sessions: could not remove %s — %s", row[0], exc)
+        deleted = con.execute(
+            "DELETE FROM sessions WHERE updated_at < ?", (cutoff,)
+        ).rowcount
+        con.commit()
+    logger.info("delete_old_sessions: deleted %d session(s) older than %d days", deleted, days)
+
+
+def delete_user_data(user_id: str) -> dict:
+    """
+    Hard-deletes all data for a user.
+    GDPR Article 17 — Right to erasure.
+    Returns count of deleted records.
+    """
+    with _connect() as con:
+        rows = con.execute(
+            "SELECT session_id FROM sessions WHERE user_id = ?",
+            (user_id,),
+        ).fetchall()
+
+        deleted_sessions = 0
+        for row in rows:
+            workspace = Path("jobs") / row[0]
+            if workspace.exists():
+                try:
+                    shutil.rmtree(workspace)
+                except Exception as exc:
+                    logger.warning("delete_user_data: could not remove workspace %s — %s", row[0], exc)
+            deleted_sessions += 1
+
+        con.execute("DELETE FROM sessions WHERE user_id = ?", (user_id,))
+        con.execute("DELETE FROM credits WHERE user_id = ?", (user_id,))
+        con.execute("DELETE FROM credit_transactions WHERE user_id = ?", (user_id,))
+        # Jobs linked via JSON payload — remove orphaned job rows
+        con.execute(
+            "DELETE FROM jobs WHERE json_extract(input_payload, '$.session_id') IN "
+            "(SELECT session_id FROM sessions WHERE user_id = ?)",
+            (user_id,),
+        )
+        con.commit()
+
+    return {
+        "user_id": user_id,
+        "deleted_sessions": deleted_sessions,
+        "status": "complete",
+    }
+
+
+def get_user_data_export(user_id: str) -> dict:
+    """
+    Returns all data held for a user.
+    GDPR Article 15 — Right of access.
+    """
+    with _connect() as con:
+        rows = con.execute(
+            """
+            SELECT session_id, company_name, role_name,
+                   created_at, followup_sent
+            FROM sessions WHERE user_id = ?
+            """,
+            (user_id,),
+        ).fetchall()
+
+    credit_balance = get_credits(user_id)
+
+    return {
+        "user_id": user_id,
+        "exported_at": datetime.utcnow().isoformat(),
+        "sessions": [dict(r) for r in rows],
+        "credit_balance": credit_balance,
+        "data_retained_until": "90 days after last activity",
+    }

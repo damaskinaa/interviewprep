@@ -34,7 +34,8 @@ from answer_generator import generate_answer_options
 from agent_v2 import run_pipeline, run_session_module
 from job_store import (
     add_credits, create_job, create_session, deduct_credits, delete_old_jobs,
-    find_running_module_job, get_job, get_session, get_sessions_for_followup,
+    delete_old_sessions, delete_user_data, find_running_module_job, get_job,
+    get_session, get_sessions_for_followup, get_user_data_export,
     mark_followup_sent, update_job,
 )
 from lua_coach import build_lua_coach_response, adapt_lua_response
@@ -89,7 +90,8 @@ async def http_exception_handler(request, exc):
 
 @app.on_event("startup")
 async def startup_cleanup():
-    delete_old_jobs(days=7)
+    delete_old_jobs(days=7)          # purge job artifacts after 7 days (disk space)
+    delete_old_sessions(days=90)     # purge session records after 90 days (GDPR)
 
 
 import logging as _api_logging
@@ -173,6 +175,18 @@ def check_and_deduct(user_id: str, action: str) -> None:
                 "top_up_url": "/pricing",
             },
         )
+
+
+@app.delete("/user/{user_id}/data")
+async def delete_user_account(user_id: str, request: Request):
+    """GDPR Article 17 — Right to erasure. Permanently deletes all user data."""
+    return delete_user_data(user_id)
+
+
+@app.get("/user/{user_id}/data-export")
+async def export_user_data(user_id: str):
+    """GDPR Article 15 — Right of access. Returns all data held for this user."""
+    return get_user_data_export(user_id)
 
 
 DB_PATH = Path("lua_sessions.db")
