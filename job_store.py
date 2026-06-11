@@ -101,6 +101,23 @@ def _connect():
             con.execute(f"ALTER TABLE sessions ADD COLUMN {col} {definition}")
         except Exception:
             pass  # column already exists — safe to ignore
+    con.execute("""
+        CREATE TABLE IF NOT EXISTS credits (
+            user_id TEXT PRIMARY KEY,
+            balance INTEGER NOT NULL DEFAULT 0,
+            updated_at TEXT
+        )
+    """)
+    con.execute("""
+        CREATE TABLE IF NOT EXISTS credit_transactions (
+            tx_id TEXT PRIMARY KEY,
+            user_id TEXT NOT NULL,
+            amount INTEGER NOT NULL,
+            type TEXT NOT NULL,
+            description TEXT,
+            created_at TEXT
+        )
+    """)
     con.commit()
     return con
 
@@ -344,3 +361,65 @@ def mark_followup_sent(session_id):
             (datetime.utcnow().isoformat(), session_id),
         )
         con.commit()
+
+
+import uuid as _uuid
+
+
+def get_credits(user_id: str) -> int:
+    """Return current credit balance for user_id, or 0 if no record."""
+    conn = get_db()
+    row = conn.execute(
+        "SELECT balance FROM credits WHERE user_id = ?",
+        (user_id,),
+    ).fetchone()
+    return row[0] if row else 0
+
+
+def add_credits(user_id: str, amount: int, description: str = "") -> None:
+    """Add credits to a user's balance and record the transaction."""
+    conn = get_db()
+    now = datetime.utcnow().isoformat()
+    conn.execute(
+        """
+        INSERT INTO credits (user_id, balance, updated_at)
+        VALUES (?, ?, ?)
+        ON CONFLICT(user_id) DO UPDATE SET
+            balance = balance + excluded.balance,
+            updated_at = excluded.updated_at
+        """,
+        (user_id, amount, now),
+    )
+    conn.execute(
+        """
+        INSERT INTO credit_transactions
+            (tx_id, user_id, amount, type, description, created_at)
+        VALUES (?, ?, ?, 'purchase', ?, ?)
+        """,
+        (str(_uuid.uuid4()), user_id, amount, description, now),
+    )
+    conn.commit()
+
+
+def deduct_credits(user_id: str, amount: int, description: str = "") -> None:
+    """Deduct credits from a user's balance. Raises ValueError if insufficient."""
+    conn = get_db()
+    balance = get_credits(user_id)
+    if balance < amount:
+        raise ValueError(
+            f"Insufficient credits: {balance} available, {amount} required"
+        )
+    now = datetime.utcnow().isoformat()
+    conn.execute(
+        "UPDATE credits SET balance = balance - ?, updated_at = ? WHERE user_id = ?",
+        (amount, now, user_id),
+    )
+    conn.execute(
+        """
+        INSERT INTO credit_transactions
+            (tx_id, user_id, amount, type, description, created_at)
+        VALUES (?, ?, ?, 'deduction', ?, ?)
+        """,
+        (str(_uuid.uuid4()), user_id, amount, description, now),
+    )
+    conn.commit()

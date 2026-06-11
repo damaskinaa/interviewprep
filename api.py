@@ -25,14 +25,18 @@ def dispatch_job(func, *args, **kwargs):
         t.start()
         return None
 
-from fastapi import Depends, FastAPI, Header, HTTPException
+from fastapi import Depends, FastAPI, Header, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 
 from answer_generator import generate_answer_options
 from agent_v2 import run_pipeline, run_session_module
-from job_store import create_job, create_session, delete_old_jobs, find_running_module_job, get_job, get_session, get_sessions_for_followup, mark_followup_sent, update_job
+from job_store import (
+    add_credits, create_job, create_session, deduct_credits, delete_old_jobs,
+    find_running_module_job, get_job, get_session, get_sessions_for_followup,
+    mark_followup_sent, update_job,
+)
 from lua_coach import build_lua_coach_response, adapt_lua_response
 from lua_benchmark_coach import build_benchmark_question, build_selected_answer_training_card, build_benchmark_practice_feedback
 from lua_benchmark_store import save_benchmark_event, load_benchmark_session
@@ -53,6 +57,24 @@ if FRONTEND_ORIGIN:
     allowed_origins.append(FRONTEND_ORIGIN)
 
 allowed_origins.append("http://localhost:3000")
+
+import stripe as _stripe
+_stripe.api_key = os.getenv("STRIPE_SECRET_KEY", "")
+STRIPE_WEBHOOK_SECRET = os.getenv("STRIPE_WEBHOOK_SECRET", "")
+
+PRODUCT_CREDITS = {
+    "free_tier":       10,
+    "starter_pack":    30,
+    "monthly_plan":    50,
+    "premium_pack":   100,
+    "credit_topup_20": 20,
+}
+
+MODULE_COSTS = {
+    "full_session":      10,
+    "answer_generation":  3,
+    "mock_interview":     5,
+}
 
 app = FastAPI()
 
@@ -106,6 +128,51 @@ Your answer helps us improve NAILIT for every candidate after you.
         mark_followup_sent(session["session_id"])
         sent += 1
     return {"sent": sent}
+
+
+@app.post("/webhooks/stripe")
+async def stripe_webhook(request: Request):
+    """Receives Stripe webhook events and credits the matching user."""
+    payload = await request.body()
+    sig = request.headers.get("stripe-signature", "")
+    try:
+        event = _stripe.Webhook.construct_event(
+            payload, sig, STRIPE_WEBHOOK_SECRET
+        )
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid webhook signature")
+
+    if event["type"] == "checkout.session.completed":
+        session_obj = event["data"]["object"]
+        user_id = session_obj.get("client_reference_id", "")
+        product = session_obj.get("metadata", {}).get("product", "")
+        credits = PRODUCT_CREDITS.get(product, 0)
+        if user_id and credits:
+            add_credits(user_id, credits, f"Purchase: {product}")
+
+    return {"received": True}
+
+
+def check_and_deduct(user_id: str, action: str) -> None:
+    """
+    Call before any paid action.
+    Raises HTTPException 402 if the user has insufficient credits.
+    Not wired into endpoints yet — pending auth integration.
+    """
+    cost = MODULE_COSTS.get(action, 0)
+    if cost == 0:
+        return
+    try:
+        deduct_credits(user_id, cost, action)
+    except ValueError as e:
+        raise HTTPException(
+            status_code=402,
+            detail={
+                "error": "insufficient_credits",
+                "message": str(e),
+                "top_up_url": "/pricing",
+            },
+        )
 
 
 DB_PATH = Path("lua_sessions.db")
