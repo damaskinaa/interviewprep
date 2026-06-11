@@ -7,6 +7,24 @@ import os
 from pathlib import Path
 from lua_session_store import save_turn, load_session, transcript_text
 
+_redis_url = os.getenv("REDIS_URL", "")
+
+
+def dispatch_job(func, *args, **kwargs):
+    """
+    Dispatches a job to RQ if REDIS_URL is set,
+    otherwise falls back to a daemon thread — identical behaviour to before.
+    """
+    if _redis_url:
+        from redis import Redis
+        from rq import Queue
+        q = Queue(connection=Redis.from_url(_redis_url))
+        return q.enqueue(func, *args, **kwargs)
+    else:
+        t = threading.Thread(target=func, args=args, kwargs=kwargs, daemon=True)
+        t.start()
+        return None
+
 from fastapi import Depends, FastAPI, Header, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
@@ -400,12 +418,7 @@ def module_run(req: ModuleRunRequest):
     job_id = "mod_" + datetime.now().strftime("%Y%m%d_%H%M%S_") + uuid.uuid4().hex[:8]
     payload = {"session_id": req.session_id, "module_name": req.module_name}
     job = create_job(job_id, payload)
-    thread = threading.Thread(
-        target=_run_module_job,
-        args=(job_id, req.session_id, req.module_name),
-        daemon=True,
-    )
-    thread.start()
+    dispatch_job(_run_module_job, job_id, req.session_id, req.module_name)
     return {
         "job_id": job_id,
         "session_id": req.session_id,
@@ -430,12 +443,7 @@ def prepare_start(req: PrepRequest):
     job_id = "prep_" + datetime.now().strftime("%Y%m%d_%H%M%S_") + uuid.uuid4().hex[:8]
     job = create_job(job_id, payload)
 
-    thread = threading.Thread(
-        target=_run_prepare_job,
-        args=(job_id, payload),
-        daemon=True,
-    )
-    thread.start()
+    dispatch_job(_run_prepare_job, job_id, payload)
 
     return {
         "job_id": job_id,
