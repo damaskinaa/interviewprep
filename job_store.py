@@ -69,10 +69,21 @@ def _connect():
             raw_answer_bank TEXT NOT NULL DEFAULT '',
             raw_company_context TEXT NOT NULL DEFAULT '',
             raw_youtube_transcripts TEXT NOT NULL DEFAULT '',
+            user_email TEXT DEFAULT NULL,
+            followup_sent DATETIME DEFAULT NULL,
             created_at TEXT NOT NULL,
             updated_at TEXT NOT NULL
         )
     """)
+    # Migrate existing DBs — add columns if they were created before this schema version
+    for col, definition in [
+        ("user_email",    "TEXT DEFAULT NULL"),
+        ("followup_sent", "DATETIME DEFAULT NULL"),
+    ]:
+        try:
+            con.execute(f"ALTER TABLE sessions ADD COLUMN {col} {definition}")
+        except Exception:
+            pass  # column already exists — safe to ignore
     con.commit()
     return con
 
@@ -288,3 +299,31 @@ def delete_old_jobs(days=7):
         ).rowcount
         con.commit()
     logger.info("delete_old_jobs: deleted %d job(s) older than %d days", deleted, days)
+
+
+def get_sessions_for_followup(days_ago=30):
+    """Returns sessions created exactly `days_ago` days ago
+    that have not yet received a followup email."""
+    target = (datetime.utcnow() - timedelta(days=days_ago)).date()
+    with _connect() as con:
+        rows = con.execute(
+            """
+            SELECT session_id, user_email, company_name
+            FROM sessions
+            WHERE DATE(created_at) = ?
+              AND followup_sent IS NULL
+              AND user_email IS NOT NULL
+            """,
+            (target.isoformat(),),
+        ).fetchall()
+    return [dict(row) for row in rows]
+
+
+def mark_followup_sent(session_id):
+    """Record that a followup email was sent for this session."""
+    with _connect() as con:
+        con.execute(
+            "UPDATE sessions SET followup_sent = ? WHERE session_id = ?",
+            (datetime.utcnow().isoformat(), session_id),
+        )
+        con.commit()

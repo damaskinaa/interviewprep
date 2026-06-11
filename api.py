@@ -14,7 +14,7 @@ from pydantic import BaseModel, Field
 
 from answer_generator import generate_answer_options
 from agent_v2 import run_pipeline, run_session_module
-from job_store import create_job, create_session, delete_old_jobs, find_running_module_job, get_job, get_session, update_job
+from job_store import create_job, create_session, delete_old_jobs, find_running_module_job, get_job, get_session, get_sessions_for_followup, mark_followup_sent, update_job
 from lua_coach import build_lua_coach_response, adapt_lua_response
 from lua_benchmark_coach import build_benchmark_question, build_selected_answer_training_card, build_benchmark_practice_feedback
 from lua_benchmark_store import save_benchmark_event, load_benchmark_session
@@ -50,6 +50,45 @@ async def http_exception_handler(request, exc):
 @app.on_event("startup")
 async def startup_cleanup():
     delete_old_jobs(days=7)
+
+
+import logging as _api_logging
+_followup_logger = _api_logging.getLogger("nailit.followup")
+
+def send_email(to_address: str, subject: str, body: str) -> None:
+    """Stub — replace with real email provider (Resend, SendGrid, SES, etc.)."""
+    _followup_logger.info(
+        "FOLLOWUP EMAIL (stub) → %s | subject: %s", to_address, subject
+    )
+    print(f"[send_email stub] to={to_address!r} subject={subject!r}")
+
+
+@app.post("/internal/send-followups")
+async def send_followups():
+    """Called by a daily cron job.
+    Sends 30-day offer-rate email to eligible sessions."""
+    sessions = get_sessions_for_followup(days_ago=30)
+    sent = 0
+    for session in sessions:
+        subject = "Did you get the job?"
+        body = f"""Hi,
+
+30 days ago you prepared for your {session['company_name']} interview with NAILIT.
+
+One quick question: did you get the offer?
+
+Yes → [link]
+No → [link]
+Still in process → [link]
+
+Your answer helps us improve NAILIT for every candidate after you.
+
+— NAILIT"""
+        send_email(session["user_email"], subject, body)
+        mark_followup_sent(session["session_id"])
+        sent += 1
+    return {"sent": sent}
+
 
 DB_PATH = Path("lua_sessions.db")
 
