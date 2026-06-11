@@ -235,6 +235,8 @@ def adapt_lua_response(raw):
         "what_to_improve": raw.get("what_was_weak", ""),
         "better_version": raw.get("top_1_percent_answers", ""),
         "next_action": "Try again" if (raw.get("score_out_of_10", 5) or 5) < 7 else "Ready for next question",
+        "score_out_of_10": raw.get("score_out_of_10", 5),
+        "voice_and_delivery_coaching": raw.get("voice_and_delivery_coaching", {}),
     }
 
 
