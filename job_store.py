@@ -1,11 +1,28 @@
 import json
 import logging
+import os
 import shutil
 import sqlite3
 from datetime import datetime, timedelta
 from pathlib import Path
 
 logger = logging.getLogger(__name__)
+
+DATABASE_URL = os.getenv("DATABASE_URL", "")
+
+
+def get_db():
+    """Returns a connection.
+    Uses Postgres (psycopg2) if DATABASE_URL starts with 'postgresql',
+    otherwise falls back to SQLite via _connect() — the default for local dev.
+    """
+    if DATABASE_URL.startswith("postgresql"):
+        import psycopg2
+        import psycopg2.extras
+        conn = psycopg2.connect(DATABASE_URL)
+        conn.autocommit = False
+        return conn
+    return _connect()
 
 _SESSION_LIMITS = {
     "company_name":          200,
