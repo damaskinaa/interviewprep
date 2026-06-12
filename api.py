@@ -485,6 +485,48 @@ def module_run(req: ModuleRunRequest):
     session = get_session(req.session_id, include_raw=False)
     if not session:
         raise HTTPException(status_code=404, detail="Session not found")
+
+    # Synchronous dependency check — fail fast at the HTTP layer, not inside the job thread
+    REQUIRES_ARTIFACTS = {
+        "interview_strategy": [
+            "company_intelligence",
+            "role_intelligence",
+            "candidate_profile",
+            "gap_map",
+        ],
+        "prep_pack": [
+            "company_intelligence",
+            "role_intelligence",
+            "candidate_profile",
+            "gap_map",
+            "interview_strategy",
+        ],
+        "gap_map": [
+            "company_intelligence",
+            "role_intelligence",
+            "candidate_profile",
+        ],
+        "candidate_profile": [
+            "company_intelligence",
+            "role_intelligence",
+        ],
+    }
+    required = REQUIRES_ARTIFACTS.get(req.module_name, [])
+    if required:
+        jobs_base = os.path.join("jobs", req.session_id)
+        missing = [
+            r for r in required
+            if not os.path.exists(os.path.join(jobs_base, r, f"{r}.json"))
+        ]
+        if missing:
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    f"Required modules not complete: {', '.join(missing)}. "
+                    f"Run them first."
+                ),
+            )
+
     # Atomically get-or-create: prevents duplicate jobs under concurrent requests
     new_job_id = "mod_" + datetime.now().strftime("%Y%m%d_%H%M%S_") + uuid.uuid4().hex[:8]
     job_id, created = get_or_create_job(req.session_id, req.module_name, new_job_id)
