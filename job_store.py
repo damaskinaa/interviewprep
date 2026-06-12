@@ -241,6 +241,55 @@ def find_running_module_job(session_id, module_name):
     return row["job_id"] if row else None
 
 
+def get_or_create_job(session_id: str, module_name: str, job_id: str) -> tuple:
+    """
+    Atomically return an existing running/queued job for this session+module,
+    or create a new one.
+
+    Returns (actual_job_id, created: bool).
+    Uses BEGIN IMMEDIATE to serialise concurrent callers so only one job
+    is ever created for the same session+module at a time.
+    """
+    now = _now()
+    payload = json.dumps({"session_id": session_id, "module_name": module_name},
+                         ensure_ascii=False)
+    con = _connect()
+    try:
+        con.execute("BEGIN IMMEDIATE")
+        row = con.execute(
+            """
+            SELECT job_id FROM jobs
+            WHERE status IN ('running', 'queued')
+              AND json_extract(input_payload, '$.session_id') = ?
+              AND json_extract(input_payload, '$.module_name') = ?
+            LIMIT 1
+            """,
+            (session_id, module_name),
+        ).fetchone()
+        if row:
+            con.execute("COMMIT")
+            return row["job_id"], False
+        con.execute(
+            """
+            INSERT INTO jobs (
+                job_id, status, stage, progress, input_payload,
+                created_at, updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?)
+            """,
+            (job_id, "queued", "Job created", 0, payload, now, now),
+        )
+        con.execute("COMMIT")
+        return job_id, True
+    except Exception:
+        try:
+            con.execute("ROLLBACK")
+        except Exception:
+            pass
+        raise
+    finally:
+        con.close()
+
+
 def create_session(session_id, payload):
     now = _now()
     safe = _truncate_session_fields(

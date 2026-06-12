@@ -34,7 +34,8 @@ from answer_generator import generate_answer_options
 from agent_v2 import run_pipeline, run_session_module
 from job_store import (
     add_credits, create_job, create_session, deduct_credits, delete_old_jobs,
-    delete_old_sessions, delete_user_data, find_running_module_job, get_job,
+    delete_old_sessions, delete_user_data, find_running_module_job,
+    get_or_create_job, get_job,
     get_session, get_sessions_for_followup, get_user_data_export,
     mark_followup_sent, update_job,
 )
@@ -484,21 +485,20 @@ def module_run(req: ModuleRunRequest):
     session = get_session(req.session_id, include_raw=False)
     if not session:
         raise HTTPException(status_code=404, detail="Session not found")
-    # Idempotency guard: return existing running job instead of spawning a duplicate
-    existing_job_id = find_running_module_job(req.session_id, req.module_name)
-    if existing_job_id:
-        existing = get_job(existing_job_id)
+    # Atomically get-or-create: prevents duplicate jobs under concurrent requests
+    new_job_id = "mod_" + datetime.now().strftime("%Y%m%d_%H%M%S_") + uuid.uuid4().hex[:8]
+    job_id, created = get_or_create_job(req.session_id, req.module_name, new_job_id)
+    if not created:
+        existing = get_job(job_id)
         return {
-            "job_id": existing_job_id,
+            "job_id": job_id,
             "session_id": req.session_id,
             "module_name": req.module_name,
             "status": existing["status"],
             "stage": existing["stage"],
             "progress": existing["progress"],
         }
-    job_id = "mod_" + datetime.now().strftime("%Y%m%d_%H%M%S_") + uuid.uuid4().hex[:8]
-    payload = {"session_id": req.session_id, "module_name": req.module_name}
-    job = create_job(job_id, payload)
+    job = get_job(job_id)
     dispatch_job(_run_module_job, job_id, req.session_id, req.module_name)
     return {
         "job_id": job_id,
@@ -556,7 +556,7 @@ def answers_generate(req: AnswerGenerateRequest):
         raise HTTPException(status_code=500, detail=str(error)) from error
 
 
-@app.post("/lua-coach")
+@app.post("/lua-coach", dependencies=[Depends(require_app_key)])
 async def lua_coach(payload: dict):
     response = build_lua_coach_response(
         company=payload.get("company", ""),
@@ -570,7 +570,7 @@ async def lua_coach(payload: dict):
 
 
 
-@app.post("/lua-session/save")
+@app.post("/lua-session/save", dependencies=[Depends(require_app_key)])
 async def lua_session_save(payload: dict):
     session_id = payload.get("session_id") or "default"
     role = payload.get("role") or "user"
@@ -584,7 +584,7 @@ async def lua_session_save(payload: dict):
     }
 
 
-@app.get("/lua-session/{session_id}")
+@app.get("/lua-session/{session_id}", dependencies=[Depends(require_app_key)])
 async def lua_session_get(session_id: str):
     return {
         "status": "found",
@@ -593,7 +593,7 @@ async def lua_session_get(session_id: str):
     }
 
 
-@app.post("/lua-coach-resume")
+@app.post("/lua-coach-resume", dependencies=[Depends(require_app_key)])
 async def lua_coach_resume(payload: dict):
     session_id = payload.get("session_id") or "default"
     question = payload.get("question") or ""
@@ -628,7 +628,7 @@ async def lua_coach_resume(payload: dict):
 
 
 
-@app.post("/lua-call-turn")
+@app.post("/lua-call-turn", dependencies=[Depends(require_app_key)])
 async def lua_call_turn(payload: dict):
     session_id = payload.get("session_id") or "default"
     role = payload.get("role") or "user"
@@ -687,7 +687,7 @@ Latest final answer:
     return adapted_coach
 
 
-@app.get("/lua-call-session/{session_id}")
+@app.get("/lua-call-session/{session_id}", dependencies=[Depends(require_app_key)])
 async def lua_call_session(session_id: str):
     return {
         "status": "found",
@@ -697,7 +697,7 @@ async def lua_call_session(session_id: str):
     }
 
 
-@app.post("/lua-benchmark-question")
+@app.post("/lua-benchmark-question", dependencies=[Depends(require_app_key)])
 async def lua_benchmark_question(payload: dict):
     result = build_benchmark_question(
         session_id=payload.get("session_id", "default"),
@@ -712,7 +712,7 @@ async def lua_benchmark_question(payload: dict):
     return result
 
 
-@app.post("/lua-select-benchmark-answer")
+@app.post("/lua-select-benchmark-answer", dependencies=[Depends(require_app_key)])
 async def lua_select_benchmark_answer(payload: dict):
     result = build_selected_answer_training_card(
         session_id=payload.get("session_id", "default"),
@@ -727,7 +727,7 @@ async def lua_select_benchmark_answer(payload: dict):
     return result
 
 
-@app.post("/lua-practice-benchmark-turn")
+@app.post("/lua-practice-benchmark-turn", dependencies=[Depends(require_app_key)])
 async def lua_practice_benchmark_turn(payload: dict):
     session_id = payload.get("session_id", "default")
     selected_answer = payload.get("selected_answer", {})
@@ -780,7 +780,7 @@ async def lua_practice_benchmark_turn(payload: dict):
 
     return result
 
-@app.get("/lua-benchmark-session/{session_id}")
+@app.get("/lua-benchmark-session/{session_id}", dependencies=[Depends(require_app_key)])
 async def lua_benchmark_session(session_id: str):
     return {
         "status": "found",
@@ -789,7 +789,7 @@ async def lua_benchmark_session(session_id: str):
     }
 
 
-@app.post("/lua-memory-add")
+@app.post("/lua-memory-add", dependencies=[Depends(require_app_key)])
 async def lua_memory_add(payload: dict):
     return add_coach_memory(
         session_id=payload.get("session_id", "default"),
@@ -800,12 +800,12 @@ async def lua_memory_add(payload: dict):
     )
 
 
-@app.get("/lua-memory/{session_id}")
+@app.get("/lua-memory/{session_id}", dependencies=[Depends(require_app_key)])
 async def lua_memory(session_id: str):
     return get_coach_memory(session_id)
 
 
-@app.post("/lua-memory-upload-text")
+@app.post("/lua-memory-upload-text", dependencies=[Depends(require_app_key)])
 async def lua_memory_upload_text(payload: dict):
     filename = payload.get("filename", "uploaded_document.txt")
     content = payload.get("content", "")
@@ -820,7 +820,7 @@ async def lua_memory_upload_text(payload: dict):
     )
 
 
-@app.post("/lua-memory-relevant")
+@app.post("/lua-memory-relevant", dependencies=[Depends(require_app_key)])
 async def lua_memory_relevant(payload: dict):
     return get_relevant_coach_memory(
         session_id=payload.get("session_id", "default"),
@@ -829,12 +829,12 @@ async def lua_memory_relevant(payload: dict):
     )
 
 
-@app.get("/lua-mastery/{session_id}")
+@app.get("/lua-mastery/{session_id}", dependencies=[Depends(require_app_key)])
 async def lua_mastery(session_id: str):
     return get_mastery(session_id)
 
 
-@app.post("/lua-retry-drill")
+@app.post("/lua-retry-drill", dependencies=[Depends(require_app_key)])
 async def lua_retry_drill(payload: dict):
     return build_retry_drill(
         session_id=payload.get("session_id", "default"),
@@ -842,7 +842,7 @@ async def lua_retry_drill(payload: dict):
     )
 
 
-@app.post("/lua-escalation-challenge")
+@app.post("/lua-escalation-challenge", dependencies=[Depends(require_app_key)])
 async def lua_escalation_challenge(payload: dict):
     return build_escalation_challenge(
         company=payload.get("company", ""),
@@ -853,7 +853,7 @@ async def lua_escalation_challenge(payload: dict):
     )
 
 
-@app.get("/lua-health")
+@app.get("/lua-health", dependencies=[Depends(require_app_key)])
 async def lua_health():
     return {
         "status": "ok",
@@ -870,7 +870,7 @@ async def lua_health():
     }
 
 
-@app.get("/lua-state/{session_id}")
+@app.get("/lua-state/{session_id}", dependencies=[Depends(require_app_key)])
 async def lua_state(session_id: str):
     session = load_benchmark_session(session_id)
 
@@ -882,7 +882,7 @@ async def lua_state(session_id: str):
     return build_interview_state(events)
 
 
-@app.post("/lua-pressure-response")
+@app.post("/lua-pressure-response", dependencies=[Depends(require_app_key)])
 async def lua_pressure_response(payload: dict):
     return build_pressure_response(
         company=payload.get("company", ""),
@@ -893,7 +893,7 @@ async def lua_pressure_response(payload: dict):
     )
 
 
-@app.post("/lua-pressure-repair")
+@app.post("/lua-pressure-repair", dependencies=[Depends(require_app_key)])
 async def lua_pressure_repair(payload: dict):
     result = build_pressure_repair_feedback(
         company=payload.get("company", ""),
@@ -918,6 +918,6 @@ async def lua_pressure_repair(payload: dict):
     return result
 
 
-@app.get("/lua-ui")
+@app.get("/lua-ui", dependencies=[Depends(require_app_key)])
 async def lua_ui():
     return FileResponse("lua_frontend.html")
