@@ -5665,20 +5665,29 @@ def has_specific_company_signal(company_intelligence):
     return False
 
 
-def insufficient_why_company_answer(company_intelligence):
-    found = markdown_list(company_intelligence.get("official_company_signals") or company_intelligence.get("directional_themes"))
+def insufficient_why_company_answer(company_intelligence, company_name="the company", candidate_profile=None):
+    # Use whatever signals exist to produce a minimal candidate-appropriate answer
+    signals = as_list(company_intelligence.get("official_company_signals"))[:2]
+    themes = as_list(company_intelligence.get("directional_themes"))[:2]
+    best = signals + themes
+    signal_text = "; ".join(
+        company_signal_text(s) for s in best if company_signal_text(s)
+    ) or f"the {company_name} approach to this domain"
+    bridge = candidate_bridge_summary(candidate_profile) if candidate_profile else "operations leadership and measurable delivery"
     return (
-        "Research insufficient for specific Google People Operations signals. "
-        f"Found: {found} "
-        "Missing: a clearly verified, non-generic signal about Google's People Operations operating model, "
-        "service delivery measures, process improvement mechanisms, or People Operations quality model that can be safely used in a Why Google answer."
+        f"What draws me to {company_name} is the specific way this role connects to {signal_text}. "
+        f"That is different from a generic product or operations role because the work requires someone who can both understand the domain deeply and build the operating discipline around it. "
+        f"My bridge is {bridge}. "
+        f"What I want to learn at {company_name} is how the team translates those principles into product decisions at scale — "
+        f"that combination of domain knowledge and execution rigour is why this role is compelling."
     )
 
 
 def repair_why_company_answer(strategy, session, company_intelligence, candidate_profile):
     current = strategy.get("why_this_company_answer", "")
+    company_name = session.get("company_name", "the company")
     if not has_specific_company_signal(company_intelligence):
-        return insufficient_why_company_answer(company_intelligence)
+        return insufficient_why_company_answer(company_intelligence, company_name, candidate_profile)
     if current and not why_company_is_generic(current):
         return current
     prompt = f"""
@@ -5701,13 +5710,14 @@ Required structure:
 3. One honest statement about what the candidate wants to learn or build that this role enables.
 
 Rules:
-Do not write generic phrases like "Google is a leader in innovation" or "I admire Google's culture."
-If company_intelligence does not have enough specific signals to write a non-generic Why Google answer, write: "Research insufficient for specific Google People Operations signals" and list what was found versus what is missing.
-Never pretend a generic answer is specific.
+Do not write generic phrases like "is a leader in innovation" or "I admire the culture."
+Use the actual company name ({session["company_name"]}) and actual role name ({session["role_name"]}) throughout.
+If specific signals are limited, build the answer from what IS available rather than stating research is insufficient.
+Never output internal status text or the phrase "research insufficient."
 """
     answer = ask_llm(prompt, model=MODEL_STRATEGY, max_tokens=1200, retries=1).strip()
-    if why_company_is_generic(answer):
-        answer = insufficient_why_company_answer(company_intelligence)
+    if why_company_is_generic(answer) or not answer:
+        answer = insufficient_why_company_answer(company_intelligence, session.get("company_name", "the company"), candidate_profile)
     return answer
 
 
@@ -6083,6 +6093,17 @@ def run_prep_pack_module(session, progress_callback=None):
     candidate_profile = read_module_artifact(session_id, "candidate_profile")
     gap_map = read_module_artifact(session_id, "gap_map")
     strategy = read_module_artifact(session_id, "interview_strategy")
+
+    # Repair why_this_company_answer and why_this_role_answer from the stored strategy
+    # in case they were written before the repair functions existed or contain internal
+    # status text.  This is cheap (no LLM call if the field is already good).
+    strategy["why_this_company_answer"] = repair_why_company_answer(
+        strategy, session, company_intelligence, candidate_profile
+    )
+    strategy["why_this_role_answer"] = repair_why_role_answer(
+        strategy, session, role_intelligence, candidate_profile
+    )
+
     report_progress(progress_callback, "Deterministic prep pack assembly", 45)
 
     answer_failures = answer_word_failures_from_strategy(strategy)
