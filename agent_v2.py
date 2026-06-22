@@ -5711,6 +5711,60 @@ Never pretend a generic answer is specific.
     return answer
 
 
+def repair_why_role_answer(strategy, session, role_intelligence, candidate_profile):
+    current = normalize_text(strategy.get("why_this_role_answer", ""))
+    if current and count_words(current) >= 80:
+        return current
+    company_name = session.get("company_name", "the company")
+    role_name = session.get("role_name", "this role")
+    must_prove = jd_signal_texts(role_intelligence)[:4]
+    bridge = candidate_bridge_summary(candidate_profile)
+    positioning = normalize_text((candidate_profile or {}).get("positioning_statement", ""))
+    prompt = f"""
+{STAGE_QUALITY_INSTRUCTION}
+
+Write why_this_role_answer only. Return plain text, 80–120 words, first-person, spoken.
+
+Company: {company_name}
+Role: {role_name}
+
+JD signals that define the role:
+{chr(10).join(f"- {s}" for s in must_prove) if must_prove else "- See role_intelligence below."}
+
+Candidate positioning:
+{positioning or bridge}
+
+Required structure (three sentences, no headers):
+1. One specific reason this role makes sense given the candidate's actual background — name the real evidence.
+2. One JD requirement the candidate can genuinely meet, with a real story or outcome from the CV.
+3. One honest statement about what the candidate wants to develop or learn in this specific role.
+
+Rules:
+- Do not use generic phrases like "passionate about," "excited to join," or "aligns with my values."
+- Do not mention "data center construction," "Google People Operations," or any domain not present in the actual JD.
+- Do not invent metrics or experience not in the candidate's documents.
+- Reference the actual role name ({role_name}) and company name ({company_name}).
+
+role_intelligence.json:
+{trim_text(json_dumps(role_intelligence), 8000)}
+
+candidate_profile.json:
+{trim_text(json_dumps(candidate_profile), 8000)}
+"""
+    answer = ask_llm(prompt, model=MODEL_STRATEGY, max_tokens=400, retries=1).strip()
+    if not answer or count_words(answer) < 40:
+        # Deterministic fallback using real data
+        jd_anchor = must_prove[0] if must_prove else f"the core requirements of the {role_name} role"
+        answer = (
+            f"This role makes sense because the {role_name} position at {company_name} maps directly "
+            f"to the kind of work I have already done: {bridge}. "
+            f"The JD requirement I can meet most immediately is {jd_anchor}, which my evidence already demonstrates. "
+            f"What I want to develop here is a deeper understanding of how {company_name} approaches this domain at scale — "
+            f"the operating patterns, the stakeholder dynamics, and the product decisions that would be new to me."
+        )
+    return answer
+
+
 def normalize_modular_strategy(strategy, session, company_intelligence, role_intelligence, candidate_profile, gap_map):
     strategy = strategy if isinstance(strategy, dict) else {}
     if not isinstance(strategy.get("questions_by_round"), list):
@@ -5764,7 +5818,17 @@ def normalize_modular_strategy(strategy, session, company_intelligence, role_int
                     session,
                     candidate_profile,
                 )
+            # Strip any metrics that don't appear in the candidate's own documents
+            cleaned, hallucinated = strip_hallucinated_metrics(
+                item["complete_written_answer"],
+                session.get("raw_cv", ""),
+                session.get("raw_answer_bank", ""),
+            )
+            if hallucinated:
+                log(3, f"Stripped hallucinated metrics from answer '{item.get('question','')[:60]}': {hallucinated}", "warn")
+            item["complete_written_answer"] = cleaned
     strategy["why_this_company_answer"] = repair_why_company_answer(strategy, session, company_intelligence, candidate_profile)
+    strategy["why_this_role_answer"] = repair_why_role_answer(strategy, session, role_intelligence, candidate_profile)
     return strategy
 
 
@@ -5903,20 +5967,25 @@ Ban these opening phrases across all answers in the same pack:
 - I identified that
 - I faced a situation
 Each answer must open with one of these patterns instead:
-- The specific stake or problem first: The backlog across three regions had reached a point where...
-- The decision first: When the metric showed 77 percent I did not accept the calculation...
-- The constraint first: With no direct authority over regional leads and a 34 percent backlog gap...
-- The result first: We cut response time by one hour per case. Here is how...
+- The specific stake or problem first: [describe the operational problem using only evidence from the candidate's CV]
+- The decision first: [name the decision the candidate made, using only real facts from the CV]
+- The constraint first: [name a real constraint from the candidate's experience, using only facts from the CV]
+- The result first: [state a real result from the candidate's CV, then explain how it was achieved]
 Each answer must end with the business result or proof of fit. Never end with "aligning with expectations" or "the key takeaway for you is".
+METRIC RULE: Every specific number, percentage, time measurement, or dollar figure used in any answer MUST appear literally in the raw CV or raw answer bank text provided above. Do not invent any number. If no real metric exists for a story, use qualitative language such as "significantly reduced," "meaningfully improved," or "substantially faster." Never fabricate a percentage, headcount, time saving, or financial figure.
 dangerous_questions must contain exactly 8 items with verbatim scripts.
 do_not_say must contain exactly 15 specific items.
 questions_to_ask must contain exactly 8 specific questions.
-why_this_company_answer must use specific signals from company_intelligence official_company_signals and directional_themes. It must not contain generic phrases like "Google is a leader in innovation" or "I admire Google's culture."
+why_this_company_answer must use specific signals from company_intelligence official_company_signals and directional_themes. It must not contain generic phrases.
 why_this_company_answer must follow this structure:
 1. One specific thing about this company's approach to this domain that is different from other companies, sourced from company_intelligence.
 2. One specific thing about this role that connects to the candidate's real evidence from candidate_profile.
 3. One honest statement about what the candidate wants to learn or build that this role enables.
-If company_intelligence does not have enough specific signals to write a non-generic Why Google answer, say "Research insufficient for specific Google People Operations signals" and list what was found versus what was missing.
+why_this_role_answer must be at least 80 words and must reference the actual role name and actual JD signals, not generic language about "data center construction" unless the JD explicitly mentions it.
+why_this_role_answer must follow this structure:
+1. One specific reason this role makes sense given the candidate's background, using only CV evidence.
+2. One specific JD requirement the candidate can meet, with real evidence.
+3. One honest statement about what the candidate wants to learn or develop in this role.
 Do not invent candidate background.
 """
     result = ask_json(prompt, model=MODEL_STRATEGY, max_tokens=15000, retries=2, fallback={})
@@ -5948,7 +6017,52 @@ def markdown_list(items):
             text = str(item)
         if text:
             lines.append(f"- {text}")
-    return "\n".join(lines) if lines else "- Research insufficient."
+    return "\n".join(lines)
+
+
+def extract_source_numbers(raw_cv, raw_answer_bank):
+    """Return the set of digit strings that appear literally in the candidate's own documents."""
+    combined = (raw_cv or "") + " " + (raw_answer_bank or "")
+    # Match standalone numbers possibly followed by % or units
+    return set(re.findall(r"\b\d+(?:\.\d+)?\b", combined))
+
+
+def strip_hallucinated_metrics(answer, raw_cv, raw_answer_bank):
+    """
+    Scan answer for number+unit patterns.  Replace any that don't appear in
+    the candidate's source text with qualitative language.
+    Returns (cleaned_answer, list_of_stripped_metrics).
+    """
+    source_numbers = extract_source_numbers(raw_cv, raw_answer_bank)
+    stripped = []
+
+    def _replace(match):
+        full = match.group(0)
+        digits = re.search(r"\d+(?:\.\d+)?", full)
+        if not digits:
+            return full
+        num = digits.group(0)
+        if num in source_numbers:
+            return full
+        # Qualitative replacements by suffix
+        low = full.lower()
+        stripped.append(full)
+        if "%" in full or "percent" in low:
+            return "significantly"
+        if any(u in low for u in ("hour", "minute", "day", "week", "month")):
+            return "meaningfully faster"
+        if any(u in low for u in ("$", "dollar", "usd", "gbp", "€")):
+            return "meaningfully"
+        return "significantly"
+
+    # Pattern: number optionally followed by %, unit words, or currency symbols.
+    # Use lookahead/lookbehind instead of \b so the unit suffix is captured in the match.
+    pattern = re.compile(
+        r"(?<!\d)\$?\d+(?:\.\d+)?(?:\s*(?:%|percent|hours?|minutes?|days?|weeks?|months?))?(?!\d)",
+        re.IGNORECASE,
+    )
+    cleaned = pattern.sub(_replace, answer)
+    return cleaned, stripped
 
 
 def answer_word_failures_from_strategy(strategy):
@@ -5975,16 +6089,36 @@ def run_prep_pack_module(session, progress_callback=None):
     if answer_failures:
         raise ValueError(f"Any answer under 180 words: {', '.join(answer_failures[:5])}")
 
+    # Required-field validation before assembly
+    required_fields = {
+        "executive_win_strategy": "executive_win_strategy is empty",
+        "why_this_company_answer": "why_this_company_answer is empty — regenerate interview_strategy",
+        "why_this_role_answer": "why_this_role_answer is empty — regenerate interview_strategy",
+        "round_by_round_plan": "round_by_round_plan is empty",
+        "questions_by_round": "questions_by_round is empty",
+    }
+    missing_required = []
+    for field, msg in required_fields.items():
+        val = strategy.get(field)
+        empty = not val or (isinstance(val, str) and count_words(val) < 20) or (isinstance(val, list) and len(val) == 0)
+        if empty:
+            missing_required.append(msg)
+    if missing_required:
+        raise ValueError("Prep pack failed required-field check: " + "; ".join(missing_required))
+
     round_sections = []
     for round_item in as_list(strategy.get("round_by_round_plan")):
         if not isinstance(round_item, dict):
             continue
+        prep_actions = markdown_list(round_item.get("specific_preparation_actions"))
+        if not prep_actions:
+            prep_actions = f"- Review the JD requirements and available research to prepare focused talking points for the {round_item.get('round_name', 'interview')} round."
         round_sections.append(
             f"### {round_item.get('round_name', 'Interview round')}\n"
             f"- What it tests: {round_item.get('what_this_round_tests', '')}\n"
             f"- Who interviews: {round_item.get('likely_interviewer', '')}\n"
             f"- What they evaluate: {round_item.get('what_they_are_evaluating', '')}\n"
-            f"- Preparation actions:\n{markdown_list(round_item.get('specific_preparation_actions'))}"
+            f"- Preparation actions:\n{prep_actions}"
         )
 
     qa_sections = []
@@ -6092,6 +6226,7 @@ Session ID: {session_id}
         "aligning with expectations",
         "the key takeaway for you is",
         "No grounded item available",
+        "Research insufficient",
         "id: S",
         "excerpt:",
         "source_type:",
