@@ -1,4 +1,4 @@
-RESEARCH_TIER = "free"
+RESEARCH_TIER = "starter"
 
 TIER_CONFIG = {
     "free": {

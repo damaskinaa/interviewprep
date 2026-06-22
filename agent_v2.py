@@ -4893,11 +4893,17 @@ def tavily_search(query):
 def tavily_extract(urls):
     if not urls:
         return []
-    data = tavily_post(
-        "extract",
-        {"urls": urls, "extract_depth": "basic"},
-        timeout=20,
-    )
+    # Tavily extract API rejects batches larger than 20 URLs
+    urls = urls[:20]
+    try:
+        data = tavily_post(
+            "extract",
+            {"urls": urls, "extract_depth": "basic"},
+            timeout=20,
+        )
+    except Exception as exc:
+        _logging.warning("tavily_extract: failed — %s", exc)
+        return []
     rows = []
     for item in data.get("results", []) if isinstance(data, dict) else []:
         content = item.get("raw_content", "") or item.get("content", "")
