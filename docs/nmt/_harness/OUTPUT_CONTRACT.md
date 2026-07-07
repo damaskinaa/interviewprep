@@ -24,6 +24,44 @@ Every output must include:
 5. Next cheapest test
 6. Block or proceed decision
 
+## Required Methodology Coverage
+
+Every serious NMT output must include a methodology coverage section. It must explicitly perform or mark `NOT_APPLICABLE` / `UNAVAILABLE_SOURCE` for:
+
+1. Source inventory
+2. Source classification
+3. Evidence extraction
+4. Original NMT core preservation check
+5. Enhancement-layer preservation check
+6. Advanced JTBD
+7. Job as unit of analysis and Job structure
+8. Big Job / Core Job / Small Jobs / Micro Jobs where applicable
+9. Job Graph
+10. Critical Chain of Jobs
+11. Segment + Job as one analytical entity
+12. Map of Segments where multiple segments exist
+13. Value creation and value-creation mechanics
+14. Aha Moment
+15. Barriers, fears, habit, existing behavior, and Tax Jobs where applicable
+16. Behavior change and switching logic
+17. Consideration set, alternatives, current solutions, and Consideration Activators
+18. RAT/RIT, assumption stack, and cheapest credible evidence against the deadliest assumption
+19. ABCDX where customer/user/revenue data exists
+20. Unit Economics where pricing/revenue/cost evidence exists
+21. Theory of Constraints / binding constraint
+22. Subtraction
+23. Focus / company attention management
+24. Local optimum vs global optimum
+25. Main algorithm / cyclical next-move logic
+26. Cause-and-effect chain to profit
+27. Field validation gate
+28. False-positive risk
+29. What would kill this idea or product
+30. What not to build
+31. BLOCKED / PROCEED by category
+
+Methodology terms are not enough. The output must show the analysis, evidence, and consequence of each applicable concept.
+
 Every serious diagnosis, research, interview analysis, validation analysis, or readiness output must use this analysis integrity loop:
 
 1. First pass
@@ -58,3 +96,5 @@ Every serious output must end with:
 5. BLOCKED or PROCEED
 
 Codex must not present polished prose as certainty.
+
+Codex must not treat GO as build approval, market size as demand proof, user opinion as payment evidence, demographic/ICP labels as Job-based segmentation, or features as value.

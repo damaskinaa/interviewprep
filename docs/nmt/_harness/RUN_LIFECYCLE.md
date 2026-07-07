@@ -12,9 +12,15 @@ Create a run folder, run manifest, input folder, state folder, output folder.
 
 List sources, classify each source, mark missing documents, identify duplicates.
 
+## Stage 2A Methodology preservation gate
+
+Read `METHODOLOGY_PRESERVATION_CONTRACT.md` and `METHODOLOGY_COVERAGE_LEDGER.md`.
+
+Confirm the run preserves the original Next Move Theory core, preserves the Anastasia/team/book enhancement layer, marks unavailable methodology as `UNAVAILABLE_SOURCE`, and does not use NailIt as the methodology.
+
 ## Stage 3 Read only diagnosis
 
-No edits. Identify product state, business state, evidence state, validation debt.
+No edits. Identify product state, business state, evidence state, validation debt, source inventory, source classification, Advanced JTBD structure, Job Graph, Critical Chain, Segment + Job, value creation, RAT/RIT, Unit Economics where applicable, ABCDX where applicable, Theory of Constraints, subtraction, local vs global optimum, and field validation gates.
 
 ## Stage 4 Harness audit
 

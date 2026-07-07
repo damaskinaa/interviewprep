@@ -2,6 +2,16 @@
 
 ## Sprint purpose
 
+## Business context type
+
+- New idea:
+- Existing product:
+- Live product with weak validation:
+- Paid product:
+- Scale-stage product:
+- Dying product:
+- Repositioning / conversion / retention / acquisition / value proposition / PRD / interview analysis:
+
 ## Analysis Integrity Loop
 
 1. First pass:
@@ -13,6 +23,14 @@
 The model may not skip directly from first pass to final answer.
 
 ## Fatal assumption
+
+## RAT / RIT And Assumption Stack
+
+- Assumption stack:
+- Deadliest assumption:
+- Cheapest credible evidence against the deadliest assumption:
+- RAT/RIT test:
+- False-positive risk:
 
 ## Test
 
@@ -27,6 +45,35 @@ The model may not skip directly from first pass to final answer.
 ## Respondents
 
 ## Data captured
+
+## NMT Methodology Gates
+
+- Advanced JTBD:
+- Job as unit of analysis:
+- Big Job / Core Job / Small Jobs / Micro Jobs:
+- Job Graph:
+- Critical Chain of Jobs:
+- Segment + Job as one analytical entity:
+- Map of Segments:
+- Value creation:
+- Value-creation mechanics:
+- Aha Moment:
+- Barriers:
+- Fears:
+- Habit / existing behavior:
+- Tax Jobs / friction / cost:
+- Behavior change / switching:
+- Consideration set:
+- Alternatives and current solutions:
+- Consideration Activators:
+- ABCDX where applicable:
+- Unit Economics where applicable:
+- Theory of Constraints / binding constraint:
+- Subtraction:
+- Focus / company attention management:
+- Local optimum vs global optimum:
+- Cause-and-effect chain to profit:
+- Field validation gate:
 
 ## Missing Information Checklist
 
@@ -46,3 +93,11 @@ The model may not skip directly from first pass to final answer.
 ## Decision rule
 
 ## What to build only after pass
+
+## What not to build before evidence
+
+## Controlled concierge vs self-serve launch
+
+- Controlled concierge validation:
+- Self-serve launch:
+- Why self-serve is or is not allowed yet:

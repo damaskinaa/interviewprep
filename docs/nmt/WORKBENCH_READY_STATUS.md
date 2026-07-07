@@ -8,15 +8,21 @@ READY FOR FUTURE PROJECT SETUP
 
 ## Reusable harness
 
-READY. Required harness files exist and define no-carryover, claim labels, lifecycle, output contract, analysis integrity loop, and missing-information checklist.
+READY. Required harness files exist and define no-carryover, claim labels, lifecycle, output contract, methodology preservation contract, methodology coverage ledger, analysis integrity loop, missing-information checklist, and serious-run NMT methodology passes.
 
 ## Agnostic methodology
 
-READY. Reusable methodology lives outside project-specific folders.
+READY. Reusable methodology lives outside project-specific folders. The original Next Move Theory core is preserved as the core, and local enhancements operationalize it without replacing it.
 
 ## Validation gate
 
 READY. GO means go to validation, never build approval.
+
+## Methodology preservation
+
+READY. Serious runs must preserve Advanced JTBD, Job as unit of analysis, Job Graph, Critical Chain, Segment + Job, Map of Segments, value creation, value-creation mechanics, Aha Moment, behavior change, consideration set, RAT/RIT, ABCDX where applicable, Unit Economics where applicable, Theory of Constraints, subtraction, focus, local vs global optimum, the main algorithm, cause-and-effect chain to profit, and field validation gates.
+
+READY. Unavailable or paywalled areas must be marked UNAVAILABLE_SOURCE and must not be invented.
 
 ## Analysis integrity
 

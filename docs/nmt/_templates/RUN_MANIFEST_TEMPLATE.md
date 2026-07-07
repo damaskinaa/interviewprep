@@ -42,6 +42,40 @@ For each source:
 
 State the business idea as input, not truth.
 
+## Methodology preservation contract
+
+This run must preserve the original Next Move Theory core and the Anastasia/team/book enhancement layer.
+
+Required reusable sources:
+
+1. docs/nmt/_harness/METHODOLOGY_PRESERVATION_CONTRACT.md
+2. docs/nmt/_harness/METHODOLOGY_COVERAGE_LEDGER.md
+3. docs/nmt/_source_library/agnostic_methodology/
+4. docs/nmt/_source_library/validation_gate/
+5. docs/nmt/_source_library/nmt_methodology_feedback/
+
+Unavailable or paywalled methodology areas must be marked `UNAVAILABLE_SOURCE`. Codex must not invent them.
+
+NailIt is a project, not the methodology.
+
+## Business context type
+
+Choose one or more:
+
+- New idea
+- Existing product
+- Live product with weak validation
+- Paid product
+- Scale-stage product
+- Dying product
+- Repositioning
+- Conversion growth
+- Retention / churn
+- Acquisition channel creation
+- Value proposition
+- PRD / product requirements
+- Interview analysis
+
 ## Forbidden assumptions
 
 List assumptions Codex must not make.
@@ -49,6 +83,40 @@ List assumptions Codex must not make.
 ## Required outputs
 
 List outputs.
+
+Every serious output must include:
+
+1. Source inventory
+2. Source classification
+3. Evidence extraction
+4. Original NMT core preservation check
+5. Enhancement-layer preservation check
+6. Advanced JTBD
+7. Job as unit of analysis and Job structure
+8. Big Job / Core Job / Small Jobs / Micro Jobs where applicable
+9. Job Graph
+10. Critical Chain of Jobs
+11. Segment + Job as one analytical entity
+12. Map of Segments where multiple segments exist
+13. Value creation and value-creation mechanics
+14. Aha Moment
+15. Barriers, fears, habit, existing behavior, and Tax Jobs where applicable
+16. Behavior change and switching logic
+17. Consideration set, alternatives, current solutions, and Consideration Activators
+18. RAT/RIT, assumption stack, and cheapest credible evidence against the deadliest assumption
+19. ABCDX where customer/user/revenue data exists
+20. Unit Economics where pricing/revenue/cost evidence exists
+21. Theory of Constraints / binding constraint
+22. Subtraction
+23. Focus / company attention management
+24. Local optimum vs global optimum
+25. Main algorithm / cyclical next-move logic
+26. Cause-and-effect chain to profit
+27. Field validation gate
+28. False-positive risk
+29. What would kill this idea or product
+30. What not to build
+31. BLOCKED / PROCEED by category
 
 Every serious diagnosis, research, interview analysis, validation analysis, or readiness output must use this analysis integrity loop:
 

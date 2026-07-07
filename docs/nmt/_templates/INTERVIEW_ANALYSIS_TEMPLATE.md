@@ -47,12 +47,94 @@ The model may not skip directly from first pass to final answer.
 - Claim label:
 - Confidence:
 
+## AJTBD Extraction
+
+- Job as unit of analysis:
+- Full Job structure:
+  - State A / context:
+  - Trigger:
+  - Negative emotions:
+  - Expected outcome:
+  - Success criteria:
+  - Higher-level Job:
+  - Positive emotions:
+  - Job frequency:
+  - Job budget:
+  - Job importance:
+- Big Job:
+- Core Job:
+- Small Jobs:
+- Micro Jobs:
+- Job level confidence:
+
+## Job Graph And Critical Chain
+
+- Job Graph:
+- Critical Chain of Jobs:
+- Chain break:
+- Previous Job:
+- Next Job:
+- Jobs to kill or remove:
+- First Aha Moment:
+
+## Value Creation
+
+- Value hypothesis:
+- Value-creation mechanic:
+- Feature as delivery format, not value:
+- Barriers:
+- Fears:
+- Habit / existing behavior:
+- Tax Jobs / friction / cost:
+
+## Behavior Change And Switching
+
+- Current Solution:
+- Alternatives:
+- Do-nothing or DIY alternative:
+- Consideration set:
+- Consideration Activators:
+- Switching trigger:
+- Evidence that switching happened:
+
 ## Segment Signals
 
 - Signal:
 - Source:
 - Claim label:
 - Confidence:
+
+## Segment + Job Assessment
+
+- Segment defined by Job Graph and success criteria:
+- Demographic/ICP-only segmentation rejected or corrected:
+- Map of Segments:
+- Non-buyer / non-user evidence:
+- Missing non-buyer / non-user evidence:
+
+## RAT / RIT And Assumption Stack
+
+- Assumption stack:
+- Deadliest assumption:
+- Cheapest credible evidence against it:
+- RAT/RIT test:
+- Kill threshold:
+
+## Unit Economics / ABCDX Applicability
+
+- Payment evidence:
+- Price threshold:
+- Unit Economics pass where applicable:
+- ABCDX pass where applicable:
+- If not applicable, reason:
+
+## Constraint, Subtraction, And Local/Global
+
+- Theory of Constraints / binding constraint:
+- Subtraction candidate:
+- Focus / company attention management issue:
+- Local optimum:
+- Global optimum:
 
 ## Validation Debt
 
@@ -82,3 +164,8 @@ The model may not skip directly from first pass to final answer.
 - Target participant:
 - Pass condition:
 - Fail condition:
+
+## What Not To Build
+
+- Do not build:
+- Reason:

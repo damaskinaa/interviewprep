@@ -1,0 +1,204 @@
+Run an agnostic advanced Next Move Theory research or diagnosis loop for the active business.
+
+Do not default to NailIt.
+Do not read docs/nmt/_source_library/projects/nailit unless the active RUN_MANIFEST.md explicitly imports NailIt as DOC CLAIM analogy context.
+Do not run market research unless the user explicitly asks for market research and the active run manifest allows it.
+Do not modify production code during business diagnosis or research.
+Do not treat GO as build approval.
+Do not commit unless explicitly asked.
+
+This prompt supports:
+
+1. New ideas
+2. Existing products
+3. Live but unvalidated products
+4. Paid products
+5. Growth-stage products
+6. Failing or dying products
+7. Repositioning
+8. Conversion growth
+9. Retention / churn
+10. Acquisition channel creation
+11. Value proposition
+12. PRD / product requirements
+13. Interview analysis
+
+Read first:
+
+1. docs/nmt/START_HERE_FOR_ANASTASIA.md
+2. docs/nmt/WORKBENCH_READY_STATUS.md
+3. docs/nmt/_harness/METHODOLOGY_PRESERVATION_CONTRACT.md
+4. docs/nmt/_harness/METHODOLOGY_COVERAGE_LEDGER.md
+5. docs/nmt/_harness/
+6. docs/nmt/_templates/
+7. docs/nmt/_source_library/agnostic_methodology/
+8. docs/nmt/_source_library/validation_gate/
+9. docs/nmt/_source_library/nmt_methodology_feedback/
+10. The active RUN_MANIFEST.md
+11. The active project source folder named in RUN_MANIFEST.md
+12. The active run state and evidence ledger if present
+
+If the active run manifest does not exist, stop and create or request it. Do not infer the project from NailIt.
+
+Use source-first evidence extraction:
+
+1. Source inventory
+2. Source classification
+3. Evidence extraction
+4. Claim labeling
+5. Unavailable-source marking
+
+Use claim labels:
+
+1. REPO FACT
+2. TESTED
+3. FIELD DATA
+4. PAYMENT EVIDENCE
+5. EXTERNAL SOURCE
+6. DOC CLAIM
+7. STRONG INFERENCE
+8. HYPOTHESIS
+9. MODEL INFERENCE
+10. STORY RISK
+11. NO EVIDENCE
+12. UNAVAILABLE_SOURCE
+
+Use this analysis integrity loop:
+
+1. First pass
+2. Self critique
+3. Evidence check
+4. Missing information list
+5. Final recommendation
+
+The model may not skip directly from first pass to final recommendation.
+
+Every serious output must start with:
+
+1. Validation Debt
+2. Fatal if wrong
+3. Cheapest real world test
+4. Block or proceed
+
+Then include these required NMT passes:
+
+1. Original NMT core preservation check
+2. Anastasia/team/book enhancement-layer preservation check
+3. Advanced JTBD
+4. Job as unit of analysis and full Job structure
+5. Big Job / Core Job / Small Jobs / Micro Jobs where applicable
+6. Job Graph
+7. Critical Chain of Jobs
+8. Segment + Job as one analytical entity
+9. Map of Segments where more than one segment is in scope
+10. Value creation
+11. Value-creation mechanics
+12. Aha Moment
+13. Barriers
+14. Fears
+15. Habit and existing behavior
+16. Tax Jobs / friction / cost where applicable
+17. Behavior change and switching logic
+18. Consideration set
+19. Alternatives and current solutions
+20. Consideration Activators
+21. RAT/RIT
+22. Assumption stack
+23. Cheapest credible evidence against the deadliest assumption
+24. ABCDX where customers, users, revenue, churn, retention, satisfaction, support load, or margin data exists
+25. Unit Economics where pricing, revenue, cost, margin, CAC, LTV, payback, or willingness-to-pay evidence exists
+26. Theory of Constraints / binding constraint
+27. Subtraction before addition
+28. Focus / company attention management
+29. Local optimum vs global optimum
+30. Main algorithm / cyclical next-move logic
+31. Cause-and-effect chain to profit
+32. Field validation gates
+33. Non-buyer / non-user evidence
+34. Payment evidence
+35. False-positive risk
+36. What would kill this idea or product
+37. What not to build
+38. Controlled concierge validation vs self-serve launch
+39. BLOCKED / PROCEED by category
+
+Use this missing-information checklist:
+
+1. What we still do not know
+2. Missing respondent types
+3. Missing non-buyer evidence
+4. Missing non-user evidence
+5. Missing consideration set
+6. Missing near-purchase barriers
+7. Missing price threshold
+8. Unclear first Aha moment
+9. Whether alternatives were explored
+10. Whether willingness to pay is behavior or opinion
+11. Whether payment evidence exists
+12. Whether stated interest is separated from observed behavior
+13. Whether segmentation is Job-based or demographic/ICP-only
+14. Whether market size is being misused as demand proof
+15. Whether value is being reduced to features
+16. Whether Unit Economics can be checked
+17. Whether ABCDX is applicable
+18. Whether the binding constraint is known
+19. Whether local vs global optimum was considered
+20. What evidence would change the conclusion
+
+Anti-simplification rules:
+
+1. Do not replace NMT with generic startup validation.
+2. Do not treat methodology words as coverage because they are mentioned once.
+3. Do not treat NailIt as the methodology.
+4. Do not treat market size as demand proof.
+5. Do not treat user opinion as payment evidence.
+6. Do not treat stated interest as observed behavior.
+7. Do not reduce segmentation to demographics, ICP, role, industry, company size, or persona without Job Graph and success criteria.
+8. Do not reduce value to features.
+9. Do not do feature-first analysis.
+10. Do not start with PRD or build unless validation evidence supports it.
+11. Do not invent unavailable or paywalled methodology areas.
+
+Unavailable methodology handling:
+
+1. Mark unavailable areas as UNAVAILABLE_SOURCE.
+2. Do not invent.
+3. Do not pretend coverage exists.
+4. Preserve the gap in the coverage ledger.
+5. Use only the closest locally available public-canon principle, and label that bridge as STRONG INFERENCE or HYPOTHESIS.
+
+Every serious output must end with:
+
+1. Evidence used
+2. What was not checked
+3. What would change the conclusion
+4. Next lowest cost action
+5. BLOCKED or PROCEED
+
+Expected output:
+
+1. Validation Debt
+2. Fatal if wrong
+3. Cheapest real world test
+4. Block or proceed
+5. First pass
+6. Self critique
+7. Evidence check
+8. Missing information list
+9. Source inventory
+10. Source classification
+11. Evidence extraction
+12. Original NMT core preservation check
+13. Enhancement-layer preservation check
+14. NMT methodology passes
+15. Field validation gate
+16. False-positive risk
+17. What would kill this idea or product
+18. What not to build
+19. Final recommendation
+20. BLOCKED / PROCEED by category
+21. Evidence used
+22. What was not checked
+23. What would change the conclusion
+24. Next lowest cost action
+25. BLOCKED or PROCEED

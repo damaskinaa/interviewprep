@@ -8,6 +8,8 @@ It is reusable across business ideas.
 
 It must not contain NailIt assumptions as permanent rules.
 
+The original Next Move Theory Canon and Skills are the core. This workbench may preserve, operationalize, strengthen, and test that core, but it must not replace it, shrink it, simplify it into generic startup validation, or make NailIt the methodology.
+
 ## Core separation
 
 1. Reusable methodology lives in these folders:
@@ -50,6 +52,13 @@ Every run must have:
 
 If any is missing, Codex must stop and create or request it before diagnosis.
 
+Every serious run must also read:
+
+1. docs/nmt/_harness/METHODOLOGY_PRESERVATION_CONTRACT.md
+2. docs/nmt/_harness/METHODOLOGY_COVERAGE_LEDGER.md
+
+If either file is missing, Codex must stop and create or request it before product diagnosis, market research, strategy, validation planning, value proposition work, PRD work, or go-to-market work.
+
 ## Source labels
 
 Every material claim must be tagged as one of:
@@ -85,6 +94,46 @@ Every serious diagnosis, research, interview analysis, validation analysis, or r
 
 The model may not skip directly from first pass to final answer.
 
+## Required NMT methodology passes
+
+Every serious NMT diagnosis, research, interview analysis, validation analysis, readiness output, strategy output, value proposition output, PRD handoff, or go-to-market output must include these passes unless explicitly marked `UNAVAILABLE_SOURCE` or `NOT_APPLICABLE` with a reason:
+
+1. Source inventory
+2. Source classification
+3. Evidence extraction
+4. Original NMT core preservation check
+5. Enhancement-layer preservation check
+6. Advanced JTBD pass
+7. Job structure pass
+8. Job Graph / Critical Chain pass
+9. Segment + Job pass
+10. Map of Segments pass when more than one segment is in scope
+11. Value creation / value mechanics pass
+12. Aha Moment pass
+13. Barriers / fears / habit / Tax Jobs pass where applicable
+14. Behavior change / switching pass
+15. Consideration set / alternatives / current solutions pass
+16. Consideration Activators pass where communication, sales, conversion, or adoption is in scope
+17. RAT/RIT and assumption stack pass
+18. ABCDX pass where there are customers, users, revenue, churn, retention, satisfaction, support load, or margin data
+19. Unit Economics pass where pricing, revenue, cost, margin, CAC, LTV, payback, or willingness-to-pay evidence exists
+20. Theory of Constraints / binding constraint pass
+21. Subtraction pass
+22. Focus / company attention management pass
+23. Local vs global optimum pass
+24. Main algorithm / cyclical next-move pass
+25. Cause-and-effect chain to profit pass
+26. Field validation gate
+27. Validation debt
+28. Self critique
+29. Evidence check
+30. Missing-information checklist
+31. Final recommendation
+32. BLOCKED / PROCEED by category
+33. Preservation check: nothing from the original core or enhancement layer was removed, weakened, or silently skipped
+
+Methodology words are not coverage by themselves. Each applicable concept must appear as a real analysis pass, output section, gate, template requirement, prompt requirement, or test.
+
 Every interview, validation, customer, market, or readiness analysis must explicitly check:
 
 1. What we still do not know
@@ -113,6 +162,8 @@ Every output must end with:
 GO means go to validation.
 
 GO never means go to build.
+
+Market size never proves demand. User opinion never proves payment evidence. Segmentation must not be demographic, ICP, role-title, or industry-only without Job Graph and success criteria. Value must not be reduced to features.
 
 ## Edit discipline
 
@@ -155,6 +206,10 @@ For a new business idea, Codex must start by reading only:
 6. The new run manifest
 
 Codex must not read NailIt sources unless the new run manifest explicitly imports them.
+
+NailIt is a project. NailIt is not the methodology.
+
+Unavailable or paywalled methodology areas must be marked `UNAVAILABLE_SOURCE`; Codex must not invent missing proprietary algorithms, the full 100+ mechanics catalog, or full unit-economics integration.
 
 ## Stop conditions
 

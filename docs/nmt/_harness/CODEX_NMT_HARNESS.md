@@ -4,6 +4,8 @@ This reusable harness governs Codex workbench runs that use Next Move Theory (NM
 
 It is intentionally product-agnostic. Business-specific context belongs only in a run folder under `docs/nmt/runs/`.
 
+The original Next Move Theory Canon and Skills are the core. The local workbench may operationalize and enforce that core, but must not replace it with generic startup validation, NailIt-specific assumptions, or a simplified checklist.
+
 ## Core Rules
 
 1. Repo truth before document claims. Inspect the repository before making claims about product state, code, tests, docs, behavior, or validation.
@@ -26,6 +28,9 @@ It is intentionally product-agnostic. Business-specific context belongs only in 
 18. No carryover by default. No previous business idea, segment, price, channel, moat, or conclusion may carry over unless the active `RUN_MANIFEST.md` explicitly allows it.
 19. Prior research is context only. Treat prior research as DOC CLAIM unless verified by repo behavior, tests, field evidence, payment, or reliable external source.
 20. Stop on missing app code. Stop if a run requires product-repo work and the repository is empty or does not contain the actual app code for the active product.
+21. Preserve the original NMT core. Serious runs must use `docs/nmt/_harness/METHODOLOGY_PRESERVATION_CONTRACT.md` and `docs/nmt/_harness/METHODOLOGY_COVERAGE_LEDGER.md`.
+22. Methodology words are not coverage. Core concepts must be used as analysis passes, output sections, gates, templates, prompts, or tests.
+23. Mark unavailable methodology. If local sources do not provide an algorithm or full catalog, mark `UNAVAILABLE_SOURCE` and do not invent it.
 
 ## Required Output Header
 
@@ -47,6 +52,47 @@ Every serious diagnosis, research, interview analysis, validation analysis, or r
 5. Final answer
 
 The model may not skip directly from first pass to final answer.
+
+## Required NMT Methodology Passes
+
+Every serious NMT run must explicitly perform or mark `NOT_APPLICABLE` / `UNAVAILABLE_SOURCE` for:
+
+1. Source inventory
+2. Source classification
+3. Evidence extraction
+4. Original NMT core preservation check
+5. Enhancement-layer preservation check
+6. Advanced JTBD
+7. Job as unit of analysis and full Job structure
+8. Big Job / Core Job / Small Jobs / Micro Jobs where applicable
+9. Job Graph and Critical Chain of Jobs
+10. Segment + Job as one analytical entity
+11. Map of Segments when multiple segments exist
+12. Value creation and value-creation mechanics
+13. Aha Moment
+14. Barriers, fears, habit, existing behavior, and Tax Jobs where applicable
+15. Behavior change and switching logic
+16. Consideration set, alternatives, current solutions, and Consideration Activators
+17. RAT/RIT, assumption stack, and cheapest credible evidence against the deadliest assumption
+18. ABCDX where customer/revenue data exists
+19. Unit Economics where pricing/revenue/cost evidence exists
+20. Theory of Constraints / binding constraint
+21. Subtraction before addition
+22. Focus / company attention management
+23. Local optimum vs global optimum
+24. Main algorithm / cyclical next-move logic
+25. Cause-and-effect chain to profit
+26. Field validation gate
+27. BLOCKED / PROCEED by category
+
+Anti-simplification gates:
+
+1. GO means validation, not build approval.
+2. Market size is not demand proof.
+3. User opinion is not payment evidence.
+4. Segmentation is not demographics or ICP alone.
+5. Value is not features.
+6. NailIt is a project, not the methodology.
 
 ## Missing Information Checklist
 

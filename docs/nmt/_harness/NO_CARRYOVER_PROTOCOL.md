@@ -42,6 +42,12 @@ The following may be reused for any idea:
 8. RAT logic
 9. Subtraction before addition
 10. GO means validation
+11. Methodology preservation contract
+12. Methodology coverage ledger
+13. Original NMT core concept list
+14. Anastasia/team/book enhancement layer
+
+Allowed reuse never means carrying over another project's segment, customer assumption, pricing assumption, channel assumption, market conclusion, moat claim, product evidence, or founder evidence.
 
 ## Import rule
 
