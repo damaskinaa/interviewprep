@@ -1,9 +1,14 @@
+import os
 import re
 from pathlib import Path
 
+import pytest
+
 
 BACKEND_ROOT = Path(__file__).resolve().parents[1]
-FRONTEND_ROOT = BACKEND_ROOT.parent / "interview-frontend"
+FRONTEND_ROOT = Path(
+    os.getenv("NAILIT_FRONTEND_ROOT", str(BACKEND_ROOT.parent / "interview-frontend"))
+).expanduser()
 
 
 def read_repo_text(relative_path, root=BACKEND_ROOT):
@@ -264,24 +269,34 @@ def test_answer_quality_guardrails_are_present_static():
     )
 
 
-def test_frontend_backend_env_and_header_contract():
+def test_backend_env_contract_is_required():
     api_source = read_repo_text("api.py")
     backend_env_example = read_optional_text(BACKEND_ROOT / ".env.example")
-    frontend_backend = read_optional_text(FRONTEND_ROOT / "lib" / "backend.ts")
-    frontend_env_example = read_optional_text(FRONTEND_ROOT / ".env.example")
 
     assert 'os.getenv("APP_API_KEY")' in api_source, "Backend must read APP_API_KEY."
-    assert "process.env.APP_API_KEY" in frontend_backend, (
-        "Frontend backend proxy must read APP_API_KEY."
-    )
-    assert '"X-App-Key"' in frontend_backend or "'X-App-Key'" in frontend_backend, (
-        "Frontend backend proxy must send X-App-Key."
-    )
     assert "APP_API_KEY" in backend_env_example, (
         "Backend .env.example must document APP_API_KEY."
     )
     assert "APP_KEY" not in backend_env_example, (
         "Backend .env.example must not document stale APP_KEY instead of APP_API_KEY."
+    )
+
+
+def test_frontend_backend_contract_when_frontend_repo_is_available():
+    frontend_backend_path = FRONTEND_ROOT / "lib" / "backend.ts"
+    if not frontend_backend_path.exists():
+        pytest.skip(
+            "Frontend repo not available in backend-only CI; skipping sibling frontend contract check."
+        )
+
+    frontend_backend = read_repo_text("lib/backend.ts", root=FRONTEND_ROOT)
+    frontend_env_example = read_optional_text(FRONTEND_ROOT / ".env.example")
+
+    assert "process.env.APP_API_KEY" in frontend_backend, (
+        "Frontend backend proxy must read APP_API_KEY."
+    )
+    assert '"X-App-Key"' in frontend_backend or "'X-App-Key'" in frontend_backend, (
+        "Frontend backend proxy must send X-App-Key."
     )
     assert not frontend_env_example or "APP_API_KEY" in frontend_env_example, (
         "Frontend .env.example must document APP_API_KEY when present."
