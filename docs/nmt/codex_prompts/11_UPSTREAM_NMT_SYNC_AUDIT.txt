@@ -1,0 +1,98 @@
+Run an upstream NMT Canon & Skills sync audit.
+
+Do not run NailIt research.
+Do not run market research.
+Do not modify production app code.
+Do not modify frontend code.
+Do not auto-update local canon content.
+Do not update, rewrite, merge, patch, synchronize, or normalize any `docs/nmt` methodology files during this audit unless the user separately gives explicit adoption approval.
+Do not commit.
+
+Important:
+This is a manual review prompt, not an updater.
+
+Read first:
+
+1. docs/nmt/_source_library/agnostic_methodology/UPSTREAM_NMT_SYNC_STATE.md
+2. docs/nmt/_harness/METHODOLOGY_PRESERVATION_CONTRACT.md
+3. docs/nmt/_harness/METHODOLOGY_COVERAGE_LEDGER.md
+4. docs/nmt/_harness/CODEX_NMT_HARNESS_ADVANCED.md
+5. docs/nmt/_harness/OUTPUT_CONTRACT.md
+6. docs/nmt/codex_prompts/10_AGNOSTIC_ADVANCED_NMT_RESEARCH.txt
+7. tests/test_nmt_methodology_coverage_static.py
+8. tests/fixtures/nmt_required_methodology_terms.json
+
+Upstream repository:
+
+https://github.com/zamesin/Next-Move-Theory-Canon-and-Skills
+
+Required audit steps:
+
+1. Read the pinned last reviewed upstream SHA from `UPSTREAM_NMT_SYNC_STATE.md`.
+2. Compare the pinned upstream SHA to current upstream `main`.
+3. List changed upstream files.
+
+Required exact checks:
+
+1. compare the pinned upstream SHA to current upstream `main`
+2. list changed upstream files
+
+Then continue:
+
+4. Classify each changed upstream file or concept as one or more:
+   - ORIGINAL_NMT_CORE_CHANGE
+   - SKILL_CHANGE
+   - DOC_ONLY_CHANGE
+   - NEW_CANON_CONCEPT
+   - RENAMED_CONCEPT
+   - REMOVED_OR_WEAKENED_CONCEPT
+   - UNAVAILABLE_SOURCE_REFERENCE
+5. Decide whether local `docs/nmt` may need an update.
+6. Identify whether the local preservation contract, coverage ledger, harnesses, prompts, templates, or tests would need changes in a future adoption run.
+7. Identify any risk that upstream changes could weaken local Anastasia/team/book enhancements.
+8. Identify any risk that upstream changes could remove, rename, or weaken an original NMT core concept.
+9. Identify any unavailable/paywalled methodology references and mark them `UNAVAILABLE_SOURCE`.
+10. Return `BLOCKED` or `READY_TO_REVIEW`.
+
+Forbidden behavior:
+
+1. No auto-merge.
+2. No auto-rewrite.
+3. No automatic local canon update.
+4. No silent concept deletion.
+5. No weakening original NMT core concepts.
+6. No weakening Anastasia/team/book enhancement rules.
+7. No inventing unavailable/paywalled methodology.
+8. No treating upstream changes as adopted before human approval.
+9. No commit.
+
+Human approval gate:
+
+Any future adoption of upstream changes must happen in a separate manual sync-audit adoption run with explicit human approval.
+
+Before any future adoption commit, require:
+
+1. Methodology preservation check.
+2. Methodology coverage ledger update if needed.
+3. Static methodology coverage tests.
+4. Full test suite.
+5. CI.
+6. Human review of the diff.
+
+Required output:
+
+1. Last reviewed upstream SHA
+2. Current upstream SHA
+3. Upstream changed: yes/no/unknown
+4. Changed upstream files
+5. Change classification
+6. Possible local impact
+7. Original NMT core preservation risks
+8. Anastasia/team/book enhancement preservation risks
+9. Unavailable-source references
+10. Whether local docs/nmt may need an update
+11. What must not be changed automatically
+12. Tests required before adoption
+13. Human approval required: yes
+14. Commit made: no
+15. BLOCKED or READY_TO_REVIEW
