@@ -53,6 +53,7 @@ from lua_memory_engine import add_coach_memory, get_coach_memory, get_relevant_c
 
 APP_API_KEY = os.getenv("APP_API_KEY")
 FRONTEND_ORIGIN = os.getenv("FRONTEND_ORIGIN", "")
+EMAIL_PROVIDER = os.getenv("EMAIL_PROVIDER", "")
 
 allowed_origins = []
 if FRONTEND_ORIGIN:
@@ -82,6 +83,13 @@ app = FastAPI()
 
 from fastapi.responses import JSONResponse
 
+
+def require_app_key(x_app_key: str = Header(default="")):
+    if not APP_API_KEY:
+        raise HTTPException(status_code=500, detail="Server key is not configured")
+    if x_app_key != APP_API_KEY:
+        raise HTTPException(status_code=401, detail="Unauthorized")
+
 @app.exception_handler(HTTPException)
 async def http_exception_handler(request, exc):
     return JSONResponse(
@@ -99,14 +107,29 @@ import logging as _api_logging
 _followup_logger = _api_logging.getLogger("nailit.followup")
 
 def send_email(to_address: str, subject: str, body: str) -> None:
-    """Stub — replace with real email provider (Resend, SendGrid, SES, etc.)."""
-    _followup_logger.info(
-        "FOLLOWUP EMAIL (stub) → %s | subject: %s", to_address, subject
+    """Send follow-up email only when a provider integration is configured."""
+    if not EMAIL_PROVIDER:
+        _followup_logger.warning(
+            "Follow-up email provider is not configured; blocked email to %s",
+            to_address,
+        )
+        raise HTTPException(
+            status_code=501,
+            detail={
+                "error": "email_provider_not_configured",
+                "message": "Follow-up email delivery is not configured.",
+            },
+        )
+    raise HTTPException(
+        status_code=501,
+        detail={
+            "error": "email_provider_not_implemented",
+            "message": "Email provider integration must be implemented before sending follow-ups.",
+        },
     )
-    print(f"[send_email stub] to={to_address!r} subject={subject!r}")
 
 
-@app.post("/internal/send-followups")
+@app.post("/internal/send-followups", dependencies=[Depends(require_app_key)])
 async def send_followups():
     """Called by a daily cron job.
     Sends 30-day offer-rate email to eligible sessions."""
@@ -178,13 +201,13 @@ def check_and_deduct(user_id: str, action: str) -> None:
         )
 
 
-@app.delete("/user/{user_id}/data")
+@app.delete("/user/{user_id}/data", dependencies=[Depends(require_app_key)])
 async def delete_user_account(user_id: str, request: Request):
     """GDPR Article 17 — Right to erasure. Permanently deletes all user data."""
     return delete_user_data(user_id)
 
 
-@app.get("/user/{user_id}/data-export")
+@app.get("/user/{user_id}/data-export", dependencies=[Depends(require_app_key)])
 async def export_user_data(user_id: str):
     """GDPR Article 15 — Right of access. Returns all data held for this user."""
     return get_user_data_export(user_id)
@@ -249,6 +272,8 @@ class SessionCreateRequest(BaseModel):
     answer_bank: str = Field(default="", max_length=240000)
     company_description: str = Field(default="", max_length=120000)
     youtube_transcripts: str = Field(default="", max_length=900000)
+    user_email: str = Field(default="", max_length=320)
+    user_id: str = Field(default="", max_length=160)
 
 
 class ModuleRunRequest(BaseModel):
@@ -266,16 +291,43 @@ class AnswerGenerateRequest(BaseModel):
     role_name: str = Field(default="", max_length=120)
 
 
-def require_app_key(x_app_key: str = Header(default="")):
-    if not APP_API_KEY:
-        raise HTTPException(status_code=500, detail="Server key is not configured")
-    if x_app_key != APP_API_KEY:
-        raise HTTPException(status_code=401, detail="Unauthorized")
+class CheckoutCreateRequest(BaseModel):
+    user_id: str = Field(min_length=1, max_length=160)
+    product: str = Field(min_length=1, max_length=80)
+
+
+class ContributionOutcomeRequest(BaseModel):
+    session_id: str = Field(default="", max_length=160)
+    user_id: str = Field(default="", max_length=160)
+    outcome: str = Field(default="", max_length=120)
+    feedback: str = Field(default="", max_length=4000)
 
 
 @app.get("/")
 def home():
     return {"status": "running", "message": "Interview Intel API is live"}
+
+
+@app.post("/checkout/create", dependencies=[Depends(require_app_key)])
+def checkout_create(req: CheckoutCreateRequest):
+    raise HTTPException(
+        status_code=501,
+        detail={
+            "error": "payment_checkout_not_ready",
+            "message": "Checkout creation is intentionally blocked until product, price, and validation decisions are made.",
+        },
+    )
+
+
+@app.post("/contribution/outcome", dependencies=[Depends(require_app_key)])
+def contribution_outcome(req: ContributionOutcomeRequest):
+    raise HTTPException(
+        status_code=501,
+        detail={
+            "error": "contribution_capture_not_ready",
+            "message": "Outcome and contribution capture are intentionally blocked until the validation loop defines the evidence contract.",
+        },
+    )
 
 
 def _product_json_path(output_path):

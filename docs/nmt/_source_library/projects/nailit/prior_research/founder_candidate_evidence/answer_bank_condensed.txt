@@ -1,0 +1,39 @@
+IDENTITY: Operations/programme manager, 8 yrs, cross-functional global delivery. Led team of ~10 across EMEA/NA/APAC, Meta Partnership account at Cognizant. Pattern: diagnose root constraint in unclear systems, leave them measurably stronger.
+
+METRICS:
+- 34% backlog reduction: cross-regional EMEA/NA/APAC handover system, no authority over regions. Co-designed with regional leads; 2 sceptical leads became advocates via shared data.
+- 77%→93% SLA: found hidden calc error (wrong denominator); rebuilt from 3mo raw data. Also found 40% of "closed" cases reopened, distorting the metric. Chose transparency over a quiet fix.
+- 40 hrs/wk saved: queue redesign + automated routing; response time down ~1hr/case.
+- 14% quality gain: time freed by queue redesign reinvested into quality work.
+- 2 SLAs renegotiated, penalties eliminated, ~15% efficiency gain: solo 72-hr KPI gap analysis, manager on leave, no guidelines. Six Sigma: defined problem per KPI, delegated deep-dives, 5 Whys — manager asked me to lead the resulting client meeting.
+- CSAT response 10%→~50%: added direct survey link at case closure.
+- Agent→SME: diagnosed skill-vs-will gap, built weekly QA + reverse shadowing; top-5 productivity in 3mo, promoted.
+- 23% KPI attainment gain (8→12 met): workflow redesign + sustained coaching.
+
+WEAKNESS: Bias toward execution over delegation — became a bottleneck. Fixed via mapping responsibilities, weekly SME planning. Earlier-career: difficulty saying no — same fix.
+
+MANAGER DISAGREEMENT: Pushed back on plan to terminate an underperformer without recovery attempt; agreed a 4-week plan instead. Agent didn't improve, terminated after — manager was right. Now ask more before disagreeing, use data not instinct.
+
+COLLEAGUE DISAGREEMENT: Disagreed with QA lead over inconsistent rubric scoring; raised it with examples, proposed shared calibration — adopted, scores more consistent.
+
+BAD NEWS: Told team they needed extended hours, no benefit to them. Led with empathy, gave max notice, monitored morale after.
+
+TEAM CONFLICT: Two team members in tension over working styles. Met separately first, then facilitated joint conversation on work not personalities. Resolved, no escalation.
+
+CALCULATED RISK: Gave a high-stakes 1-week client task to a new joiner over the most experienced agent, based on observing her investigate beyond her tasks unprompted. She found what others missed.
+
+FAILURE: Knew a 3-month delivery timeline was unrealistic but stayed silent. Cost 6mo delivery drag, KPI decline, trust damage. Recovered via transparency, biweekly reviews, revised plan. Now do feasibility review before agreeing to major proposals.
+
+INCOMPLETE-DATA DECISION: New project, 2-week launch, no historical data. Assigned 4 agents, monitored 3 months. Data showed overresourced — moved 1 agent elsewhere; team of 3 delivered fine.
+
+UNPOPULAR DECISION: Implemented extended-hours coverage, no team benefit. Owned communication, gave reason upfront, recognised effort publicly.
+
+ABOVE & BEYOND: (1) Partner had unresolved asset-ownership issue; took ownership outside my role, found right Tier 2 contact, ~1mo coordinating — resolved, leadership recognition. (2) Colleague building a tracker tool had no process knowledge, build behind; wrote a process SOP, ran a joint design session — tool built, adopted globally.
+
+CRITICISM RECEIVED: Feedback that presentation detail buried key points. Agreed, switched to headline-first structure. Later presentations better received.
+
+BAD HIRE LESSON: Rushed a hire from a thin pool under deadline pressure; issues persisted, terminated in probation. Now flag thin pools proactively rather than rush.
+
+INFLUENCE WITHOUT AUTHORITY: Fixed an escalation pattern from a gap with a Tier 2 engineering team I had no authority over. Documented 3 months of data, quantified impact — asked for the meeting only after months of reliably delivering on smaller commitments, so trust existed. Agreed in one meeting, implemented in 2 weeks, escalations dropped materially.
+
+ROLE: Operations Manager / Programme Manager / Team Lead, company-agnostic. Background: Cognizant, Meta Partnership account.

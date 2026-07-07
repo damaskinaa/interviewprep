@@ -1,0 +1,27 @@
+Create a new NMT run for a different business idea.
+
+Do not read NailIt sources.
+
+Read only:
+
+docs/nmt/_harness/
+docs/nmt/_templates/
+docs/nmt/_source_library/agnostic_methodology/
+docs/nmt/_source_library/claude_harness_docs/
+docs/nmt/_source_library/validation_gate/
+docs/nmt/_source_library/nmt_methodology_feedback/
+
+Create:
+
+docs/nmt/_source_library/projects/{project_name}/
+docs/nmt/runs/{date}_{project_name}_{run_type}/
+
+Create RUN_MANIFEST.md and input files.
+
+Do not import any project specific source unless I explicitly provide it.
+
+Do not carry over any segment, price, channel, market, moat, or conclusion from NailIt.
+
+Show diff.
+
+Do not commit.

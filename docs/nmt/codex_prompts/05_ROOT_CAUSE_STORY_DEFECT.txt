@@ -1,0 +1,11 @@
+Read only root cause investigation.
+
+Investigate answer generation, story extraction, story inventory, story selection, boilerplate insertion, metric grounding, forbidden claim detection, and hallucination guard.
+
+Find where story inventory shrinks or boilerplate leaks.
+
+Return ranked hypotheses with file paths and evidence.
+
+Do not patch.
+
+End with validation gate.

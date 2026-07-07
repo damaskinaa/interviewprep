@@ -69,6 +69,7 @@ def _fallback_answer(question, label, candidate_profile, assigned_story):
     result = normalize_text(story.get("result")) or "a measurable operating improvement"
     metrics = ", ".join(_as_list(story.get("metrics") or story.get("metrics_provided"))) or "the verified operating metric"
     answer = (
+        f"Fallback/manual review required: this answer was assembled from grounded candidate evidence because generated options were unavailable or outside quality bounds. "
         f"The stake I would open with is that this question is really about turning an unclear operating constraint into an accountable plan. "
         f"The closest evidence I would use is {title}, because it shows the candidate working inside a real operating problem rather than speaking theoretically. "
         f"The decision was to make the issue visible, clarify ownership, and create a repeatable rhythm so the team could act on facts instead of assumptions. "

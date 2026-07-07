@@ -1,0 +1,21 @@
+Tests only.
+
+No production logic changes.
+
+Add tests for:
+
+1. Story diversity across realistic answer set
+2. No repeated boilerplate
+3. More than two candidate stories available where source has more
+4. No unsupported metric
+5. No forbidden role claim
+6. Existing hallucination guard still passes
+7. Existing forbidden claim detection still passes
+
+Use fixtures.
+
+Avoid external API.
+
+Run tests.
+
+End with validation gate.

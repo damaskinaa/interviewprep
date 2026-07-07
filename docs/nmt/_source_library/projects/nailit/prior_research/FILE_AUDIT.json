@@ -1,0 +1,152 @@
+[
+  {
+    "path": "nailit_prior_research/00_read_first/previous_cleanup_notes.md",
+    "bytes": 1439,
+    "sha256": "8e5d182c205c6967f6fb741a17316e641184914ae5c671ba3f2787192c0a1e8a"
+  },
+  {
+    "path": "nailit_prior_research/active_product_sources/FULL_PORTFOLIO_HANDOFF_2026_07_03.md",
+    "bytes": 34290,
+    "sha256": "6eb2a49615ca572eef28493cb53b77dde37f2ed187ffb84307c9c15fa3f21b43"
+  },
+  {
+    "path": "nailit_prior_research/active_product_sources/MASTER_INDEX_2026_07_03.md",
+    "bytes": 4709,
+    "sha256": "c038af85dca995bee4f3549a16aa6ece4ffaedf924c40f78fb6b70d707181643"
+  },
+  {
+    "path": "nailit_prior_research/active_product_sources/NAILIT_MASTER_2026_07_03.md",
+    "bytes": 127728,
+    "sha256": "0bc2fb5f874cd3151831849fe774639b546f416bf109312dbdd35dcf15bc33dc"
+  },
+  {
+    "path": "nailit_prior_research/active_research_context/NAILIT_NMT_FULL_CANON_RUN_2026_07_04.md",
+    "bytes": 23226,
+    "sha256": "102fd4007f3945f864712420ec4535c620888d4b463f8eff8845ccdce9dc92b0"
+  },
+  {
+    "path": "nailit_prior_research/active_research_context/NMT_MARKET_RESEARCH_DEEP_MODE_2026_07_05.md",
+    "bytes": 224560,
+    "sha256": "78637eb401706547b59c37038f759febdfb9da4a320e51a4717b4f3512f19c89"
+  },
+  {
+    "path": "nailit_prior_research/archive_superseded/NAILIT_ADDENDUM_DEFENSIBILITY_FEASIBILITY_2026_06_22.md",
+    "bytes": 19932,
+    "sha256": "8d40cddf0b927bb441bfdbc8dc6257b53c763b231b3a12f2d06bb32747225cc9"
+  },
+  {
+    "path": "nailit_prior_research/archive_superseded/NAILIT_COMPLETE_PMD_2026_06_22.md",
+    "bytes": 52594,
+    "sha256": "6a72c562c1666e02a245698b1289a3e7445f6b98218dee8bf94b682477ecb8ef"
+  },
+  {
+    "path": "nailit_prior_research/archive_superseded/NAILIT_HANDOFF_2026_06_13.md",
+    "bytes": 15945,
+    "sha256": "99c18d3c9d6871cb02d77808b7e79ec05098ec285e3f8ec89c033088e823ee77"
+  },
+  {
+    "path": "nailit_prior_research/archive_superseded/NAILIT_MASTER_FORMATTED_OLDER_2026_06_23.pdf",
+    "bytes": 95567,
+    "sha256": "fa2f33d49690945ed0f7a62b26b4c53e5138ea357673865b6d6ab6874b6722dd"
+  },
+  {
+    "path": "nailit_prior_research/archive_superseded/NAILIT_MASTER_OLDER_2026_06_23.md",
+    "bytes": 89557,
+    "sha256": "dc40df5c8fa6bcda476555d5dfd544758b7131343d97d8cc321c6aa72bb8ad06"
+  },
+  {
+    "path": "nailit_prior_research/archive_superseded/NAILIT_PMD_2026_06_13.md",
+    "bytes": 46247,
+    "sha256": "e64acae05c0f157d3af08285b264f5593001b71579ea947c4d67bdad28cade53"
+  },
+  {
+    "path": "nailit_prior_research/archive_superseded/NAILIT_ULTIMATE_HANDOFF_2026_06_23.md",
+    "bytes": 25605,
+    "sha256": "85439c5d7318777471a5b92a7e4b48bf5fdb0410fd64069768a7952c0abf314a"
+  },
+  {
+    "path": "nailit_prior_research/duplicate_copies_do_not_use/FULL_PORTFOLIO_HANDOFF dup.md",
+    "bytes": 34290,
+    "sha256": "6eb2a49615ca572eef28493cb53b77dde37f2ed187ffb84307c9c15fa3f21b43"
+  },
+  {
+    "path": "nailit_prior_research/duplicate_copies_do_not_use/MASTER_INDEX.md",
+    "bytes": 4709,
+    "sha256": "c038af85dca995bee4f3549a16aa6ece4ffaedf924c40f78fb6b70d707181643"
+  },
+  {
+    "path": "nailit_prior_research/duplicate_copies_do_not_use/MASTER_INDEXdup(1).md",
+    "bytes": 4709,
+    "sha256": "c038af85dca995bee4f3549a16aa6ece4ffaedf924c40f78fb6b70d707181643"
+  },
+  {
+    "path": "nailit_prior_research/duplicate_copies_do_not_use/MASTER_INDEXdup.md",
+    "bytes": 4709,
+    "sha256": "c038af85dca995bee4f3549a16aa6ece4ffaedf924c40f78fb6b70d707181643"
+  },
+  {
+    "path": "nailit_prior_research/duplicate_copies_do_not_use/NAILIT_MASTER new(1).md",
+    "bytes": 127728,
+    "sha256": "0bc2fb5f874cd3151831849fe774639b546f416bf109312dbdd35dcf15bc33dc"
+  },
+  {
+    "path": "nailit_prior_research/duplicate_copies_do_not_use/NAILIT_MASTER new.md",
+    "bytes": 127728,
+    "sha256": "0bc2fb5f874cd3151831849fe774639b546f416bf109312dbdd35dcf15bc33dc"
+  },
+  {
+    "path": "nailit_prior_research/duplicate_copies_do_not_use/NAILIT_MASTER. ZAMESIN.md",
+    "bytes": 127728,
+    "sha256": "0bc2fb5f874cd3151831849fe774639b546f416bf109312dbdd35dcf15bc33dc"
+  },
+  {
+    "path": "nailit_prior_research/duplicate_copies_do_not_use/NAILIT_MASTER_1.md",
+    "bytes": 127728,
+    "sha256": "0bc2fb5f874cd3151831849fe774639b546f416bf109312dbdd35dcf15bc33dc"
+  },
+  {
+    "path": "nailit_prior_research/duplicate_copies_do_not_use/NAILIT_MASTERdup(1).md",
+    "bytes": 127728,
+    "sha256": "0bc2fb5f874cd3151831849fe774639b546f416bf109312dbdd35dcf15bc33dc"
+  },
+  {
+    "path": "nailit_prior_research/duplicate_copies_do_not_use/NAILIT_MASTERdup.md",
+    "bytes": 127728,
+    "sha256": "0bc2fb5f874cd3151831849fe774639b546f416bf109312dbdd35dcf15bc33dc"
+  },
+  {
+    "path": "nailit_prior_research/duplicate_copies_do_not_use/nailit-MASTER-complete-final(1).md",
+    "bytes": 224560,
+    "sha256": "78637eb401706547b59c37038f759febdfb9da4a320e51a4717b4f3512f19c89"
+  },
+  {
+    "path": "nailit_prior_research/duplicate_copies_do_not_use/nailit-MASTER-complete-final.md",
+    "bytes": 224560,
+    "sha256": "78637eb401706547b59c37038f759febdfb9da4a320e51a4717b4f3512f19c89"
+  },
+  {
+    "path": "nailit_prior_research/duplicate_copies_do_not_use/nailit-new-frontiers-application-answers2.md",
+    "bytes": 35999,
+    "sha256": "2f124d1361818faf20ff41a3962fbbb2acb8d7f51ea698bf352c6c4e9cc9e41a"
+  },
+  {
+    "path": "nailit_prior_research/founder_candidate_evidence/answer_bank_condensed.txt",
+    "bytes": 4160,
+    "sha256": "008b91bb227ab06fcd523ef476dd8d7ff3af09521bca0461541c7d409b840358"
+  },
+  {
+    "path": "nailit_prior_research/methodology_reference/Hermes_NMT_Pipeline_Run_GENERIC_NOT_NAILIT.md",
+    "bytes": 39538,
+    "sha256": "72ac27f8c11eb5fdfa9ba56d6f02ad2c4befe23bd00b83d4f3ae805d144d5b3f"
+  },
+  {
+    "path": "new_frontiers/nailit_new_frontiers_application_answers.md",
+    "bytes": 35999,
+    "sha256": "2f124d1361818faf20ff41a3962fbbb2acb8d7f51ea698bf352c6c4e9cc9e41a"
+  },
+  {
+    "path": "new_frontiers/nailit_new_frontiers_application_evidence_audit.csv",
+    "bytes": 4537,
+    "sha256": "1f56791c831939d4f1990d9b49c5bec0599c673057ecd8408e0f412ec58053bf"
+  }
+]

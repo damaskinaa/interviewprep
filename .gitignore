@@ -5,6 +5,8 @@
 __pycache__
 *.pyc
 .venv
+.pytest_cache/
+jobs/
 cv.txt
 extra_context.txt
 job_description.txt

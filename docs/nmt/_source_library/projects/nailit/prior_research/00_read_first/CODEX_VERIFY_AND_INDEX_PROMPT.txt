@@ -1,0 +1,61 @@
+Check the maximum complete NailIt source library.
+
+Do not run diagnosis.
+Do not run market research.
+Do not modify production code.
+Do not commit.
+
+Inspect:
+
+docs/nmt/_source_library/projects/nailit/prior_research/
+docs/nmt/_source_library/projects/nailit/new_frontiers/
+
+Report:
+
+1. Final file tree.
+2. Whether active_product_sources/NAILIT_MASTER_2026_07_03.md exists.
+3. Whether active_research_context/NMT_MARKET_RESEARCH_DEEP_MODE_2026_07_05.md exists.
+4. Whether active_research_context/NAILIT_NMT_FULL_CANON_RUN_2026_07_04.md exists.
+5. Whether founder_candidate_evidence/answer_bank_condensed.txt exists.
+6. Whether methodology_reference/Hermes_NMT_Pipeline_Run_GENERIC_NOT_NAILIT.md exists.
+7. Whether new_frontiers/nailit_new_frontiers_application_answers.md exists.
+8. Whether new_frontiers/nailit_new_frontiers_application_evidence_audit.csv exists.
+9. Whether archive_superseded exists.
+10. Whether duplicate_copies_do_not_use exists.
+11. Whether missing_expected_files/MISSING_EXPECTED_FILES.md exists.
+12. Whether any loose files remain directly inside nailit_prior_research.
+
+Then update:
+
+docs/nmt/runs/2026_07_07_nailit_validation_readiness/input/02_prior_research_index.md
+
+Use:
+
+docs/nmt/_source_library/projects/nailit/prior_research/00_read_first/02_prior_research_index_replacement.md
+
+It must say:
+
+All prior research is DOC CLAIM only unless verified by repo behavior, tests, field evidence, payment evidence, or reliable external source.
+
+It must say:
+
+The July 5 NMT market research run is research context, not proof of demand.
+
+It must say:
+
+The July 4 full canon NMT run is research context, not proof of demand.
+
+It must say:
+
+Hermes_NMT_Pipeline_Run_GENERIC_NOT_NAILIT.md is methodology reference only because it scored a generic invented product, not NailIt.
+
+It must say:
+
+Archive files are preserved for traceability but must not be used as current truth unless the current RUN_MANIFEST.md explicitly allows it.
+
+It must say:
+
+The library is sufficient for validation readiness diagnosis, but missing expected files mean it is not a complete historical archive.
+
+Show the diff.
+Do not commit.

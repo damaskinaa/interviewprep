@@ -1,0 +1,9 @@
+Narrow patch only.
+
+Fix only the proven root cause from the test failure.
+
+Do not touch auth, payments, email, contribution capture, voice, marketplace, model provider, infrastructure, or unrelated prompts.
+
+Run tests.
+
+End with validation gate.

@@ -1,0 +1,181 @@
+# File Audit
+
+## nailit_prior_research/00_read_first/previous_cleanup_notes.md
+
+Bytes: 1439
+
+SHA256: 8e5d182c205c6967f6fb741a17316e641184914ae5c671ba3f2787192c0a1e8a
+
+## nailit_prior_research/active_product_sources/FULL_PORTFOLIO_HANDOFF_2026_07_03.md
+
+Bytes: 34290
+
+SHA256: 6eb2a49615ca572eef28493cb53b77dde37f2ed187ffb84307c9c15fa3f21b43
+
+## nailit_prior_research/active_product_sources/MASTER_INDEX_2026_07_03.md
+
+Bytes: 4709
+
+SHA256: c038af85dca995bee4f3549a16aa6ece4ffaedf924c40f78fb6b70d707181643
+
+## nailit_prior_research/active_product_sources/NAILIT_MASTER_2026_07_03.md
+
+Bytes: 127728
+
+SHA256: 0bc2fb5f874cd3151831849fe774639b546f416bf109312dbdd35dcf15bc33dc
+
+## nailit_prior_research/active_research_context/NAILIT_NMT_FULL_CANON_RUN_2026_07_04.md
+
+Bytes: 23226
+
+SHA256: 102fd4007f3945f864712420ec4535c620888d4b463f8eff8845ccdce9dc92b0
+
+## nailit_prior_research/active_research_context/NMT_MARKET_RESEARCH_DEEP_MODE_2026_07_05.md
+
+Bytes: 224560
+
+SHA256: 78637eb401706547b59c37038f759febdfb9da4a320e51a4717b4f3512f19c89
+
+## nailit_prior_research/archive_superseded/NAILIT_ADDENDUM_DEFENSIBILITY_FEASIBILITY_2026_06_22.md
+
+Bytes: 19932
+
+SHA256: 8d40cddf0b927bb441bfdbc8dc6257b53c763b231b3a12f2d06bb32747225cc9
+
+## nailit_prior_research/archive_superseded/NAILIT_COMPLETE_PMD_2026_06_22.md
+
+Bytes: 52594
+
+SHA256: 6a72c562c1666e02a245698b1289a3e7445f6b98218dee8bf94b682477ecb8ef
+
+## nailit_prior_research/archive_superseded/NAILIT_HANDOFF_2026_06_13.md
+
+Bytes: 15945
+
+SHA256: 99c18d3c9d6871cb02d77808b7e79ec05098ec285e3f8ec89c033088e823ee77
+
+## nailit_prior_research/archive_superseded/NAILIT_MASTER_FORMATTED_OLDER_2026_06_23.pdf
+
+Bytes: 95567
+
+SHA256: fa2f33d49690945ed0f7a62b26b4c53e5138ea357673865b6d6ab6874b6722dd
+
+## nailit_prior_research/archive_superseded/NAILIT_MASTER_OLDER_2026_06_23.md
+
+Bytes: 89557
+
+SHA256: dc40df5c8fa6bcda476555d5dfd544758b7131343d97d8cc321c6aa72bb8ad06
+
+## nailit_prior_research/archive_superseded/NAILIT_PMD_2026_06_13.md
+
+Bytes: 46247
+
+SHA256: e64acae05c0f157d3af08285b264f5593001b71579ea947c4d67bdad28cade53
+
+## nailit_prior_research/archive_superseded/NAILIT_ULTIMATE_HANDOFF_2026_06_23.md
+
+Bytes: 25605
+
+SHA256: 85439c5d7318777471a5b92a7e4b48bf5fdb0410fd64069768a7952c0abf314a
+
+## nailit_prior_research/duplicate_copies_do_not_use/FULL_PORTFOLIO_HANDOFF dup.md
+
+Bytes: 34290
+
+SHA256: 6eb2a49615ca572eef28493cb53b77dde37f2ed187ffb84307c9c15fa3f21b43
+
+## nailit_prior_research/duplicate_copies_do_not_use/MASTER_INDEX.md
+
+Bytes: 4709
+
+SHA256: c038af85dca995bee4f3549a16aa6ece4ffaedf924c40f78fb6b70d707181643
+
+## nailit_prior_research/duplicate_copies_do_not_use/MASTER_INDEXdup(1).md
+
+Bytes: 4709
+
+SHA256: c038af85dca995bee4f3549a16aa6ece4ffaedf924c40f78fb6b70d707181643
+
+## nailit_prior_research/duplicate_copies_do_not_use/MASTER_INDEXdup.md
+
+Bytes: 4709
+
+SHA256: c038af85dca995bee4f3549a16aa6ece4ffaedf924c40f78fb6b70d707181643
+
+## nailit_prior_research/duplicate_copies_do_not_use/NAILIT_MASTER new(1).md
+
+Bytes: 127728
+
+SHA256: 0bc2fb5f874cd3151831849fe774639b546f416bf109312dbdd35dcf15bc33dc
+
+## nailit_prior_research/duplicate_copies_do_not_use/NAILIT_MASTER new.md
+
+Bytes: 127728
+
+SHA256: 0bc2fb5f874cd3151831849fe774639b546f416bf109312dbdd35dcf15bc33dc
+
+## nailit_prior_research/duplicate_copies_do_not_use/NAILIT_MASTER. ZAMESIN.md
+
+Bytes: 127728
+
+SHA256: 0bc2fb5f874cd3151831849fe774639b546f416bf109312dbdd35dcf15bc33dc
+
+## nailit_prior_research/duplicate_copies_do_not_use/NAILIT_MASTER_1.md
+
+Bytes: 127728
+
+SHA256: 0bc2fb5f874cd3151831849fe774639b546f416bf109312dbdd35dcf15bc33dc
+
+## nailit_prior_research/duplicate_copies_do_not_use/NAILIT_MASTERdup(1).md
+
+Bytes: 127728
+
+SHA256: 0bc2fb5f874cd3151831849fe774639b546f416bf109312dbdd35dcf15bc33dc
+
+## nailit_prior_research/duplicate_copies_do_not_use/NAILIT_MASTERdup.md
+
+Bytes: 127728
+
+SHA256: 0bc2fb5f874cd3151831849fe774639b546f416bf109312dbdd35dcf15bc33dc
+
+## nailit_prior_research/duplicate_copies_do_not_use/nailit-MASTER-complete-final(1).md
+
+Bytes: 224560
+
+SHA256: 78637eb401706547b59c37038f759febdfb9da4a320e51a4717b4f3512f19c89
+
+## nailit_prior_research/duplicate_copies_do_not_use/nailit-MASTER-complete-final.md
+
+Bytes: 224560
+
+SHA256: 78637eb401706547b59c37038f759febdfb9da4a320e51a4717b4f3512f19c89
+
+## nailit_prior_research/duplicate_copies_do_not_use/nailit-new-frontiers-application-answers2.md
+
+Bytes: 35999
+
+SHA256: 2f124d1361818faf20ff41a3962fbbb2acb8d7f51ea698bf352c6c4e9cc9e41a
+
+## nailit_prior_research/founder_candidate_evidence/answer_bank_condensed.txt
+
+Bytes: 4160
+
+SHA256: 008b91bb227ab06fcd523ef476dd8d7ff3af09521bca0461541c7d409b840358
+
+## nailit_prior_research/methodology_reference/Hermes_NMT_Pipeline_Run_GENERIC_NOT_NAILIT.md
+
+Bytes: 39538
+
+SHA256: 72ac27f8c11eb5fdfa9ba56d6f02ad2c4befe23bd00b83d4f3ae805d144d5b3f
+
+## new_frontiers/nailit_new_frontiers_application_answers.md
+
+Bytes: 35999
+
+SHA256: 2f124d1361818faf20ff41a3962fbbb2acb8d7f51ea698bf352c6c4e9cc9e41a
+
+## new_frontiers/nailit_new_frontiers_application_evidence_audit.csv
+
+Bytes: 4537
+
+SHA256: 1f56791c831939d4f1990d9b49c5bec0599c673057ecd8408e0f412ec58053bf

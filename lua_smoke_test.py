@@ -1,22 +1,31 @@
 import json
+import os
 import time
 import urllib.request
 
 base = "http://127.0.0.1:8000"
 session_id = "smoke-test-" + str(int(time.time()))
+app_api_key = os.getenv("APP_API_KEY", "")
+
+def auth_headers():
+    headers = {"Content-Type": "application/json"}
+    if app_api_key:
+        headers["X-App-Key"] = app_api_key
+    return headers
 
 def post(path, payload, timeout=180):
     req = urllib.request.Request(
         base + path,
         data=json.dumps(payload).encode(),
-        headers={"Content-Type": "application/json"},
+        headers=auth_headers(),
         method="POST",
     )
     with urllib.request.urlopen(req, timeout=timeout) as res:
         return res.status, json.loads(res.read().decode())
 
 def get(path, timeout=30):
-    with urllib.request.urlopen(base + path, timeout=timeout) as res:
+    req = urllib.request.Request(base + path, headers=auth_headers(), method="GET")
+    with urllib.request.urlopen(req, timeout=timeout) as res:
         return res.status, json.loads(res.read().decode())
 
 checks = {}

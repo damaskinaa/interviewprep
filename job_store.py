@@ -9,6 +9,7 @@ from pathlib import Path
 logger = logging.getLogger(__name__)
 
 DATABASE_URL = os.getenv("DATABASE_URL", "")
+LUA_DB_BASE_DIR_ENV = "LUA_DB_BASE_DIR"
 
 
 def get_db():
@@ -32,6 +33,8 @@ _SESSION_LIMITS = {
     "raw_answer_bank":      4000,
     "raw_company_context":  2000,
     "raw_youtube_transcripts": 4000,
+    "user_email":            320,
+    "user_id":               160,
 }
 
 def _truncate_session_fields(**fields):
@@ -51,6 +54,17 @@ def _truncate_session_fields(**fields):
 
 
 DB_PATH = Path("nailit_jobs.db")
+
+
+def _lua_db_path(db_name: str) -> Path:
+    """
+    Resolve Lua sidecar DBs inside an explicit base directory when configured.
+    Default remains the current working directory to preserve existing local behavior.
+    """
+    base_dir = os.getenv(LUA_DB_BASE_DIR_ENV, "")
+    if base_dir:
+        return Path(base_dir).expanduser() / db_name
+    return Path(db_name)
 
 
 def _now():
@@ -300,6 +314,8 @@ def create_session(session_id, payload):
         raw_answer_bank=payload.get("answer_bank", ""),
         raw_company_context=payload.get("company_description", ""),
         raw_youtube_transcripts=payload.get("youtube_transcripts", ""),
+        user_email=payload.get("user_email", ""),
+        user_id=payload.get("user_id", ""),
     )
     with _connect() as con:
         con.execute(
@@ -307,8 +323,8 @@ def create_session(session_id, payload):
             INSERT INTO sessions (
                 session_id, company_name, role_name, raw_jd, raw_cv,
                 raw_answer_bank, raw_company_context, raw_youtube_transcripts,
-                created_at, updated_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                created_at, updated_at, user_email, user_id
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 session_id,
@@ -321,6 +337,8 @@ def create_session(session_id, payload):
                 safe["raw_youtube_transcripts"],
                 now,
                 now,
+                safe["user_email"],
+                safe["user_id"] or session_id,
             ),
         )
         con.commit()
@@ -510,33 +528,66 @@ def delete_user_data(user_id: str) -> dict:
             "SELECT session_id FROM sessions WHERE user_id = ?",
             (user_id,),
         ).fetchall()
+        session_ids = [row[0] for row in rows]
 
         deleted_sessions = 0
-        for row in rows:
-            workspace = Path("jobs") / row[0]
+        for session_id in session_ids:
+            workspace = Path("jobs") / session_id
             if workspace.exists():
                 try:
                     shutil.rmtree(workspace)
                 except Exception as exc:
-                    logger.warning("delete_user_data: could not remove workspace %s — %s", row[0], exc)
+                    logger.warning("delete_user_data: could not remove workspace %s — %s", session_id, exc)
             deleted_sessions += 1
+
+        deleted_jobs = 0
+        if session_ids:
+            placeholders = ",".join("?" for _ in session_ids)
+            cursor = con.execute(
+                f"DELETE FROM jobs WHERE json_extract(input_payload, '$.session_id') IN ({placeholders})",
+                session_ids,
+            )
+            deleted_jobs = cursor.rowcount if cursor.rowcount is not None else 0
 
         con.execute("DELETE FROM sessions WHERE user_id = ?", (user_id,))
         con.execute("DELETE FROM credits WHERE user_id = ?", (user_id,))
         con.execute("DELETE FROM credit_transactions WHERE user_id = ?", (user_id,))
-        # Jobs linked via JSON payload — remove orphaned job rows
-        con.execute(
-            "DELETE FROM jobs WHERE json_extract(input_payload, '$.session_id') IN "
-            "(SELECT session_id FROM sessions WHERE user_id = ?)",
-            (user_id,),
-        )
         con.commit()
+
+    deleted_lua_rows = {}
+    # Lua stores are session-scoped. Global Lua memory is intentionally retained because it is not user-owned.
+    lua_stores = [
+        ("lua_sessions.db", "lua_turns", "lua_session"),
+        ("lua_benchmark_sessions.db", "benchmark_events", "benchmark"),
+        ("lua_memory.db", "coach_memory", "memory"),
+        ("lua_mastery.db", "mastery", "mastery"),
+    ]
+    for db_name, table_name, label in lua_stores:
+        deleted_lua_rows[label] = _delete_sqlite_session_rows(db_name, table_name, session_ids)
 
     return {
         "user_id": user_id,
         "deleted_sessions": deleted_sessions,
+        "deleted_jobs": deleted_jobs,
+        "deleted_lua_rows": deleted_lua_rows,
         "status": "complete",
     }
+
+
+def _delete_sqlite_session_rows(db_name: str, table_name: str, session_ids: list[str]) -> int:
+    if not session_ids:
+        return 0
+    db_path = _lua_db_path(db_name)
+    if not db_path.exists():
+        return 0
+    placeholders = ",".join("?" for _ in session_ids)
+    with sqlite3.connect(db_path) as con:
+        cursor = con.execute(
+            f"DELETE FROM {table_name} WHERE session_id IN ({placeholders})",
+            session_ids,
+        )
+        con.commit()
+        return cursor.rowcount if cursor.rowcount is not None else 0
 
 
 def get_user_data_export(user_id: str) -> dict:

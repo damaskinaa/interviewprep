@@ -1,0 +1,34 @@
+Start a new NMT run for a new business idea.
+
+Do not run diagnosis yet.
+Do not run market research yet.
+Do not modify production code.
+Do not commit.
+
+Read only:
+
+docs/nmt/START_HERE_FOR_ANASTASIA.md
+docs/nmt/WORKBENCH_READY_STATUS.md
+docs/nmt/_harness/
+docs/nmt/_templates/
+docs/nmt/_source_library/agnostic_methodology/
+docs/nmt/_source_library/claude_harness_docs/
+docs/nmt/_source_library/validation_gate/
+docs/nmt/_source_library/nmt_methodology_feedback/
+
+Create:
+
+docs/nmt/_source_library/projects/{project_name}/
+docs/nmt/runs/{date}_{project_name}_{run_type}/
+
+Create a RUN_MANIFEST.md from docs/nmt/_templates/RUN_MANIFEST_TEMPLATE.md.
+
+Do not read docs/nmt/_source_library/projects/nailit unless this new run manifest explicitly imports NailIt as DOC CLAIM analogy context.
+
+No NailIt source, segment, pricing, market size, channel, moat, validation conclusion, customer assumption, product assumption, or founder evidence may carry into this run unless the new RUN_MANIFEST.md explicitly imports it as DOC CLAIM context.
+
+Use claim labels from docs/nmt/_harness/CLAIM_TAGGING_SCHEMA.md.
+
+Stop after project setup and show the diff.
+
+Do not commit.

@@ -1,0 +1,34 @@
+Final audit the NMT workbench for reuse.
+
+Do not run diagnosis.
+Do not run market research.
+Do not modify production code.
+Do not commit.
+
+Inspect:
+
+docs/nmt/_harness/
+docs/nmt/_templates/
+docs/nmt/_source_library/
+docs/nmt/runs/2026_07_07_nailit_validation_readiness/
+
+Confirm all expected folders and files exist.
+
+Confirm NailIt lives only under:
+
+docs/nmt/_source_library/projects/nailit/
+
+Confirm reusable methodology lives under:
+
+docs/nmt/_source_library/agnostic_methodology/
+docs/nmt/_source_library/claude_harness_docs/
+docs/nmt/_source_library/validation_gate/
+docs/nmt/_source_library/nmt_methodology_feedback/
+
+Confirm no future run will read NailIt unless its RUN_MANIFEST.md explicitly imports NailIt as DOC CLAIM.
+
+Update harness and manifest if needed.
+
+Show diff.
+
+Do not commit.

@@ -1,0 +1,18 @@
+Read only harness audit.
+
+Audit every test, script, smoke test, fixture, local run command, harness, and setup path.
+
+For each, report:
+
+1. File path
+2. What it proves
+3. What it does not prove
+4. Local or external
+5. Mocks or real services
+6. Deterministic or flaky
+7. Whether it protects user trust
+8. Whether it blocks validation
+
+Do not patch.
+
+End with validation gate.

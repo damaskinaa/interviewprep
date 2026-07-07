@@ -1,0 +1,47 @@
+$nmt-diagnose
+
+Use:
+
+docs/nmt/_harness/CODEX_NMT_HARNESS_ADVANCED.md
+docs/nmt/runs/2026_07_07_nailit_validation_readiness/RUN_MANIFEST.md
+
+This is a fresh NailIt validation readiness run.
+
+Use repo evidence first.
+
+Use prior documents only as DOC CLAIM unless verified by repo behavior, tests, field evidence, payment evidence, or reliable external source.
+
+Treat every unverified business claim as HYPOTHESIS.
+
+Use this analysis integrity loop:
+
+1. First pass
+2. Self critique
+3. Evidence check
+4. Missing information list
+5. Final answer
+
+Do not skip directly from first pass to final answer.
+
+Explicitly check:
+
+1. What we still do not know
+2. Missing respondent types
+3. Missing non-buyer evidence
+4. Missing consideration set
+5. Missing near-purchase barriers
+6. Missing price threshold
+7. Unclear first Aha moment
+8. Whether alternatives were explored
+9. Whether willingness to pay is behavior or opinion
+10. Whether payment evidence exists
+11. Whether stated interest is separated from observed behavior
+12. What evidence would change the conclusion
+
+Run existing product diagnosis focused on validation readiness.
+
+Output:
+
+docs/nmt/runs/2026_07_07_nailit_validation_readiness/output/diagnosis.md
+
+End with validation gate.
