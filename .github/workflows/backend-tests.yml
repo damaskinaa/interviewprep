@@ -1,0 +1,39 @@
+name: Backend tests
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  tests:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install test dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install \
+            fastapi \
+            httpx \
+            openai \
+            pydantic \
+            pytest \
+            python-dotenv \
+            stripe
+
+      - name: Run tests
+        env:
+          APP_API_KEY: ci-test-key
+          OPENAI_API_KEY: ci-disabled-openai
+          TAVILY_API_KEY: ci-disabled-tavily
+          STRIPE_SECRET_KEY: sk_test_no_network
+          STRIPE_WEBHOOK_SECRET: whsec_test_no_network
+        run: python -m pytest tests -q
