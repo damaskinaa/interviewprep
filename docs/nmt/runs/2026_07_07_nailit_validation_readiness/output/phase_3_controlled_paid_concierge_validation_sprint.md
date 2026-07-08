@@ -25,7 +25,9 @@ Commit: none
 
 Primary test question:
 
-`PAYMENT EVIDENCE` Will at least 3 of 10 eligible candidates pay a deposit or full test price before delivery?
+`PAYMENT EVIDENCE` Will highly screened candidates with real upcoming interviews make a real paid commitment before delivery, such as a small non-refundable deposit or full test payment?
+
+`CLARIFICATION` Payment is the anti-fake-interest gate, not the whole validation result. This sprint does not test whether NailIt is generally validated as a self-serve interview app. It tests one narrow founder-led concierge wedge: company-specific prep pack plus one mock practice session for candidates with urgent real interviews.
 
 Secondary test questions:
 
@@ -346,7 +348,9 @@ Evidence labels:
 3. `PAYMENT EVIDENCE` Repeat-payment intent is not payment evidence until paid.
 4. `NO EVIDENCE` Interview outcome is not solely attributable to NailIt.
 
-## 16. Success Criteria
+## 16. Continuation Criteria
+
+These criteria decide whether to continue controlled concierge validation. They do not prove product-market fit, do not authorize self-serve launch, and do not prove NailIt demand.
 
 Minimum success:
 
@@ -367,9 +371,9 @@ Strong success:
 4. `FIELD DATA` At least 3 candidates show clear before/after answer improvement.
 5. `FIELD DATA` At least 2 candidates say they would use it again for another interview.
 
-## 17. Kill Criteria
+## 17. Stop / Redesign Criteria
 
-Kill or pivot the wedge if any occur:
+Stop, narrow, or redesign this concierge wedge if any occur. These signals do not automatically kill NailIt; they block self-serve launch and force diagnosis of segment, offer, price, source trust, privacy, Lua feedback, or delivery cost:
 
 1. `BLOCKED` Fewer than 3 of 10 eligible candidates pay any deposit or price.
 2. `BLOCKED` Most buyers say generic ChatGPT/Claude/Gemini would be enough after seeing the output.
@@ -492,7 +496,7 @@ Allowed manual work:
 
 ## 21. Final GO / NO-GO Decision Rule
 
-GO means go to the next validation loop, not build.
+GO means continue controlled validation, not launch, not build, and not claim that NailIt is validated.
 
 GO to next validation loop if:
 
