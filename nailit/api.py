@@ -1,4 +1,6 @@
 import os
+import shutil
+import statistics
 import threading
 import uuid
 from datetime import datetime
@@ -319,12 +321,13 @@ def mock_page():
 @app.post("/voice/say")
 def voice_say(req: VoiceSayRequest):
     """Audio for the interviewer's latest line (the first question, or a reply to a typed answer)."""
-    state = load_mock(req.mock_id)
-    if not state:
-        raise HTTPException(status_code=404, detail="Mock not found")
-    timer = voice.Timer()
-    spoken = _speak_last_turn(state, req.engine, timer)
-    log_voice(state["id"], spoken["turn_index"], tts_s=timer.marks["tts_s"], engine=spoken["tts_engine"])
+    with _mock_lock(req.mock_id):
+        state = load_mock(req.mock_id)
+        if not state:
+            raise HTTPException(status_code=404, detail="Mock not found")
+        timer = voice.Timer()
+        spoken = _speak_last_turn(state, req.engine, timer)
+        log_voice(state["id"], spoken["turn_index"], tts_s=timer.marks["tts_s"], engine=spoken["tts_engine"])
     return {**spoken, "turn": state["turns"][-1], "done": state["phase"] == "done"}
 
 
@@ -375,14 +378,16 @@ def voice_latency(req: VoiceLatencyRequest):
 def voice_latency_get(mock_id: str = ""):
     rows = voice_latencies(mock_id or None)
     measured = sorted(row["latency_s"] for row in rows if row["latency_s"] is not None)
-    return {"rows": rows, "median_s": measured[len(measured) // 2] if measured else None}
+    return {"rows": rows, "median_s": statistics.median(measured) if measured else None}
 
 
 @app.post("/voice/video")
 def voice_video(mock_id: str = Form(...), video: UploadFile = File(...)):
     if not load_mock(mock_id):
         raise HTTPException(status_code=404, detail="Mock not found")
-    path = voice.save_upload(mock_id, "webcam.webm", video.file.read())
+    path = voice.recordings_dir(mock_id) / "webcam.webm"
+    with path.open("wb") as out:
+        shutil.copyfileobj(video.file, out)
     return {"saved": str(path)}
 
 
