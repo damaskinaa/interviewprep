@@ -149,6 +149,10 @@ def ask_llm(prompt, model=None, max_tokens=2400, retries=3):
     raise LLMError(f"LLM call failed after {retries} attempts: {last_error}")
 
 
+JSON_PARSE_ERROR = "Could not parse model output as valid JSON"
+JSON_PARSE_ERROR_KEY = "__nailit_parse_error__"
+
+
 def extract_json(text):
     text = text or "{}"
     cleaned = text.strip()
@@ -163,10 +167,7 @@ def extract_json(text):
         parsed = json.loads(cleaned)
         return json.dumps(parsed, indent=2)
     except Exception:
-        return json.dumps({"error": JSON_PARSE_ERROR, "raw_output": text[:6000]}, indent=2)
-
-
-JSON_PARSE_ERROR = "Could not parse model output as valid JSON"
+        return json.dumps({JSON_PARSE_ERROR_KEY: True, "error": JSON_PARSE_ERROR, "raw_output": text[:6000]}, indent=2)
 
 
 def parse_json_object(text, fallback=None):
@@ -175,7 +176,7 @@ def parse_json_object(text, fallback=None):
         parsed = json.loads(extract_json(text))
     except Exception:
         return fallback
-    if isinstance(parsed, dict) and parsed.get("error") == JSON_PARSE_ERROR:
+    if isinstance(parsed, dict) and parsed.get(JSON_PARSE_ERROR_KEY) is True:
         return fallback
     return parsed
 
