@@ -74,4 +74,9 @@ mlx-whisper + mlx-audio), then `uv run nailit` and open http://127.0.0.1:8000/mo
 - **Saved files:** each answer (WAV) and the optional webcam video go to `~/NailIt/recordings/<mock_id>/`.
 - **Latency:** each turn logs STT, LLM time to first token and total, TTS to first audio, and end-to-end (your last
   word → the interviewer's audio). `GET /voice/latency` lists them with the median.
+- **Pressure mode** (`NAILIT_VOICE_PROVIDER=realtime`, pay per use): OpenAI Realtime transcribes and speaks instead of
+  Whisper + the interviewer LLM + Kokoro. Turns stay local (push-to-talk or Silero), and the engine still picks every
+  line as plain text; the realtime model only voices it. Key: `OPENAI_REALTIME_API_KEY` in the Keychain (or
+  `OPENAI_API_KEY`); optional `NAILIT_REALTIME_MODEL`, `NAILIT_REALTIME_VOICE`, `NAILIT_REALTIME_TRANSCRIBE`. Target median < 1 s.
+  Its default transcriber (`gpt-realtime-whisper`) takes no prompt, so fillers may be dropped in this mode.
 - First run downloads the Whisper (about 1.6 GB) and Kokoro models; after that it runs offline except the LLM.

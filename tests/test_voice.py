@@ -179,3 +179,78 @@ class VoicePipelineTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class FakeRealtime:
+    """Stands in for OpenAIRealtimeLLMService: a commit yields a transcript upstream, a response yields audio."""
+
+    def __init__(self):
+        from pipecat.frames.frames import TranscriptionFrame, TTSAudioRawFrame, TTSStoppedFrame
+        from pipecat.processors.frame_processor import FrameDirection, FrameProcessor
+        outer = self
+        self.sent = []
+
+        class Service(FrameProcessor):
+            async def process_frame(self, frame, direction):
+                await super().process_frame(frame, direction)
+                await self.push_frame(frame, direction)
+
+            async def send_client_event(self, event):
+                outer.sent.append(event)
+                if event.type == "input_audio_buffer.commit":
+                    await self.push_frame(TranscriptionFrame("I led the migration.", "", "now"), FrameDirection.UPSTREAM)
+                elif event.type == "response.create":
+                    await self.push_frame(TTSAudioRawFrame(audio=b"\x00\x10" * 2400, sample_rate=24000, num_channels=1))
+                    await self.push_frame(TTSStoppedFrame())
+
+            async def _replay_user_audio_preroll(self):
+                pass
+
+        self.service = Service()
+
+
+class RealtimePipelineTest(VoicePipelineTest):
+    """Pressure mode: the engine picks every line with no LLM phrasing; the realtime model transcribes and speaks."""
+
+    def test_push_to_talk_turn(self):
+        from nailit.interview import pipeline
+        fake = FakeRealtime()
+        original = pipeline.run
+
+        async def run(websocket, state, lib, input_mode=None, **_):
+            await original(websocket, state, lib, input_mode=input_mode, provider="realtime",
+                           realtime=pipeline.RealtimeVoice(state, service=fake.service))
+        with mock.patch.object(pipeline, "run", run):
+            mock_id = self.client.post("/interview/start", json={"round_id": "behavioural"}).json()["mock_id"]
+            interviewer = importlib.import_module("nailit.interview.interviewer")
+            interviewer.ask_llm.reset_mock()
+            with self.client.websocket_connect(f"/voice/ws/{mock_id}?input=ptt") as ws:
+                ws.send_text(json.dumps({"type": "ready"}))
+                self._until(ws, "tts_done")
+                ws.send_text(json.dumps({"type": "played"}))
+                ws.send_text(json.dumps({"type": "ptt", "down": True}))
+                for _ in range(20):
+                    ws.send_bytes(b"\x00\x00" * 320)
+                ws.send_text(json.dumps({"type": "ptt", "down": False}))
+                events, _ = self._until(ws, "latency")
+                ws.send_text(json.dumps({"type": "end"}))
+                for _ in range(500):
+                    if ws.receive()["type"] == "websocket.close":
+                        break
+                for _ in range(100):
+                    if mock_id not in pipeline.ACTIVE:
+                        break
+                    time.sleep(0.05)
+        turn = next(e for e in events if e["type"] == "turn")
+        self.assertEqual(turn["candidate"], "I led the migration.")
+        self.assertEqual(interviewer.ask_llm.call_count, 0)
+        kinds = [e.type for e in fake.sent]
+        self.assertEqual(kinds.count("response.create"), 2)
+        self.assertLess(kinds.index("input_audio_buffer.clear"), kinds.index("input_audio_buffer.commit"))
+        self.assertIn(turn["interviewer"], fake.sent[-1].response.instructions)
+        self.assertIsNotNone(events[-1]["latency_s"])
+        state = self.store.load_mock(mock_id)
+        self.assertEqual(next(t for t in state["turns"] if t["role"] == "candidate")["say"], "I led the migration.")
+
+    def test_unknown_mock_closes(self):
+        pass
