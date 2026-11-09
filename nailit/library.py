@@ -14,10 +14,9 @@ SCHEMA_DIR = Path(__file__).parent / "schemas"
 ME_FILES = ("stories.md", "profile.md", "tmay.md")
 LIBRARY_YAML = ("detectors", "phrases", "questions", "followups", "personas")
 PROGRAMME_TOKENS = ("weak_list", "all_core", "shuffle")
-PROGRAMME_PREFIXES = ("weak_list", "round", "company", "mode", "bank", "count")
 
 FACT_LINE = re.compile(r"^(F\d+)\s*\|\s*(.+?)\s*\|\s*(confirmed|approximate|unconfirmed)\s*\|\s*(.+?)\s*$")
-STORY_HEADING = re.compile(r"^##\s+(S[0-9A-Za-z_]+)\b\s*[:—-]?\s*(.*)$")
+STORY_HEADING = re.compile(r"^##\s+(S\d[0-9A-Za-z_]*)\b\s*[:—-]?\s*(.*)$")
 YAML_BLOCK = re.compile(r"```ya?ml\n(.*?)```", re.S)
 FACT_REF = re.compile(r"\bF\d+\b")
 RUBRIC_RULE = re.compile(

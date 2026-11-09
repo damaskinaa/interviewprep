@@ -106,6 +106,11 @@ class LibraryTest(unittest.TestCase):
             library.load_me(self.root)
         self.assertTrue(any("stories.md" in e for e in ctx.exception.errors))
 
+    def test_plain_sections_are_not_stories(self):
+        stories = self.root / "me" / "stories.md"
+        stories.write_text(stories.read_text() + "\n## Summary\nNotes only.\n")
+        library.load_me(self.root)
+
     def test_check_library_cli_exit_codes(self):
         self.assertEqual(cli.main(["check-library", str(self.lib)]), 0)
         (self.lib / "personas.yaml").unlink()
