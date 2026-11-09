@@ -99,6 +99,14 @@ def current_user_id(x_user_id: str = Header(default="")) -> str:
     return x_user_id.strip()[:160]
 
 
+def require_user_id(x_user_id: str = Header(default="")) -> str:
+    """End-user routes must always carry the proxy-asserted user id."""
+    user_id = x_user_id.strip()[:160]
+    if not user_id:
+        raise HTTPException(status_code=400, detail="X-User-Id header is required")
+    return user_id
+
+
 def owned_session(session_id: str, user_id: str, include_raw: bool = False):
     session = get_session(session_id, include_raw=include_raw)
     if not session:
@@ -477,7 +485,7 @@ def session_create(req: SessionCreateRequest, user_id: str = Depends(current_use
 
 
 @app.get("/session/get", dependencies=[Depends(require_app_key)])
-def session_get(session_id: str, user_id: str = Depends(current_user_id)):
+def session_get(session_id: str, user_id: str = Depends(require_user_id)):
     return owned_session(session_id, user_id)
 
 
@@ -524,7 +532,7 @@ def _run_module_job(job_id, session_id, module_name):
 
 
 @app.post("/module/run", dependencies=[Depends(require_app_key)])
-def module_run(req: ModuleRunRequest, user_id: str = Depends(current_user_id)):
+def module_run(req: ModuleRunRequest, user_id: str = Depends(require_user_id)):
     owned_session(req.session_id, user_id)
 
     # Synchronous dependency check — fail fast at the HTTP layer, not inside the job thread
@@ -594,15 +602,14 @@ def module_run(req: ModuleRunRequest, user_id: str = Depends(current_user_id)):
 
 
 @app.get("/module/status", dependencies=[Depends(require_app_key)])
-def module_status(job_id: str, user_id: str = Depends(current_user_id)):
+def module_status(job_id: str, user_id: str = Depends(require_user_id)):
     job = get_job(job_id)
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")
     session_id = (job.get("input_payload") or {}).get("session_id", "")
-    if user_id:
-        if not session_id:
-            raise HTTPException(status_code=404, detail="Job not found")
-        owned_session(session_id, user_id)
+    if not session_id:
+        raise HTTPException(status_code=404, detail="Job not found")
+    owned_session(session_id, user_id)
     job.pop("input_payload", None)
     return job
 
@@ -632,7 +639,7 @@ def prepare_status(job_id: str):
 
 
 @app.post("/answers/generate", dependencies=[Depends(require_app_key)])
-def answers_generate(req: AnswerGenerateRequest, user_id: str = Depends(current_user_id)):
+def answers_generate(req: AnswerGenerateRequest, user_id: str = Depends(require_user_id)):
     payload = req.model_dump() if hasattr(req, "model_dump") else req.dict()
     session = owned_session(req.session_id, user_id, include_raw=True)
     check_and_deduct(user_id, "answer_generation")
@@ -645,15 +652,14 @@ def answers_generate(req: AnswerGenerateRequest, user_id: str = Depends(current_
 
 
 @app.post("/lua-coach", dependencies=[Depends(require_app_key)])
-async def lua_coach(payload: dict, user_id: str = Depends(current_user_id)):
+async def lua_coach(payload: dict, user_id: str = Depends(require_user_id)):
     lua_brief = payload.get("lua_brief") or {}
     session_id = payload.get("session_id") or ""
-    if session_id:
-        owned_session(session_id, user_id)
-        if not lua_brief:
-            lua_brief = build_session_lua_brief(session_id)
-    elif user_id:
+    if not session_id:
         raise HTTPException(status_code=400, detail="session_id is required")
+    owned_session(session_id, user_id)
+    if not lua_brief:
+        lua_brief = build_session_lua_brief(session_id)
     response = build_lua_coach_response(
         company=payload.get("company", ""),
         role=payload.get("role", ""),

@@ -255,6 +255,13 @@ class DynamicReadinessContractsTest(unittest.TestCase):
         )
         self.assertEqual(lua.status_code, 403)
 
+    def test_end_user_routes_require_user_id_header(self):
+        session_id = self._create_owned_session("owner-1")
+        response = self.client.get(f"/session/get?session_id={session_id}", headers=self.auth_headers())
+        self.assertEqual(response.status_code, 400)
+        lua = self.client.post("/lua-coach", headers=self.auth_headers(), json={"session_id": session_id})
+        self.assertEqual(lua.status_code, 400)
+
     def test_module_status_is_owner_scoped(self):
         session_id = self._create_owned_session("owner-1")
         job_store = sys.modules["job_store"]
