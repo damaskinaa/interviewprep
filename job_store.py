@@ -15,11 +15,11 @@ LUA_DB_BASE_DIR_ENV = "LUA_DB_BASE_DIR"
 _SESSION_LIMITS = {
     "company_name":          200,
     "role_name":             200,
-    "raw_jd":               8000,
-    "raw_cv":               8000,
-    "raw_answer_bank":      4000,
-    "raw_company_context":  2000,
-    "raw_youtube_transcripts": 4000,
+    "raw_jd":               120000,
+    "raw_cv":               120000,
+    "raw_answer_bank":      240000,
+    "raw_company_context":  120000,
+    "raw_youtube_transcripts": 900000,
     "user_email":            320,
     "user_id":               160,
 }
