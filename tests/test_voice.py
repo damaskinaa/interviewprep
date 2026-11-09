@@ -253,8 +253,7 @@ class RealtimePipelineTest(VoicePipelineTest):
         candidate = next(t for t in state["turns"] if t["role"] == "candidate")
         self.assertEqual(candidate["say"], "I led the migration.")
         with wave.open(str(self.tmp / "rec" / mock_id / candidate["audio"])) as wav:
-            self.assertEqual(wav.getframerate(), 16000)
-            self.assertGreaterEqual(wav.getnframes(), 20 * 320)
+            self.assertEqual((wav.getframerate(), wav.getnframes()), (16000, 20 * 320))  # ptt: no pre-roll
 
     @unittest.skip("covered by VoicePipelineTest; the provider doesn't matter before the mock is found")
     def test_unknown_mock_closes(self):

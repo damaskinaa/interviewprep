@@ -282,7 +282,7 @@ class InterviewerProcessor(FrameProcessor):
             return
         # TurnGate emits these VAD frames in both ptt and vad input, so clear always precedes commit.
         if self.realtime and isinstance(frame, VADUserStartedSpeakingFrame):
-            await self.realtime.user_started()
+            await self.realtime.user_started(replay_preroll=self.turn.input == "vad")
         if self.realtime and isinstance(frame, VADUserStoppedSpeakingFrame):
             await self.realtime.user_stopped()
         if isinstance(frame, InputTransportMessageFrame):
@@ -321,7 +321,9 @@ class AnswerRecorder(FrameProcessor):
     async def process_frame(self, frame, direction):
         await super().process_frame(frame, direction)
         if isinstance(frame, VADUserStartedSpeakingFrame):
-            self.buffer, self.preroll = bytearray(self.preroll), bytearray()
+            # Pre-roll only for hands-free: with push-to-talk the press is the start, earlier audio is off-turn.
+            self.buffer = bytearray(self.preroll if self.turn.input == "vad" else b"")
+            self.preroll = bytearray()
         elif isinstance(frame, InputAudioRawFrame):
             if self.buffer is not None:
                 self.buffer.extend(frame.audio)
@@ -381,9 +383,10 @@ class RealtimeVoice:
         await self.service.send_client_event(getattr(events, name)(**kwargs))
 
     # Uses Pipecat's client-event classes and its private _replay_user_audio_preroll (pinned: pipecat-ai <2).
-    async def user_started(self):
+    async def user_started(self, replay_preroll=True):
         await self._send("InputAudioBufferClearEvent")  # drop audio from before this answer
-        await self.service._replay_user_audio_preroll()
+        if replay_preroll:
+            await self.service._replay_user_audio_preroll()
 
     async def user_stopped(self):
         await self._send("InputAudioBufferCommitEvent")
