@@ -139,7 +139,8 @@ class VoicePipelineTest(unittest.TestCase):
             ws.send_text(json.dumps({"type": "ready"}))
             events, audio = self._until(ws, "question")
             self.assertTrue(events[-1]["interviewer"])
-            self._until(ws, "tts_done")
+            _, line_audio = self._until(ws, "tts_done")
+            self.assertGreater(audio + line_audio, 0)  # tts_done arrives after the line's audio
             time.sleep(0.3)
             ws.send_text(json.dumps({"type": "played"}))
             time.sleep(0.4)

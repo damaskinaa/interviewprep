@@ -183,7 +183,7 @@ class KokoroTTS(TTSService):
         """Kokoro sentence chunks are yielded as each is ready, so playback starts after the first sentence."""
         async for frame in self._synthesise(text, context_id):
             yield frame
-        yield message({"type": "tts_done"})
+        yield message({"type": "tts_done"}, urgent=False)  # queued behind this line's audio, not ahead of it
 
     async def _synthesise(self, text, context_id):
         if self.engine == "kokoro":
