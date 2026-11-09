@@ -8,6 +8,7 @@ import json
 import logging
 import os
 import time
+import wave
 from dataclasses import dataclass, field
 
 from pipecat.frames.frames import (
@@ -56,6 +57,7 @@ class Turn:
     user_stopped_at: float | None = None
     limit_s: float | None = None
     segment: int = 0
+    last_audio: str | None = None
     marks: dict = field(default_factory=dict)
 
 
@@ -272,11 +274,13 @@ class InterviewerProcessor(FrameProcessor):
         await super().process_frame(frame, direction)
         if isinstance(frame, TranscriptionFrame):
             if self.realtime:
-                await self._answer(frame.text, {"words": [], "duration_s": 0, "speech_s": None, "audio": None,
+                await self._answer(frame.text, {"words": [], "duration_s": 0, "speech_s": None,
+                                                "audio": self.turn.last_audio,
                                                 "filled_pauses": None, "realtime": True})
             else:
                 await self._answer(frame.text, frame.result)
             return
+        # TurnGate emits these VAD frames in both ptt and vad input, so clear always precedes commit.
         if self.realtime and isinstance(frame, VADUserStartedSpeakingFrame):
             await self.realtime.user_started()
         if self.realtime and isinstance(frame, VADUserStoppedSpeakingFrame):
@@ -303,6 +307,30 @@ class InterviewerProcessor(FrameProcessor):
         if isinstance(frame, BotStoppedSpeakingFrame) and self.state["phase"] == "done":
             await self.push_frame(message({"type": "done"}))
             await self._end()
+        await self.push_frame(frame, direction)
+
+
+class AnswerRecorder(FrameProcessor):
+    """Pressure mode has no local STT, so this saves each answer's audio (WAV) between the gate's start and stop."""
+
+    def __init__(self, mock_id, turn, **kwargs):
+        super().__init__(**kwargs)
+        self.mock_id, self.turn, self.buffer, self.count = mock_id, turn, None, 0
+
+    async def process_frame(self, frame, direction):
+        await super().process_frame(frame, direction)
+        if isinstance(frame, VADUserStartedSpeakingFrame):
+            self.buffer = bytearray()
+        elif isinstance(frame, InputAudioRawFrame) and self.buffer is not None:
+            self.buffer.extend(frame.audio)
+        elif isinstance(frame, VADUserStoppedSpeakingFrame) and self.buffer is not None:
+            self.count += 1
+            name = f"answer_{self.count:03d}_{int(time.time())}.wav"
+            path = voice.recordings_dir(self.mock_id) / name
+            with wave.open(str(path), "wb") as wav:
+                wav.setnchannels(1), wav.setsampwidth(2), wav.setframerate(IN_RATE)
+                wav.writeframes(bytes(self.buffer))
+            self.buffer, self.turn.last_audio = None, name
         await self.push_frame(frame, direction)
 
 
@@ -391,7 +419,8 @@ async def run(websocket, state, lib, input_mode=None, stt=None, tts=None, vad=No
     if (provider or config["provider"]) == "realtime":
         realtime = realtime or RealtimeVoice(state)
         brain = InterviewerProcessor(state, lib, turn, "realtime", realtime=realtime)
-        steps = [transport.input(), vad, TurnGate(turn), brain, realtime.service, LineDone(), transport.output()]
+        steps = [transport.input(), vad, TurnGate(turn), AnswerRecorder(state["id"], turn), brain, realtime.service,
+                 LineDone(), transport.output()]
     else:
         tts = tts or KokoroTTS(config["tts"])
         brain = InterviewerProcessor(state, lib, turn, getattr(tts, "engine", config["tts"]))

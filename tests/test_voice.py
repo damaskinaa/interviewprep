@@ -250,7 +250,10 @@ class RealtimePipelineTest(VoicePipelineTest):
         self.assertIn(turn["interviewer"], fake.sent[-1].response.instructions)
         self.assertIsNotNone(events[-1]["latency_s"])
         state = self.store.load_mock(mock_id)
-        self.assertEqual(next(t for t in state["turns"] if t["role"] == "candidate")["say"], "I led the migration.")
+        candidate = next(t for t in state["turns"] if t["role"] == "candidate")
+        self.assertEqual(candidate["say"], "I led the migration.")
+        with wave.open(str(self.tmp / "rec" / mock_id / candidate["audio"])) as wav:
+            self.assertEqual((wav.getframerate(), wav.getnframes()), (16000, 20 * 320))
 
     @unittest.skip("covered by VoicePipelineTest; the provider doesn't matter before the mock is found")
     def test_unknown_mock_closes(self):
