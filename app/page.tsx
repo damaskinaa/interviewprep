@@ -3,8 +3,9 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import posthog from "posthog-js";
-if (typeof window !== "undefined") {
-  posthog.init(process.env.NEXT_PUBLIC_POSTHOG_KEY ?? "", {
+const POSTHOG_KEY = process.env.NEXT_PUBLIC_POSTHOG_KEY;
+if (typeof window !== "undefined" && POSTHOG_KEY) {
+  posthog.init(POSTHOG_KEY, {
     api_host: "https://app.posthog.com",
     capture_pageview: false,
   });
@@ -136,7 +137,7 @@ const MODULES: {
     title: "Candidate Profile",
     description: "Maps your CV and prepared stories to the role requirements using raw documents from the session.",
     button: "Build Profile",
-    dependsOn: ["role_intelligence"],
+    dependsOn: ["company_intelligence", "role_intelligence"],
   },
   {
     name: "gap_map",
@@ -329,8 +330,8 @@ function StatusBadge({ status }: { status: string }) {
 export default function Home() {
   const [screen, setScreen] = useState<"setup" | "dashboard">("setup");
   const [session, setSession] = useState<SessionMeta | null>(null);
-  const [companyName, setCompanyName] = useState("Google");
-  const [roleName, setRoleName] = useState("Program Manager");
+  const [companyName, setCompanyName] = useState("");
+  const [roleName, setRoleName] = useState("");
   const [jobDescription, setJobDescription] = useState("");
   const [cv, setCv] = useState("");
   const [answerBank, setAnswerBank] = useState("");
@@ -497,6 +498,11 @@ export default function Home() {
         body: JSON.stringify({ session_id: session.session_id, module_name: moduleName }),
       });
       const data = await res.json();
+      if (res.status === 403 || res.status === 404) {
+        resetSession();
+        setError("This session is no longer available in this browser. Please create a new session.");
+        return;
+      }
       if (!res.ok) throw new Error(data?.body || data?.message || data?.error || "Could not start module.");
       setModules((current) => ({
         ...current,
@@ -614,7 +620,7 @@ export default function Home() {
         role: session.role_name,
         question,
         candidate_answer: userAnswer,
-        lua_brief: {},
+        session_id: session.session_id,
       }),
     });
     const data = await res.json();
@@ -642,8 +648,8 @@ export default function Home() {
   function startMockInterview() {
     const all = Object.values(questionContexts) as QuestionContext[];
     if (!all.length) return;
-    posthog.capture("paid_conversion", {
-      plan: "mock_interview",
+    posthog.capture("mock_interview_started", {
+      company: session?.company_name,
       source: "session_end",
     });
     const firstQ = all[0];
