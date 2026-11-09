@@ -107,7 +107,12 @@ function play(buffer) {
   src.buffer = audio; src.connect(ctx.destination);
   playAt = Math.max(playAt, ctx.currentTime);
   src.start(playAt); playAt += audio.duration;
-  sources.push(src); src.onended = () => (sources = sources.filter((s) => s !== src));
+  sources.push(src);
+  src.onended = () => {
+    sources = sources.filter((s) => s !== src);
+    // The server sends audio faster than real time, so only the page knows when the interviewer stopped talking.
+    if (!sources.length && ws && ws.readyState === 1) ws.send(JSON.stringify({type: "played"}));
+  };
 }
 function clearPlayback() { sources.forEach((s) => s.stop()); sources = []; playAt = 0; }
 

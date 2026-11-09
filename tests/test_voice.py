@@ -3,6 +3,7 @@ import json
 import os
 import sys
 import tempfile
+import time
 import types
 import unittest
 import wave
@@ -138,6 +139,9 @@ class VoicePipelineTest(unittest.TestCase):
             ws.send_text(json.dumps({"type": "ready"}))
             events, audio = self._until(ws, "question")
             self.assertTrue(events[-1]["interviewer"])
+            time.sleep(0.3)
+            ws.send_text(json.dumps({"type": "played"}))
+            time.sleep(0.4)
             ws.send_text(json.dumps({"type": "ptt", "down": True}))
             for _ in range(50):
                 ws.send_bytes(b"\x00\x00" * 320)  # 20 ms frames at 16 kHz
@@ -157,6 +161,7 @@ class VoicePipelineTest(unittest.TestCase):
         candidate = next(t for t in state["turns"] if t["role"] == "candidate")
         self.assertTrue((self.tmp / "rec" / mock_id / candidate["audio"]).is_file())
         self.assertEqual(candidate["filled_pauses"], 2)
+        self.assertGreaterEqual(candidate["pre_answer_silence_s"], 0.3)
         rows = self.client.get("/voice/latency", params={"mock_id": mock_id}).json()
         self.assertEqual(rows["median_s"], latency["latency_s"])
 

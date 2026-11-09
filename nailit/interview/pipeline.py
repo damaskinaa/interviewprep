@@ -45,7 +45,8 @@ TRAILING_PAD_S = 0.5
 
 @dataclass
 class Turn:
-    """Clock shared by the gate and the interviewer processor (time.monotonic seconds)."""
+    """Clock shared by the gate and the interviewer processor (time.monotonic seconds). The bot counts as speaking
+    until the page reports its playback ended, since the server sends audio faster than real time."""
     input: str = "ptt"
     bot_speaking: bool = False
     bot_stopped_at: float | None = None
@@ -123,6 +124,9 @@ class TurnGate(FrameProcessor):
                 elif not down and self._speaking():
                     await self._stop()
             return
+        if isinstance(frame, InputTransportMessageFrame) and frame.message.get("type") == "played":
+            self.turn.bot_speaking, self.turn.bot_stopped_at = False, time.monotonic()
+            return
         if isinstance(frame, VADUserStartedSpeakingFrame):
             if self.turn.input == "vad" and not self._speaking():
                 await self._start()
@@ -133,8 +137,6 @@ class TurnGate(FrameProcessor):
             return
         if isinstance(frame, BotStartedSpeakingFrame):
             self.turn.bot_speaking = True
-        elif isinstance(frame, BotStoppedSpeakingFrame):
-            self.turn.bot_speaking, self.turn.bot_stopped_at = False, time.monotonic()
         await self.push_frame(frame, direction)
 
 
