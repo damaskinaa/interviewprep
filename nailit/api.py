@@ -388,7 +388,7 @@ def voice_video(mock_id: str = Form(...), video: UploadFile = File(...)):
     if not load_mock(mock_id):
         raise HTTPException(status_code=404, detail="Mock not found")
     path = voice.recordings_dir(mock_id) / "webcam.webm"
-    with path.open("wb") as out:
+    with path.open("ab") as out:
         shutil.copyfileobj(video.file, out)
     return {"saved": str(path)}
 

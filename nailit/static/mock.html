@@ -50,7 +50,7 @@
 <script>
 const $ = (id) => document.getElementById(id);
 let mockId = null, done = false, micStream = null, recorder = null, chunks = [], recordStart = 0, recordStop = 0;
-let playbackEnded = 0, myvad = null, answerTimer = null, turnLimit = null, camRecorder = null, camChunks = [];
+let playbackEnded = 0, myvad = null, answerTimer = null, turnLimit = null, camRecorder = null, camUploads = Promise.resolve();
 
 async function api(path, body, form) {
   const res = await fetch(path, form ? {method: "POST", body} : body ? {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify(body)} : {});
@@ -155,13 +155,7 @@ async function finish() {
   status("Mock finished.");
   $("talk").hidden = true; $("textForm").hidden = true;
   if (camRecorder) {
-    camRecorder.onstop = async () => {
-      const form = new FormData();
-      form.append("mock_id", mockId);
-      form.append("video", new Blob(camChunks, {type: "video/webm"}), "webcam.webm");
-      await api("/voice/video", form, true);
-      status("Mock finished. Webcam video saved locally.");
-    };
+    camRecorder.onstop = () => camUploads.then(() => status("Mock finished. Webcam video saved locally."));
     camRecorder.stop();
   }
   const summary = await api(`/interview/get?mock_id=${mockId}`);
@@ -176,13 +170,22 @@ $("start").onclick = async () => {
       const cam = await navigator.mediaDevices.getUserMedia({video: true, audio: true});
       $("preview").srcObject = cam; $("preview").hidden = false; $("preview").play();
       camRecorder = new MediaRecorder(cam, {mimeType: "video/webm"});
-      camRecorder.ondataavailable = (e) => camChunks.push(e.data);
-      camRecorder.start(1000);
+      // Each 10 s chunk is appended to the file on disk in order, so a long loop never sits in browser memory.
+      camRecorder.ondataavailable = (e) => {
+        camUploads = camUploads.then(() => {
+          if (!mockId || !e.data.size) return;
+          const form = new FormData();
+          form.append("mock_id", mockId);
+          form.append("video", e.data, "webcam.webm");
+          return api("/voice/video", form, true).catch(() => {});
+        });
+      };
     }
     if ($("input").value === "vad") await setupVad();
     const started = await api("/interview/start", {round_id: $("round").value, mode: $("mode").value,
       company_id: $("company").value || null, temperament_id: $("temperament").value || null});
     mockId = started.mock_id;
+    if (camRecorder) camRecorder.start(10000);
     await interviewerTurn(await api("/voice/say", {mock_id: mockId, engine: $("tts").value}));
   } catch (e) { status("Error: " + e.message); $("setup").disabled = false; }
 };
