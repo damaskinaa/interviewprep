@@ -151,6 +151,11 @@ class VoicePipelineTest(unittest.TestCase):
             for _ in range(500):
                 if ws.receive()["type"] == "websocket.close":
                     break
+            from nailit.interview import pipeline
+            for _ in range(100):
+                if mock_id not in pipeline.ACTIVE:
+                    break
+                time.sleep(0.05)
         turn = next(e for e in events if e["type"] == "turn")
         self.assertEqual((turn["candidate"], turn["filled_pauses"]), ("Um, I led uh the like migration.", 2))
         self.assertGreater(audio, 0)

@@ -302,6 +302,9 @@ async def voice_ws(websocket: WebSocket, mock_id: str, input: str = "ptt"):
         await websocket.close(code=4404, reason="Mock not found")
         return
     from nailit.interview import pipeline
+    if mock_id in pipeline.ACTIVE:
+        await websocket.close(code=4409, reason="This mock already has a voice session open")
+        return
     await pipeline.run(websocket, state, _library(), input_mode=input if input in ("ptt", "vad", "text") else None)
     try:
         await websocket.close()

@@ -40,6 +40,7 @@ from nailit.store import log_voice, save_mock
 logger = logging.getLogger(__name__)
 
 IN_RATE, OUT_RATE = 16000, 24000
+ACTIVE = set()  # mock ids with a live voice session; one session per mock
 TRAILING_PAD_S = 0.5
 
 
@@ -173,24 +174,29 @@ class KokoroTTS(TTSService):
     def can_generate_metrics(self):
         return True
 
+    async def _frame(self, pcm, rate, context_id):
+        if rate != OUT_RATE:
+            pcm = await self._resampler.resample(pcm, rate, OUT_RATE)
+        return TTSAudioRawFrame(audio=pcm, sample_rate=OUT_RATE, num_channels=1, context_id=context_id)
+
     async def run_tts(self, text, context_id):
-        chunks = None
+        """Kokoro sentence chunks are yielded as each is ready, so playback starts after the first sentence."""
         if self.engine == "kokoro":
+            chunks, sent = voice.kokoro_pcm(text), 0
             try:
-                chunks = await asyncio.to_thread(lambda: list(voice.kokoro_pcm(text)))
+                while chunk := await asyncio.to_thread(next, chunks, None):
+                    sent += 1
+                    yield await self._frame(*chunk, context_id)
+                return
             except Exception as error:
                 logger.warning("Kokoro failed, using say: %s", error)
                 self.engine = "say"
-        if chunks is None:
-            try:
-                chunks = [(await asyncio.to_thread(voice.say_pcm, text, OUT_RATE), OUT_RATE)]
-            except Exception as error:
-                yield ErrorFrame(error=f"no TTS available ({error}); the line is shown as text")
-                return
-        for pcm, rate in chunks:
-            if rate != OUT_RATE:
-                pcm = await self._resampler.resample(pcm, rate, OUT_RATE)
-            yield TTSAudioRawFrame(audio=pcm, sample_rate=OUT_RATE, num_channels=1, context_id=context_id)
+                if sent:
+                    return
+        try:
+            yield await self._frame(await asyncio.to_thread(voice.say_pcm, text, OUT_RATE), OUT_RATE, context_id)
+        except Exception as error:
+            yield ErrorFrame(error=f"no TTS available ({error}); the line is shown as text")
 
 
 class InterviewerProcessor(FrameProcessor):
@@ -311,9 +317,12 @@ async def run(websocket, state, lib, input_mode=None, stt=None, tts=None, vad=No
     async def _closed(_transport, _client):
         await task.cancel()
 
+    ACTIVE.add(state["id"])
     try:
         await PipelineRunner(handle_sigint=False).run(task)
     except asyncio.CancelledError:
         # The page closing cancels the pipeline; only re-raise if this request itself is being cancelled.
         if asyncio.current_task().cancelling():
             raise
+    finally:
+        ACTIVE.discard(state["id"])
