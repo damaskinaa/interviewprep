@@ -252,5 +252,6 @@ class RealtimePipelineTest(VoicePipelineTest):
         state = self.store.load_mock(mock_id)
         self.assertEqual(next(t for t in state["turns"] if t["role"] == "candidate")["say"], "I led the migration.")
 
+    @unittest.skip("covered by VoicePipelineTest; the provider doesn't matter before the mock is found")
     def test_unknown_mock_closes(self):
         pass

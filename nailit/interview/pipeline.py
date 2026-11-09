@@ -348,6 +348,7 @@ class RealtimeVoice:
         from pipecat.services.openai.realtime import events
         await self.service.send_client_event(getattr(events, name)(**kwargs))
 
+    # Uses Pipecat's client-event classes and its private _replay_user_audio_preroll (pinned: pipecat-ai <2).
     async def user_started(self):
         await self._send("InputAudioBufferClearEvent")  # drop audio from before this answer
         await self.service._replay_user_audio_preroll()
