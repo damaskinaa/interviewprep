@@ -7,6 +7,7 @@ import random
 from decimal import Decimal
 import re
 import uuid
+from contextvars import ContextVar
 
 from nailit import library
 from nailit.llm import LLMError, ask_llm
@@ -125,12 +126,21 @@ def _turn(state, say, kind, **extra):
     return turn
 
 
-def _say(state, instruction, fallback):
+# Set by the realtime voice provider: lines stay as plain text and the realtime model phrases them as it speaks.
+PLAIN_LINES = ContextVar("interviewer_plain_lines", default=False)
+
+
+def persona(state):
     company, temperament = state.get("company") or {}, state.get("temperament") or {}
-    persona = (f"Company: {company.get('name', 'a company')}. Values: {', '.join(company.get('values') or [])}. "
-               f"Probing style: {company.get('probing_style', '')}. Temperament: {temperament.get('behaviour', '')}")
+    return (f"Company: {company.get('name', 'a company')}. Values: {', '.join(company.get('values') or [])}. "
+            f"Probing style: {company.get('probing_style', '')}. Temperament: {temperament.get('behaviour', '')}")
+
+
+def _say(state, instruction, fallback, plain_ok=True):
+    if plain_ok and PLAIN_LINES.get():
+        return fallback
     try:
-        return ask_llm(f"{INTERVIEWER_RULES}\n{persona}\n\n{instruction}", max_tokens=200, retries=1).strip() or fallback
+        return ask_llm(f"{INTERVIEWER_RULES}\n{persona(state)}\n\n{instruction}", max_tokens=200, retries=1).strip() or fallback
     except LLMError as error:
         logger.warning("interviewer line fell back to plain text: %s", error)
         return fallback
@@ -335,7 +345,7 @@ def answer(state, text, seconds=None, pre_answer_silence_s=None, lib=None):
                          "closing")
         state["candidate_questions"] += 1
         reply = _say(state, f"The candidate asks: {text}\nAnswer realistically and briefly as this interviewer, "
-                            "then ask if they have anything else.", "Good question. Anything else?")
+                            "then ask if they have anything else.", "Good question. Anything else?", plain_ok=False)
         return _turn(state, reply, "answer")
     if state["phase"] == "closing":
         state["phase"] = "done"
