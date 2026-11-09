@@ -124,6 +124,16 @@ class InterviewerTest(unittest.TestCase):
         self.assertEqual(turn["expected"], {"true": "4", "said": "8"})
         self.assertIn("team of 8", turn["say"])
 
+    def test_wrong_claim_keeps_decimals(self):
+        self.assertEqual(iv._wrong_claim("It took 3.5 days.", iv.random.Random(0))[1], "7")
+        self.assertEqual(iv._wrong_claim("It took 1.25 days.", iv.random.Random(0))[1], "2.5")
+
+    def test_resume_skips_questions_removed_from_library(self):
+        state, _ = self.start()
+        state["queue"].insert(state["position"], {"kind": "question", "id": "removed_question"})
+        turn = iv.answer(state, STRONG, lib=LIB)
+        self.assertNotEqual(turn.get("question_id"), "removed_question")
+
     def test_no_coaching_words_in_code_lines(self):
         state, _ = self.start()
         while state["phase"] != "done":

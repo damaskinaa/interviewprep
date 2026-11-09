@@ -203,7 +203,7 @@ def _wrong_claim(text, rng):
     sentence = rng.choice(sentences)
     match = NUMBER.search(sentence)
     true = match.group(0)
-    wrong = str(int(float(true.replace(",", ""))) * 2 or 2)
+    wrong = f"{float(true.replace(',', '')) * 2 or 2:g}"
     claim = sentence[: match.start()] + wrong + sentence[match.end():]
     return true, wrong, f"Just so I have it right: {claim.rstrip('.!?')}?"
 
@@ -293,8 +293,10 @@ def _advance(state, lib, me=None, lead=""):
             lines.append(_say(state, f"Do this now, in your own words: {item['text']}", item["text"]))
         elif item["kind"] == "round":
             lines.append(f"Next: the {item['label']} part.")
-        else:
+        elif _by_id(library._questions(lib["questions"])[0], item["id"]):
             return _ask_question(state, lib, item, " ".join(lines))
+        else:
+            logger.warning("mock %s: question %s is no longer in the library; skipped", state["id"], item["id"])
     me = me if me is not None else _load_me()
     last = state["scores"][-1]["score"] if state["scores"] else 5
     if last < 4 and not state["extra_question_used"]:
@@ -335,7 +337,7 @@ def answer(state, text, seconds=None, pre_answer_silence_s=None, lib=None):
         state["phase"] = "done"
         return _turn(state, "Thank you, that's everything from me. We'll be in touch.", "end")
 
-    current = state["current"]
+    current, me = state["current"], None
     if state["mode"] == "B" and pre_answer_silence_s is not None and pre_answer_silence_s > ANSWER_RULE_S:
         state["rule_violations"].append({"question_id": current["question_id"], "rule": "3s_answer",
                                          "seconds": pre_answer_silence_s})
@@ -356,7 +358,8 @@ def answer(state, text, seconds=None, pre_answer_silence_s=None, lib=None):
                 return turn
         triggers = gaps(joined, question, seconds, state["mode"], state.get("company"))
         gap_triggers = [t for t in triggers if t in GAP_TRIGGERS]
-        story = _story_for(joined, (_load_me().get("stories") or {})) if state["mode"] == "C" else None
+        me = _load_me()
+        story = _story_for(joined, me.get("stories") or {}) if state["mode"] == "C" else None
         if story and state["stories_used"].get(story) and current["followups"] == 0:
             current["followups"] += 1
             return _turn(state, f"{lead} You've told me about that one already. Do you have a different example?",
@@ -373,7 +376,7 @@ def answer(state, text, seconds=None, pre_answer_silence_s=None, lib=None):
                     state["asked_followups"].append(probe)
                     current["followups"] += 1
                     return _turn(state, f"{lead} {probe}", "probe", question_id=current["question_id"])
-    me = _load_me()
+    me = me if me is not None else _load_me()
     _finish_question(state, lib, me)
     return _advance(state, lib, me, lead)
 
