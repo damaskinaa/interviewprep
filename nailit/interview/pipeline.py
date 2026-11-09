@@ -316,13 +316,17 @@ class AnswerRecorder(FrameProcessor):
     def __init__(self, mock_id, turn, **kwargs):
         super().__init__(**kwargs)
         self.mock_id, self.turn, self.buffer, self.count = mock_id, turn, None, 0
+        self.preroll = bytearray()  # last second before the start, since Silero fires after speech begins
 
     async def process_frame(self, frame, direction):
         await super().process_frame(frame, direction)
         if isinstance(frame, VADUserStartedSpeakingFrame):
-            self.buffer = bytearray()
-        elif isinstance(frame, InputAudioRawFrame) and self.buffer is not None:
-            self.buffer.extend(frame.audio)
+            self.buffer, self.preroll = bytearray(self.preroll), bytearray()
+        elif isinstance(frame, InputAudioRawFrame):
+            if self.buffer is not None:
+                self.buffer.extend(frame.audio)
+            else:
+                self.preroll = (self.preroll + frame.audio)[-IN_RATE * 2:]
         elif isinstance(frame, VADUserStoppedSpeakingFrame) and self.buffer is not None:
             self.count += 1
             name = f"answer_{self.count:03d}_{int(time.time())}.wav"
