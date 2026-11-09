@@ -128,6 +128,7 @@ class InterviewerTest(unittest.TestCase):
     def test_wrong_claim_keeps_decimals(self):
         self.assertEqual(iv._wrong_claim("It took 3.5 days.", iv.random.Random(0))[1], "7")
         self.assertEqual(iv._wrong_claim("It took 1.25 days.", iv.random.Random(0))[1], "2.5")
+        self.assertEqual(iv._wrong_claim("We saved 1234567 dollars.", iv.random.Random(0))[1], "2469134")
 
     def test_resume_skips_questions_removed_from_library(self):
         state, _ = self.start()

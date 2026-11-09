@@ -205,7 +205,8 @@ def _wrong_claim(text, rng):
     sentence = rng.choice(sentences)
     match = NUMBER.search(sentence)
     true = match.group(0)
-    wrong = f"{float(true.replace(',', '')) * 2 or 2:g}"
+    doubled = float(true.replace(",", "")) * 2 or 2
+    wrong = str(int(doubled)) if doubled.is_integer() else f"{doubled:f}".rstrip("0")
     claim = sentence[: match.start()] + wrong + sentence[match.end():]
     return true, wrong, f"Just so I have it right: {claim.rstrip('.!?')}?"
 
