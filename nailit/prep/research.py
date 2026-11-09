@@ -12,6 +12,7 @@ from urllib.parse import urlparse
 from nailit.guards import why_company_is_generic
 from nailit.llm import MODEL_STRONG, ask_json, json_dumps
 from nailit.prep import research_config
+from nailit.prep import apps
 from nailit.prep.common import (
     STAGE_QUALITY_INSTRUCTION,
     as_list,
@@ -660,6 +661,7 @@ Do not use page titles as claims.
         for source in sources[:40]
     ]
     write_module_json(session_id, "company_intelligence", result)
+    apps.write_research(session, result, sources)
     report_progress(progress_callback, "Company intelligence complete", 100)
     return result
 
@@ -691,6 +693,7 @@ question_seeds must contain exactly 20 specific questions derived directly from 
 """
     result = ask_json(prompt, model=MODEL_STRONG, max_tokens=6500, retries=2, fallback={})
     write_module_json(session["session_id"], "role_intelligence", result)
+    apps.write_jd_map(session, result)
     report_progress(progress_callback, "Role intelligence complete", 100)
     return result
 

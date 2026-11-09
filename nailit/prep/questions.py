@@ -9,6 +9,7 @@ from nailit.guards import (
     why_company_is_generic,
 )
 from nailit.llm import MODEL_FAST, MODEL_STRONG, ask_json, ask_llm, json_dumps, log_cost_total, start_cost_log
+from nailit.prep import apps
 from nailit.prep.common import (
     SESSION_MODULES,
     STAGE_QUALITY_INSTRUCTION,
@@ -547,6 +548,7 @@ Do not invent candidate background.
             "Interview strategy generation returned no usable questions (model output was empty or not valid JSON). Please run it again."
         )
     write_module_json(session_id, "interview_strategy", result)
+    apps.write_questions(session, result)
     report_progress(progress_callback, "Interview strategy complete", 100)
     return result
 
