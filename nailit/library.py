@@ -59,7 +59,9 @@ def _duplicates(ids, label):
 
 
 def _ids(items):
-    return [item["id"] for item in items or [] if isinstance(item, dict) and "id" in item]
+    if not isinstance(items, list):
+        return []
+    return [item["id"] for item in items if isinstance(item, dict) and "id" in item]
 
 
 # ---------- me/ ----------

@@ -75,6 +75,11 @@ class LibraryTest(unittest.TestCase):
         (self.lib / "rubric.md").write_text("**R1.1** Result first.\n**R1.1** Again.\n**R2.1** x\n**R5.1** y\n")
         self.assertIn("rubric.md: duplicate id R1.1", "\n".join(self.errors()))
 
+    def test_extra_top_level_annotations_are_ignored(self):
+        for name in ("detectors.yaml", "phrases.yaml", "personas.yaml"):
+            self.edit_yaml(name, lambda d: d.update(version=1))
+        library.load_library(self.lib)
+
     def test_bare_question_list_is_accepted(self):
         self.edit_yaml("questions.yaml", lambda d: (d.clear(), None))
         path = self.lib / "questions.yaml"
