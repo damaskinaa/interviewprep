@@ -17,6 +17,16 @@ class GuardsTest(unittest.TestCase):
         self.assertEqual(self.guards.invented_numbers("We served 1,200 users", "1200 users"), [])
         self.assertEqual(self.guards.invented_numbers("No numbers here.", ""), [])
 
+    def test_magnitude_and_unit_must_match(self):
+        self.assertEqual(self.guards.invented_numbers("Saved $250k", "Saved 250 hours"), ["$250k"])
+        self.assertEqual(self.guards.invented_numbers("Cut churn 40%", "Took 40 days"), ["40%"])
+        self.assertEqual(self.guards.invented_numbers("Saved 250k and 40 percent", "Saved $250,000, a 40% drop"), [])
+        self.assertEqual(self.guards.invented_numbers("A team of 40", "a 40% drop"), [])
+
+    def test_strip_keeps_comma_formatted_verified_metric(self):
+        cleaned, stripped = self.guards.strip_hallucinated_metrics("We onboarded 1,200 users.", "Onboarded 1200 users", "")
+        self.assertEqual((cleaned, stripped), ("We onboarded 1,200 users.", []))
+
     def test_strip_keeps_metrics_written_with_separators_in_source(self):
         cleaned, stripped = self.guards.strip_hallucinated_metrics("We onboarded 1200 users in 30 days.", "Onboarded 1,200 users", "")
         self.assertIn("1200 users", cleaned)
@@ -71,6 +81,14 @@ class LLMClientTest(unittest.TestCase):
         self.assertEqual(len(records), 1)
         prices = self.llm.SETTINGS["prices"]["fast"]
         self.assertAlmostEqual(records[0]["cost_usd"], prices[0] + prices[1] / 2, places=4)
+
+    def test_cost_total_is_logged(self):
+        self.llm._client = self._fake_client("ok")
+        records = self.llm.start_cost_log()
+        self.llm.ask_llm("q")
+        with self.assertLogs("nailit.llm", level="INFO") as logs:
+            self.llm.log_cost_total(records, "sess/module")
+        self.assertIn("sess/module: 1 calls", logs.output[0])
 
     def test_provider_failure_raises(self):
         self.llm._client = self._fake_client(fail=True)

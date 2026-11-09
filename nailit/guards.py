@@ -1,4 +1,5 @@
 import re
+from decimal import Decimal
 
 from nailit.prep.common import as_list, count_words, normalize_text
 
@@ -63,7 +64,7 @@ def strip_hallucinated_metrics(answer, raw_cv, raw_answer_bank):
         full = match.group(0)
         if not re.search(r"\d", full):
             return full
-        if _canonical_number(full) in source_numbers:
+        if _is_grounded(_canonical_number(full), source_numbers):
             return full
         # Qualitative replacements by suffix
         low = full.lower()
@@ -79,7 +80,7 @@ def strip_hallucinated_metrics(answer, raw_cv, raw_answer_bank):
     # Pattern: number optionally followed by %, unit words, or currency symbols.
     # Use lookahead/lookbehind instead of \b so the unit suffix is captured in the match.
     pattern = re.compile(
-        r"(?<!\d)\$?\d+(?:\.\d+)?(?:\s*(?:%|percent|hours?|minutes?|days?|weeks?|months?))?(?!\d)",
+        r"(?<![\d.,])\$?\d+(?:[.,]\d+)*(?:\s*(?:%|percent|k|m|bn|hours?|minutes?|days?|weeks?|months?))?(?![\d\w])",
         re.IGNORECASE,
     )
     cleaned = pattern.sub(_replace, answer)
@@ -100,13 +101,27 @@ def answer_word_failures_from_strategy(strategy):
 NUMBER_PATTERN = re.compile(r"(?<![\w.])\$?\d+(?:[.,]\d+)*(?:\s*(?:%|percent|k|m|bn))?(?![\w])", re.IGNORECASE)
 
 
+NUMBER_SCALES = {"k": Decimal(1_000), "m": Decimal(1_000_000), "bn": Decimal(1_000_000_000)}
+
+
 def _canonical_number(raw):
-    digits = re.search(r"\d+(?:[.,]\d+)*", raw).group(0).replace(",", "")
-    return digits.rstrip("0").rstrip(".") if "." in digits else digits
+    """Scaled value as text, with a trailing % for percentages: "$250k" -> "250000", "40 percent" -> "40%"."""
+    low = raw.lower().strip()
+    value = Decimal(re.search(r"\d+(?:[.,]\d+)*", low).group(0).replace(",", ""))
+    scale = re.search(r"\d\s*(k|m|bn)$", low)
+    if scale:
+        value *= NUMBER_SCALES[scale.group(1)]
+    text = format(value.normalize(), "f")
+    return text + "%" if "%" in low or "percent" in low else text
+
+
+def _is_grounded(value, allowed):
+    """A percentage must match a source percentage; a bare number matches the same value in any unit."""
+    return value in allowed or (not value.endswith("%") and value in {a.rstrip("%") for a in allowed})
 
 
 def numbers_in(text):
-    """Canonical numeric values mentioned in a text ("1,200" and "1200" are the same number)."""
+    """Canonical numeric values mentioned in a text ("1,200", "1200" and "1.2k" are the same number)."""
     return {_canonical_number(m.group(0)) for m in NUMBER_PATTERN.finditer(text or "")}
 
 
@@ -116,7 +131,7 @@ def invented_numbers(text, *allowed_sources):
     seen, invented = set(), []
     for match in NUMBER_PATTERN.finditer(text or ""):
         value = _canonical_number(match.group(0))
-        if value not in allowed and value not in seen:
+        if not _is_grounded(value, allowed) and value not in seen:
             seen.add(value)
             invented.append(match.group(0).strip())
     return invented
