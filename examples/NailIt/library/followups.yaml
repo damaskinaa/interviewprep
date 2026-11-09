@@ -9,6 +9,16 @@ banks:
     trigger: missing_number
     questions: ["How did you measure that?"]
     src: [D07]
+  - id: result
+    label: Result missing
+    trigger: missing_result
+    questions: ["What was the outcome?"]
+    src: [D07]
+  - id: tradeoff
+    label: Trade-off missing
+    trigger: missing_tradeoff
+    questions: ["What did you give up to do that?"]
+    src: [D07]
   - id: example_corp_depth
     label: Example Corp depth probes
     trigger: company:example_corp
