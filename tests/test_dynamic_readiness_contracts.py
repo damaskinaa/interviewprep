@@ -262,6 +262,23 @@ class DynamicReadinessContractsTest(unittest.TestCase):
         lua = self.client.post("/lua-coach", headers=self.auth_headers(), json={"session_id": session_id})
         self.assertEqual(lua.status_code, 400)
 
+    def test_failed_answer_generation_refunds_credits(self):
+        session_id = self._create_owned_session("payer-2")
+        self.api.CREDITS_ENFORCED = True
+        self.api.add_credits("payer-2", 3, "test grant")
+
+        def boom(session, payload):
+            raise RuntimeError("llm down")
+
+        self.api.generate_answer_options = boom
+        response = self.client.post(
+            "/answers/generate",
+            headers={**self.auth_headers(), "X-User-Id": "payer-2"},
+            json={"session_id": session_id, "question": "Why us?"},
+        )
+        self.assertEqual(response.status_code, 500)
+        self.assertEqual(self.api.get_credits("payer-2"), 3)
+
     def test_module_status_is_owner_scoped(self):
         session_id = self._create_owned_session("owner-1")
         job_store = sys.modules["job_store"]

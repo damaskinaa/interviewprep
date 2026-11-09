@@ -124,7 +124,8 @@ async def http_exception_handler(request, exc):
 
 @app.on_event("startup")
 async def startup_cleanup():
-    fail_stale_jobs(minutes=30)      # thread jobs die with the process; unblock reruns
+    # Thread jobs die with the process, so any active job is dead after a restart; RQ jobs survive.
+    fail_stale_jobs(minutes=30 if _redis_url else 0)
     delete_old_jobs(days=7)          # purge job artifacts after 7 days (disk space)
     delete_old_sessions(days=90)     # purge session records after 90 days (GDPR)
 
@@ -205,7 +206,7 @@ async def stripe_webhook(request: Request):
     return {"received": True}
 
 
-def check_and_deduct(user_id: str, action: str) -> None:
+def check_and_deduct(user_id: str, action: str) -> int:
     """
     Call before any paid action.
     Raises HTTPException 402 if the user has insufficient credits.
@@ -213,7 +214,7 @@ def check_and_deduct(user_id: str, action: str) -> None:
     """
     cost = MODULE_COSTS.get(action, 0)
     if cost == 0 or not CREDITS_ENFORCED or not user_id:
-        return
+        return 0
     try:
         deduct_credits(user_id, cost, action)
     except ValueError as e:
@@ -225,6 +226,7 @@ def check_and_deduct(user_id: str, action: str) -> None:
                 "top_up_url": "/pricing",
             },
         )
+    return cost
 
 
 @app.delete("/user/{user_id}/data", dependencies=[Depends(require_app_key)])
@@ -642,13 +644,14 @@ def prepare_status(job_id: str):
 def answers_generate(req: AnswerGenerateRequest, user_id: str = Depends(require_user_id)):
     payload = req.model_dump() if hasattr(req, "model_dump") else req.dict()
     session = owned_session(req.session_id, user_id, include_raw=True)
-    check_and_deduct(user_id, "answer_generation")
+    charged = check_and_deduct(user_id, "answer_generation")
     try:
         return generate_answer_options(session, payload)
-    except FileNotFoundError as error:
-        raise HTTPException(status_code=400, detail=str(error)) from error
     except Exception as error:
-        raise HTTPException(status_code=500, detail=str(error)) from error
+        if charged:
+            add_credits(user_id, charged, "Refund: answer_generation failed")
+        status = 400 if isinstance(error, FileNotFoundError) else 500
+        raise HTTPException(status_code=status, detail=str(error)) from error
 
 
 @app.post("/lua-coach", dependencies=[Depends(require_app_key)])
