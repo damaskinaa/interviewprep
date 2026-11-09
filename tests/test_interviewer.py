@@ -108,6 +108,7 @@ class InterviewerTest(unittest.TestCase):
             self.start(mode="C", progress={"freeze_drills": 4, "week2_average": 4})
         state, _ = self.start(mode="C", progress={"freeze_drills": 5, "week2_average": 3.5})
         self.assertEqual(state["mode"], "C")
+        self.assertEqual(state["temperament"]["id"], "sceptic")
 
     def test_mode_b_records_three_second_rule_and_cut_off(self):
         state, _ = self.start(mode="B")

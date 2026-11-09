@@ -92,7 +92,9 @@ def start_mock(round_id, mode="A", company_id=None, temperament_id=None, seed=No
     if company_id and not company:
         raise ValueError(f"unknown company {company_id}")
     temperaments = personas["temperaments"]
-    temperament = _by_id(temperaments, temperament_id) if temperament_id else (temperaments[0] if temperaments else None)
+    cold = [t for t in temperaments if re.search(r"scep|skep|cold|hostile", f"{t['id']} {t['label']}", re.I)]
+    default = (cold[0] if mode == "C" and cold else temperaments[0]) if temperaments else None
+    temperament = _by_id(temperaments, temperament_id) if temperament_id else default
     if temperament_id and not temperament:
         raise ValueError(f"unknown temperament {temperament_id}")
     seed = seed if seed is not None else random.randrange(1 << 30)
