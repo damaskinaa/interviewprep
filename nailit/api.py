@@ -335,6 +335,8 @@ def voice_say(req: VoiceSayRequest):
 def voice_answer(mock_id: str = Form(...), audio: UploadFile = File(...), engine: str = Form(""),
                  gap_before_record_s: float = Form(0.0)):
     """One spoken answer: save, transcribe locally (fillers kept), run the interviewer, speak the reply."""
+    if engine and engine not in voice.TTS_ENGINES:
+        raise HTTPException(status_code=400, detail=f"unknown TTS engine {engine}")
     with _mock_lock(mock_id):
         state = load_mock(mock_id)
         if not state:
