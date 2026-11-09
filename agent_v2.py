@@ -6016,6 +6016,10 @@ why_this_role_answer must follow this structure:
 Do not invent candidate background.
 """
     result = ask_json(prompt, model=MODEL_STRATEGY, max_tokens=15000, retries=2, fallback={})
+    if not result:
+        raise ValueError(
+            "Interview strategy generation returned no usable output (model output was empty or not valid JSON). Please run it again."
+        )
     report_progress(progress_callback, "Strategy answer validation", 86)
     result = normalize_modular_strategy(result, session, company_intelligence, role_intelligence, candidate_profile, gap_map)
     if not any(
