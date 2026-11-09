@@ -3,7 +3,9 @@ import sqlite3
 from datetime import datetime, timezone
 from pathlib import Path
 
-DB_PATH = Path("lua_mastery.db")
+from data_paths import lua_data_path
+
+DB_PATH = lua_data_path("lua_mastery.db")
 
 
 def _now():

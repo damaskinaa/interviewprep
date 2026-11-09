@@ -227,6 +227,8 @@ Return only valid JSON with this exact schema:
 def adapt_lua_response(raw):
     """Map internal lua_coach keys to the frontend contract shape."""
     return {
+        "status": raw.get("status", "coaching"),
+        "verdict": raw.get("verdict", ""),
         "structure_score": raw.get("score_out_of_10", 5),
         "content_score": min(10, len(raw.get("what_worked", "") or "") // 20),
         "company_alignment_score": raw.get("score_out_of_10", 5),

@@ -1,3 +1,4 @@
+from pathlib import Path
 import json
 from doctrine_runtime import build_lua_doctrine_brief
 
@@ -65,6 +66,36 @@ def build_lua_mock_interview_brief(
     }
 
     return json.dumps(brief, indent=2, ensure_ascii=False)
+
+
+
+SESSION_BRIEF_MODULES = [
+    "company_intelligence",
+    "role_intelligence",
+    "candidate_profile",
+    "gap_map",
+    "interview_strategy",
+]
+
+
+def build_session_lua_brief(session_id, jobs_root="jobs", max_chars_per_module=6000):
+    """Collect the session's completed module artifacts so Lua coaches with real candidate context."""
+    from agent_v2 import safe_path_part, trim_text
+
+    base = Path(jobs_root) / safe_path_part(session_id, "session")
+    brief = {"brief_type": "nailit_session_lua_brief", "session_id": session_id, "modules": {}}
+    for module_name in SESSION_BRIEF_MODULES:
+        path = base / module_name / f"{module_name}.json"
+        if not path.exists():
+            continue
+        try:
+            data = json.loads(path.read_text(encoding="utf8"))
+        except (OSError, json.JSONDecodeError):
+            continue
+        brief["modules"][module_name] = trim_text(
+            json.dumps(data, ensure_ascii=False), max_chars_per_module
+        )
+    return brief
 
 
 if __name__ == "__main__":

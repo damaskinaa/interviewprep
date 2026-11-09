@@ -105,11 +105,16 @@ def chunk_text(text, chunk_size=7000, max_chunks=12):
     return chunks[:max_chunks]
 
 
+class LLMError(RuntimeError):
+    """Raised when the LLM call cannot produce output, so failures never leak into artifacts as text."""
+
+
 def ask_llm(prompt, model=None, max_tokens=2400, retries=3):
     model = model or MODEL_FAST
     prompt = normalize_text(prompt)
     if not OPENAI_API_KEY:
-        return "LLM error: OPENAI_API_KEY is not set."
+        raise LLMError("OPENAI_API_KEY is not set.")
+    last_error = None
     for attempt in range(1, retries + 1):
         try:
             response = openai_client.chat.completions.create(
@@ -130,13 +135,12 @@ def ask_llm(prompt, model=None, max_tokens=2400, retries=3):
                 max_tokens=max_tokens,
                 timeout=150,
             )
-            time.sleep(1.2)
             return response.choices[0].message.content or ""
         except Exception as error:
-            if attempt == retries:
-                return f"LLM error after {retries} attempts: {error}"
-            time.sleep(3 * attempt)
-    return "LLM error: unknown failure."
+            last_error = error
+            if attempt < retries:
+                time.sleep(3 * attempt)
+    raise LLMError(f"LLM call failed after {retries} attempts: {last_error}")
 
 
 def extract_json(text):
@@ -815,7 +819,7 @@ Specific answer types that would fail.
 What is officially supported, repeated public theme, directional only, transcript signal, inferred, unclear, and worth manually checking.
 
 Rules:
-Google must not sound like Stripe. Every section must be company specific.
+This company must not sound like any other company. Every section must be company specific.
 Do not invent source URLs.
 Do not present Reddit, Glassdoor, Blind, YouTube, blogs, forums, or prep sites as official.
 Do not let adjacent sources from unrelated companies shape company-specific claims. If an adjacent source is retained, label it low-confidence adjacent pattern.
@@ -1238,7 +1242,7 @@ Use official sources as high confidence facts.
 Use directional sources as themes and signals only, never as facts.
 Use YouTube transcripts as candidate experience intelligence and question pattern signals only.
 State interview rounds as observed range with confidence level unless officially confirmed.
-Make every section company specific. Google must not sound like Stripe.
+Make every section company specific. This company must not sound like any other company.
 Use JD as the core targeting material for question bank and risk map.
 Be honest about gaps.
 Make it practical for preparation tonight.
@@ -2751,9 +2755,9 @@ The full_answer field is invalid if it is under 150 words. Count the words befor
 
 For section_strategy.company_signal_map:
 Read research.json carefully. Extract exactly 5 company specific signals that are true for this company and not generic to all companies. For each signal write: the signal itself, why it matters for this specific role, and one sentence on how the candidate should use it in their answer. If research is insufficient to produce 5 real signals say research insufficient and list what signals you could confirm versus what is missing. Never output no grounded item available. Never output a generic signal that could apply to any company.
-Each signal must be anchored in a specific Google source, public Google hiring signal, or Google People Operations relevant research item from research.json. Generic signals like collaboration, innovation, or data driven decision making are invalid unless tied to a specific Google source and People Operations implication.
-A signal is a specific insight about how this company operates, what it values, or what it tests in interviews. It is never a source title or a page name. For Google People Operations specifically the signals must be things like: how Google structures people operations service delivery, what Google measures in people operations quality, how Google approaches process improvement internally, what Google values in people managers, how Google runs its HR operations model. Research these from the sources available. If research does not contain enough to produce 5 real signals say research insufficient rather than inventing source titles as signals.
-For Google People Operations, do not output broad value words such as innovation, collaboration, stakeholder engagement, continuous improvement, or change management as standalone signals. Convert them into operational People Operations signals, for example: employee experience is treated as a measurable service-quality outcome; process improvement must be governed through data, control plans, and adoption mechanisms; People Operations work crosses HR operations, analytics, compliance, vendors, and regional teams; interviewers will test evidence of role-related knowledge through concrete accomplishments; people managers are expected to improve systems and team capability, not only manage tasks.
+Each signal must be anchored in a specific company source, public company hiring signal, or role-relevant research item from research.json. Generic signals like collaboration, innovation, or data driven decision making are invalid unless tied to a specific company source and a role implication.
+A signal is a specific insight about how this company operates, what it values, or what it tests in interviews. It is never a source title or a page name. Research these from the sources available. If research does not contain enough to produce 5 real signals say research insufficient rather than inventing source titles as signals.
+Do not output broad value words such as innovation, collaboration, stakeholder engagement, continuous improvement, or change management as standalone signals. Convert them into specific operational signals for this company and role.
 Output exactly 5 markdown bullets. Every bullet must start with "- signal:" and must also include "why_it_matters_for_this_role:" and "how_candidate_should_use_it:". Do not use numbered lists, paragraphs, source titles, or page names as signals.
 """
     strategy = ask_json(prompt, model=MODEL_STRATEGY, max_tokens=9000, fallback={})
@@ -3975,8 +3979,8 @@ def regenerate_pack_section(section_title, section_text, company_name, role_name
         specific_instruction = """
 Rewrite this section as the Company Signal Map body only.
 Read research.json carefully. Extract exactly 5 company specific signals that are true for this company and not generic to all companies. For each signal write: the signal itself, why it matters for this specific role, and one sentence on how the candidate should use it in their answer. If research is insufficient to produce 5 real signals say research insufficient and list what signals you could confirm versus what is missing. Never output no grounded item available. Never output a generic signal that could apply to any company.
-A signal is a specific insight about how this company operates, what it values, or what it tests in interviews. It is never a source title or a page name. For Google People Operations specifically the signals must be things like: how Google structures people operations service delivery, what Google measures in people operations quality, how Google approaches process improvement internally, what Google values in people managers, how Google runs its HR operations model. Research these from the sources available. If research does not contain enough to produce 5 real signals say research insufficient rather than inventing source titles as signals.
-For Google People Operations, do not output broad value words such as innovation, collaboration, stakeholder engagement, continuous improvement, or change management as standalone signals. Convert them into operational People Operations signals, for example: employee experience is treated as a measurable service-quality outcome; process improvement must be governed through data, control plans, and adoption mechanisms; People Operations work crosses HR operations, analytics, compliance, vendors, and regional teams; interviewers will test evidence of role-related knowledge through concrete accomplishments; people managers are expected to improve systems and team capability, not only manage tasks.
+A signal is a specific insight about how this company operates, what it values, or what it tests in interviews. It is never a source title or a page name. Research these from the sources available. If research does not contain enough to produce 5 real signals say research insufficient rather than inventing source titles as signals.
+Do not output broad value words such as innovation, collaboration, stakeholder engagement, continuous improvement, or change management as standalone signals. Convert them into specific operational signals for this company and role.
 Output exactly 5 markdown bullets. Every bullet must start with "- signal:" and must also include "why_it_matters_for_this_role:" and "how_candidate_should_use_it:". Do not use numbered lists, paragraphs, source titles, or page names as signals.
 """
     else:
@@ -4422,15 +4426,13 @@ def editorial_answer_outlines(strategy, candidate_profile):
     return "\n".join(rows)
 
 
-def editorial_why_google(company_name, candidate_profile, research):
+def editorial_why_company(company_name, candidate_profile, research):
     bridge = candidate_bridge_summary(candidate_profile)
     return (
-        f"Why {company_name}: what interests me is the way this role connects workforce development to real infrastructure delivery risk. "
-        "From the data center workforce signals, this is not generic program coordination; it is about building the partner ecosystem, training mechanisms, readiness metrics, and operating cadence that help construction teams deliver. "
+        f"Why {company_name}: what interests me is how this role connects to real delivery outcomes for the business, not generic coordination. "
         f"My honest bridge is {bridge}. "
-        "I would not claim that I already know the skilled-trades labor market or the contractor ecosystem. What I can bring is the operating discipline behind the problem: make constraints visible, align stakeholders who have different incentives, build repeatable mechanisms, and use metrics to decide where risk is increasing. "
-        "Why now is simple: my strongest experience is in operations where quality, capacity, handovers, and stakeholder trust all mattered, and this role would let me apply that pattern to a higher-stakes workforce problem. "
-        "That is why Google is compelling to me: the work has a clear business consequence, and it rewards someone who can be honest about the learning curve while still moving the operating system forward."
+        "I would not claim domain knowledge I do not have. What I can bring is the operating discipline behind the problem: make constraints visible, align stakeholders who have different incentives, build repeatable mechanisms, and use metrics to decide where risk is increasing. "
+        f"That is why {company_name} is compelling to me: the work has a clear business consequence, and it rewards someone who can be honest about the learning curve while still moving the operating system forward."
     )
 
 
@@ -4478,7 +4480,7 @@ def final_editorial_rewrite_pack(pack, company_name, role_name, candidate_profil
     edited = replace_markdown_section(edited, "Likely Question Bank By Round", editorial_questions_section(strategy.get("top_10_likely_questions"), candidate_profile))
     edited = replace_markdown_section(edited, "Dangerous Question Bank", editorial_questions_section(strategy.get("top_10_dangerous_questions"), candidate_profile))
     edited = replace_markdown_section(edited, "Best Answer Outlines", editorial_answer_outlines(strategy, candidate_profile))
-    edited = replace_markdown_section(edited, "Why This Company Answer", editorial_why_google(company_name, candidate_profile, research))
+    edited = replace_markdown_section(edited, "Why This Company Answer", editorial_why_company(company_name, candidate_profile, research))
     edited = replace_markdown_section(edited, "Why This Role Answer", editorial_why_role(role_name, candidate_profile, jd_analysis))
     edited = replace_markdown_section(edited, "Thirty Sixty Ninety Day Answer", editorial_thirty_sixty_ninety(candidate_profile))
     assert_no_banned_visible_strings(edited)

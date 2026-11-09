@@ -1,0 +1,10 @@
+.env
+.env.*
+*.env
+*.env.*
+.next
+node_modules
+.vercel
+backend.log
+*.tsbuildinfo
+!.env.example
