@@ -152,7 +152,7 @@ def run_rehearse(cards=5, http=None):
                 audio = speak_to_file(text, folder, index * 2 + (label == "off-topic"))
                 started = time.monotonic()
                 with open(audio, "rb") as handle:
-                    r = http.post("/rehearse/attempt", data={"card_id": c["id"]}, files={"audio": ("a.aiff", handle, "audio/aiff")})
+                    r = http.post("/rehearse/attempt", data={"card_id": c["id"], "test": "true"}, files={"audio": ("a.aiff", handle, "audio/aiff")})
                 wall = round(time.monotonic() - started, 1)
                 if r.status_code != 200:
                     problems.append(f"card {c['id']} {label}: /rehearse/attempt {r.status_code} {r.text[:120]}")

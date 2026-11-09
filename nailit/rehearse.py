@@ -68,6 +68,9 @@ def deck(kind: str = "", limit: int = 400):
     best = {}
     for row in history():
         best[row["card_id"]] = max(best.get(row["card_id"], 0), row["score"])
+    TYPE_FIX = {"behavioral": "behavioural"}
+    for c in data["cards"]:
+        c["type"] = TYPE_FIX.get(c.get("type"), c.get("type"))
     cards = [{k: c.get(k) for k in ("id", "question", "answer", "moves", "hook", "frequency", "type", "why_it_won",
                                      "roles", "companies", "win_rate", "candidates", "origin")} | {"best_score": best.get(c["id"])}
              for c in data["cards"] if not kind or c.get("type") == kind]
@@ -124,7 +127,7 @@ Reply JSON: {{"score": int, "moves_hit": [..exact strings from key moves..], "mo
 
 
 @router.post("/rehearse/attempt")
-def attempt(card_id: str = Form(...), audio: UploadFile = File(...), take: str = Form("")):
+def attempt(card_id: str = Form(...), audio: UploadFile = File(...), take: str = Form(""), test: bool = Form(False)):
     c = card(card_id)
     name = f"attempt_{re.sub(r'[^A-Za-z0-9_]', '_', card_id)[:60]}_{int(time.time())}.webm"
     try:
@@ -134,7 +137,7 @@ def attempt(card_id: str = Form(...), audio: UploadFile = File(...), take: str =
         raise HTTPException(status_code=503, detail=str(error)) from error
     if not transcript["text"].strip():
         raise HTTPException(status_code=422, detail="No speech found in the recording")
-    return _score(c, transcript["text"], transcript["speech_s"], transcript["filled_pauses"], audio_name=name)
+    return _score(c, transcript["text"], transcript["speech_s"], transcript["filled_pauses"], audio_name=name, log=not test)
 
 
 class TypedAttempt(BaseModel):
@@ -147,7 +150,7 @@ def attempt_text(req: TypedAttempt):
     return _score(card(req.card_id), req.text, None, 0)
 
 
-def _score(c, text, seconds, filled_pauses, audio_name=None):
+def _score(c, text, seconds, filled_pauses, audio_name=None, log=True):
     from openai import OpenAI
     words = len(text.split())
     try:
@@ -168,8 +171,9 @@ def _score(c, text, seconds, filled_pauses, audio_name=None):
     row = {"at": time.strftime("%Y-%m-%d %H:%M:%S"), "card_id": c["id"], "score": score, "verdict": result.get("verdict"),
            "moves_hit": result.get("moves_hit") or [], "moves_missed": result.get("moves_missed") or [],
            "delivery": delivery, "audio": audio_name}
-    with open(progress_path(), "a") as handle:
-        handle.write(json.dumps(row) + "\n")
+    if log:  # simulated-candidate test runs don't count towards your progress
+        with open(progress_path(), "a") as handle:
+            handle.write(json.dumps(row) + "\n")
     return {**row, "transcript": text, "one_fix": result.get("one_fix"), "best_line": result.get("best_line"),
             "model_answer": c["answer"], "moves": c.get("moves") or []}
 

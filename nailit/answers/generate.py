@@ -174,7 +174,8 @@ def build_card(item, stories, existing):
     moves, hook = key_moves(item["question"], best["text"])
     return {"id": item.get("id") or re.sub(r"[^a-z0-9]+", "_", item["question"].lower())[:60].strip("_"),
             "question": item["question"], "variants": item.get("variants", [])[:5], "frequency": item.get("frequency", 1),
-            "roles": item.get("roles", []), "companies": item.get("companies", []), "type": qtype or item.get("type"),
+            "roles": item.get("roles", []), "companies": item.get("companies", []),
+            "type": {"behavioral": "behavioural"}.get(qtype or item.get("type"), qtype or item.get("type")),
             "answer": best["text"], "story": best.get("story"), "origin": best["origin"], "win_rate": best["win_rate"],
             "why_it_won": best["reasons"], "moves": moves, "hook": hook,
             "runner_up": ranked[1]["text"] if len(ranked) > 1 else None, "candidates": len(cands),
