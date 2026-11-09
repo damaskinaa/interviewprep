@@ -1,0 +1,32 @@
+companies:
+  - id: example_corp
+    name: Example Corp
+    round_formats: {loop: four interviews plus a bar raiser}
+    probing_style: Asks for the number behind every claim.
+    values: [customer first, ownership]
+    signals: [data in every answer]
+    followup_banks: [ownership, number, example_corp_depth]
+    src: [D08]
+temperaments:
+  - {id: warm, label: Warm, behaviour: Friendly and patient., how_to_handle: Stay concise anyway., src: [D08]}
+  - {id: sceptic, label: Cold sceptic, behaviour: Flat tone and interrupts., how_to_handle: Answer the question asked first., src: [D08]}
+modes:
+  - {id: A, label: Guided, behaviour: Hints allowed between questions., unlock: always, src: [D08]}
+  - {id: C, label: Cold sceptic, behaviour: No hints and hostile follow-ups., unlock: 5 freeze drills and week-2 average of 3.5, src: [D08]}
+pressure_events:
+  - {id: interrupt, label: Interrupt mid-answer, how: Cut in after the second sentence., scored_by: recovery time, min_mode: B, src: [D08]}
+rounds:
+  - id: behavioural
+    label: Behavioural
+    minutes: 45
+    questions: 4
+    per_question_minutes: "8-10"
+    flow: [Introduce yourself as the interviewer., tell_me_about_yourself, disagree_with_manager, biggest_failure]
+    src: [D08]
+  - id: loop
+    label: Full loop
+    minutes: 240
+    questions: 0
+    per_question_minutes: n/a
+    flow: [behavioural, Then a bar raiser round.]
+    src: [D08]

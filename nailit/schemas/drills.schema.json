@@ -1,0 +1,41 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "drills",
+  "type": ["array", "object"],
+  "items": {
+    "type": "object",
+    "required": ["id", "title", "steps"],
+    "properties": {
+      "id": {"type": "string", "pattern": "^[a-z0-9_]+$"},
+      "src": {"type": "array", "items": {"type": "string", "pattern": "^D[0-9]+$"}},
+      "lang": {"enum": ["en", "ru", "any"]},
+      "title": {"type": "string"},
+      "minutes": {"type": "number", "minimum": 0},
+      "pillar": {"enum": ["retrieval", "structuring", "signalling", "regulation", "voice"]},
+      "steps": {"type": "array", "items": {"type": "string"}, "minItems": 1},
+      "measure": {"type": "string"},
+      "pass": {"type": "string"}
+    },
+    "additionalProperties": true
+  },
+  "properties": {"common_end": {"type": ["string", "array"], "items": {"type": "string"}}},
+  "additionalProperties": {
+    "type": "array",
+    "items": {
+      "type": "object",
+      "required": ["id", "title", "steps"],
+      "properties": {
+        "id": {"type": "string", "pattern": "^[a-z0-9_]+$"},
+        "src": {"type": "array", "items": {"type": "string", "pattern": "^D[0-9]+$"}},
+        "lang": {"enum": ["en", "ru", "any"]},
+        "title": {"type": "string"},
+        "minutes": {"type": "number", "minimum": 0},
+        "pillar": {"enum": ["retrieval", "structuring", "signalling", "regulation", "voice"]},
+        "steps": {"type": "array", "items": {"type": "string"}, "minItems": 1},
+        "measure": {"type": "string"},
+        "pass": {"type": "string"}
+      },
+      "additionalProperties": true
+    }
+  }
+}

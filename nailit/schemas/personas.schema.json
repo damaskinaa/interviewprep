@@ -1,0 +1,94 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "personas",
+  "type": "object",
+  "required": ["companies", "temperaments", "modes", "pressure_events", "rounds"],
+  "properties": {
+    "companies": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "name"],
+        "properties": {
+          "id": {"type": "string", "pattern": "^[a-z0-9_]+$"},
+          "src": {"type": "array", "items": {"type": "string", "pattern": "^D[0-9]+$"}},
+          "lang": {"enum": ["en", "ru", "any"]},
+          "name": {"type": "string"},
+          "round_formats": {"type": "object"},
+          "probing_style": {"type": "string"},
+          "values": {"type": "array", "items": {"type": "string"}},
+          "signals": {"type": "array", "items": {"type": "string"}},
+          "followup_banks": {"type": "array", "items": {"type": "string", "pattern": "^[a-z0-9_]+$"}}
+        },
+        "additionalProperties": true
+      }
+    },
+    "temperaments": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "label", "behaviour"],
+        "properties": {
+          "id": {"type": "string", "pattern": "^[a-z0-9_]+$"},
+          "src": {"type": "array", "items": {"type": "string", "pattern": "^D[0-9]+$"}},
+          "lang": {"enum": ["en", "ru", "any"]},
+          "label": {"type": "string"},
+          "behaviour": {"type": "string"},
+          "how_to_handle": {"type": "string"}
+        },
+        "additionalProperties": true
+      }
+    },
+    "modes": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "label", "behaviour"],
+        "properties": {
+          "id": {"enum": ["A", "B", "C"]},
+          "label": {"type": "string"},
+          "behaviour": {"type": "string"},
+          "unlock": {"type": "string"},
+          "src": {"type": "array", "items": {"type": "string", "pattern": "^D[0-9]+$"}}
+        },
+        "additionalProperties": true
+      }
+    },
+    "pressure_events": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "label", "how"],
+        "properties": {
+          "id": {"type": "string", "pattern": "^[a-z0-9_]+$"},
+          "src": {"type": "array", "items": {"type": "string", "pattern": "^D[0-9]+$"}},
+          "lang": {"enum": ["en", "ru", "any"]},
+          "label": {"type": "string"},
+          "how": {"type": "string"},
+          "scored_by": {"type": "string"},
+          "min_mode": {"enum": ["A", "B", "C"]}
+        },
+        "additionalProperties": true
+      }
+    },
+    "rounds": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "label", "flow"],
+        "properties": {
+          "id": {"type": "string", "pattern": "^[a-z0-9_]+$"},
+          "src": {"type": "array", "items": {"type": "string", "pattern": "^D[0-9]+$"}},
+          "lang": {"enum": ["en", "ru", "any"]},
+          "label": {"type": "string"},
+          "minutes": {"type": "integer", "minimum": 1},
+          "questions": {"type": "integer", "minimum": 0},
+          "per_question_minutes": {"type": ["string", "number"]},
+          "flow": {"type": "array", "items": {"type": "string"}, "minItems": 1}
+        },
+        "additionalProperties": true
+      }
+    }
+  },
+  "additionalProperties": true
+}

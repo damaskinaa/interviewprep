@@ -1,0 +1,10 @@
+common_end: [Replay the recording once., Note one thing to keep.]
+cards:
+  - id: falling_result
+    title: Falling result sentence
+    minutes: 3
+    pillar: voice
+    steps: [Read the result sentence., End with a falling pitch.]
+    measure: final_pitch_slope_result_sentences
+    lang: any
+    src: [D10]

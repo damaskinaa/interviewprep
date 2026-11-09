@@ -1,0 +1,24 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "rubric",
+  "type": "object",
+  "required": ["rules"],
+  "properties": {
+    "rules": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "text"],
+        "properties": {
+          "id": {"type": "string", "pattern": "^R[1-8]\\.[0-9]+$"},
+          "text": {"type": "string", "minLength": 1},
+          "section": {"type": "integer"},
+          "src": {"type": "array", "items": {"type": "string", "pattern": "^D[0-9]+$"}}
+        },
+        "additionalProperties": true
+      },
+      "minItems": 1
+    }
+  },
+  "additionalProperties": true
+}

@@ -1,0 +1,111 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "questions",
+  "type": ["array", "object"],
+  "items": {
+    "type": "object",
+    "required": ["id", "text", "type"],
+    "properties": {
+      "id": {"type": "string", "pattern": "^[a-z0-9_]+$"},
+      "src": {"type": "array", "items": {"type": "string", "pattern": "^D[0-9]+$"}},
+      "lang": {"enum": ["en", "ru", "any"]},
+      "text": {"type": "string", "minLength": 1},
+      "variants": {"type": "array", "items": {"type": "string"}},
+      "type": {
+        "enum": [
+          "opening",
+          "motivation",
+          "behavioural",
+          "failure",
+          "weakness",
+          "strength",
+          "situational",
+          "planning",
+          "hard_skills",
+          "self_assessment",
+          "closing",
+          "negotiation",
+          "presentation"
+        ]
+      },
+      "area": {"type": "string"},
+      "measures": {"type": "string"},
+      "tests_for": {"type": "array", "items": {"type": "string"}},
+      "hard": {"type": "boolean"},
+      "structure": {"enum": ["hero", "five_part", "failure", "ninety_day", "sei", "free"]},
+      "best_direction": {"type": "string"},
+      "lp": {"type": "array", "items": {"type": "string"}},
+      "rounds": {
+        "type": "array",
+        "items": {"enum": ["recruiter", "hiring_manager", "behavioural", "bar_raiser", "hard_skills", "final", "loop"]}
+      }
+    },
+    "additionalProperties": true
+  },
+  "required": ["questions"],
+  "additionalProperties": false,
+  "properties": {
+    "questions": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "text", "type"],
+        "properties": {
+          "id": {"type": "string", "pattern": "^[a-z0-9_]+$"},
+          "src": {"type": "array", "items": {"type": "string", "pattern": "^D[0-9]+$"}},
+          "lang": {"enum": ["en", "ru", "any"]},
+          "text": {"type": "string", "minLength": 1},
+          "variants": {"type": "array", "items": {"type": "string"}},
+          "type": {
+            "enum": [
+              "opening",
+              "motivation",
+              "behavioural",
+              "failure",
+              "weakness",
+              "strength",
+              "situational",
+              "planning",
+              "hard_skills",
+              "self_assessment",
+              "closing",
+              "negotiation",
+              "presentation"
+            ]
+          },
+          "area": {"type": "string"},
+          "measures": {"type": "string"},
+          "tests_for": {"type": "array", "items": {"type": "string"}},
+          "hard": {"type": "boolean"},
+          "structure": {"enum": ["hero", "five_part", "failure", "ninety_day", "sei", "free"]},
+          "best_direction": {"type": "string"},
+          "lp": {"type": "array", "items": {"type": "string"}},
+          "rounds": {
+            "type": "array",
+            "items": {"enum": ["recruiter", "hiring_manager", "behavioural", "bar_raiser", "hard_skills", "final", "loop"]}
+          }
+        },
+        "additionalProperties": true
+      }
+    },
+    "candidate_questions": {
+      "type": "array",
+      "items": {
+        "oneOf": [
+          {"type": "string", "minLength": 1},
+          {
+            "type": "object",
+            "required": ["id", "text"],
+            "properties": {
+              "id": {"type": "string", "pattern": "^[a-z0-9_]+$"},
+              "src": {"type": "array", "items": {"type": "string", "pattern": "^D[0-9]+$"}},
+              "lang": {"enum": ["en", "ru", "any"]},
+              "text": {"type": "string", "minLength": 1}
+            },
+            "additionalProperties": true
+          }
+        ]
+      }
+    }
+  }
+}

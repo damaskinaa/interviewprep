@@ -1,0 +1,16 @@
+banks:
+  - id: ownership
+    label: Ownership missing
+    trigger: missing_ownership
+    questions: ["What exactly did you do yourself?", "Which decision was yours?"]
+    src: [D07]
+  - id: number
+    label: Number missing
+    trigger: missing_number
+    questions: ["How did you measure that?"]
+    src: [D07]
+  - id: example_corp_depth
+    label: Example Corp depth probes
+    trigger: company:example_corp
+    questions: ["How would you do that with half the time?"]
+    src: [D07]

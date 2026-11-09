@@ -1,0 +1,10 @@
+swaps:
+  - {id: helped_to_led, weak: I helped with, strong: "I led [scope] which [result]", note: Brackets are filled from stories.md facts only., src: [D05]}
+bridges:
+  - {id: buy_time, text: "Let me pick the example that fits best.", use_when: freeze, src: [D05]}
+anchor_lines:
+  - {id: owner_line, text: I take the decision and own the outcome., fits: [behavioural], src: [D05]}
+joining:
+  - {id: fair_point, text: "That's a fair concern, and here is how I handled it.", src: [D05]}
+banned_in_specific_answers:
+  - {id: passionate, text: I am passionate about, fix: Show it with an example instead., src: [D05]}

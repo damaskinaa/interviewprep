@@ -1,0 +1,12 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "profile",
+  "type": "object",
+  "required": ["sections", "people"],
+  "properties": {
+    "sections": {"type": "object", "additionalProperties": {"type": "string"}},
+    "target_line": {"type": "string"},
+    "people": {"type": "object", "additionalProperties": {"type": "string", "minLength": 1}}
+  },
+  "additionalProperties": true
+}

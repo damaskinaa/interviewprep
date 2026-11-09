@@ -1,0 +1,28 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "followups",
+  "type": "object",
+  "required": ["banks"],
+  "properties": {
+    "banks": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "trigger", "questions"],
+        "properties": {
+          "id": {"type": "string", "pattern": "^[a-z0-9_]+$"},
+          "src": {"type": "array", "items": {"type": "string", "pattern": "^D[0-9]+$"}},
+          "lang": {"enum": ["en", "ru", "any"]},
+          "label": {"type": "string"},
+          "trigger": {
+            "type": "string",
+            "pattern": "^(missing_ownership|missing_number|missing_result|missing_tradeoff|missing_resistance|vague|failure_answer|ic_level_answer|over_90s|always|lp:any|lp:[a-z0-9_]+|company:[a-z0-9_]+|mode:C)$"
+          },
+          "questions": {"type": "array", "items": {"type": "string"}, "minItems": 1}
+        },
+        "additionalProperties": true
+      }
+    }
+  },
+  "additionalProperties": true
+}
