@@ -1,9 +1,9 @@
 import json
-from pathlib import Path
 import re
-from openai import OpenAI
-from agent_v2 import ask_llm, trim_text
+from pathlib import Path
 
+from nailit.llm import ask_llm
+from nailit.prep.common import trim_text
 
 CONTINUATION_PHRASES = {
     "mm",
@@ -223,7 +223,7 @@ SESSION_BRIEF_MODULES = [
 
 def build_session_lua_brief(session_id, jobs_root="jobs", max_chars_per_module=6000):
     """Collect the session's completed module artifacts so Lua coaches with real candidate context."""
-    from agent_v2 import safe_path_part
+    from nailit.prep.common import safe_path_part
 
     base = Path(jobs_root) / safe_path_part(session_id, "session")
     brief = {"brief_type": "nailit_session_lua_brief", "session_id": session_id, "modules": {}}

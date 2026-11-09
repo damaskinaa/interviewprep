@@ -2,8 +2,8 @@ import json
 import re
 from pathlib import Path
 
-from agent_v2 import MODEL_STRATEGY, ask_json, json_dumps, normalize_text, safe_path_part, trim_text
-
+from nailit.llm import MODEL_STRONG, ask_json, json_dumps
+from nailit.prep.common import normalize_text, safe_path_part, trim_text
 
 ANSWER_LABELS = [
     "Option A safest",
@@ -178,7 +178,7 @@ Return valid JSON only:
   ]
 }}
 """
-    data = ask_json(prompt, model=MODEL_STRATEGY, max_tokens=4200, retries=2, fallback={"answers": []})
+    data = ask_json(prompt, model=MODEL_STRONG, max_tokens=4200, retries=2, fallback={"answers": []})
     result = normalize_answer_options(data, question, candidate_profile, assigned_story)
     return {
         "session_id": session_id,

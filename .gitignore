@@ -26,3 +26,6 @@ agent_v2_part3_append.py
 benchmark_practice.patch
 mastery_writer.patch
 state_fix.patch
+
+*.egg-info/
+.venv/

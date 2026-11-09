@@ -19,12 +19,12 @@ class LocalAppContractsTest(unittest.TestCase):
         self._old_env = os.environ.copy()
         os.environ["OPENAI_API_KEY"] = "test-disabled-openai"
         os.environ["DATA_DIR"] = str(self.tmp_path)
-        for name in ["api", "job_store"]:
+        for name in ["nailit.api", "nailit.store"]:
             sys.modules.pop(name, None)
-        job_store = importlib.import_module("job_store")
+        job_store = importlib.import_module("nailit.store")
         job_store.DB_PATH = self.tmp_path / "nailit_jobs.db"
         self.job_store = job_store
-        self.api = importlib.import_module("api")
+        self.api = importlib.import_module("nailit.api")
         self.client = TestClient(self.api.app, raise_server_exceptions=False)
 
     def tearDown(self):
@@ -97,28 +97,25 @@ class LocalAppContractsTest(unittest.TestCase):
         self.assertIn("Synthetic routing redesign", captured["lua_brief"]["modules"]["candidate_profile"])
 
     def test_llm_failures_raise_instead_of_returning_text(self):
-        agent_v2 = importlib.import_module("agent_v2")
-        old_key = agent_v2.OPENAI_API_KEY
-        agent_v2.OPENAI_API_KEY = ""
-        try:
-            with self.assertRaises(agent_v2.LLMError):
-                agent_v2.ask_llm("hello")
-        finally:
-            agent_v2.OPENAI_API_KEY = old_key
+        llm = importlib.import_module("nailit.llm")
+        os.environ.pop("OPENAI_API_KEY", None)
+        with self.assertRaises(llm.LLMError):
+            llm.ask_llm("hello")
 
     def test_unparseable_model_output_never_becomes_an_artifact(self):
-        agent_v2 = importlib.import_module("agent_v2")
-        self.assertEqual(agent_v2.parse_json_object('{"questions_by_round": [', fallback={}), {})
-        self.assertEqual(agent_v2.parse_json_object('{"a": 1}'), {"a": 1})
+        llm = importlib.import_module("nailit.llm")
+        self.assertEqual(llm.parse_json_object('{"questions_by_round": [', fallback={}), {})
+        self.assertEqual(llm.parse_json_object('{"a": 1}'), {"a": 1})
 
     def test_round_research_threads_keep_job_context(self):
-        agent_v2 = importlib.import_module("agent_v2")
-        token_r = agent_v2._current_results.set({})
-        token_p = agent_v2._current_progress_log.set([])
+        common = importlib.import_module("nailit.prep.common")
+        agent_v2 = importlib.import_module("nailit.prep.research")
+        token_r = common._current_results.set({})
+        token_p = common._current_progress_log.set([])
         old = agent_v2.collect_per_round_research
 
         def fake_round(company, role, round_name, round_type, what_it_tests):
-            agent_v2.log(5, f"researching {round_name}")
+            common.log(5, f"researching {round_name}")
             return {"round_name": round_name, "sources": [{"url": "x"}], "reported_questions": []}
 
         agent_v2.collect_per_round_research = fake_round
@@ -128,8 +125,8 @@ class LocalAppContractsTest(unittest.TestCase):
             )
         finally:
             agent_v2.collect_per_round_research = old
-            agent_v2._current_progress_log.reset(token_p)
-            agent_v2._current_results.reset(token_r)
+            common._current_progress_log.reset(token_p)
+            common._current_results.reset(token_r)
         self.assertEqual(results[0]["sources"], [{"url": "x"}])
 
 

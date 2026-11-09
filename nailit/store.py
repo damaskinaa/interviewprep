@@ -1,11 +1,9 @@
 import json
 import logging
-import os
 import sqlite3
 from datetime import datetime, timedelta
-from pathlib import Path
 
-from data_paths import data_path
+from nailit.paths import data_path
 
 logger = logging.getLogger(__name__)
 

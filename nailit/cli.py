@@ -1,4 +1,5 @@
 import argparse
+import logging
 
 HOST = "127.0.0.1"
 
@@ -12,10 +13,12 @@ def main(argv=None):
     from nailit.config import load_secrets
 
     load_secrets()
+    logging.basicConfig(level=logging.WARNING, format="%(asctime)s %(name)s %(message)s")
+    logging.getLogger("nailit").setLevel(logging.INFO)
 
     import uvicorn
 
-    uvicorn.run("api:app", host=HOST, port=args.port, reload=args.reload)
+    uvicorn.run("nailit.api:app", host=HOST, port=args.port, reload=args.reload)
 
 
 if __name__ == "__main__":

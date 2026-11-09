@@ -3,17 +3,25 @@ import threading
 import uuid
 from datetime import datetime
 
+from nailit.prep.questions import run_session_module
+from nailit.prep.answers import generate_answer_options
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
-from pydantic import BaseModel, Field
-
-from agent_v2 import run_session_module
-from answer_generator import generate_answer_options
-from job_store import (
-    create_session, fail_stale_jobs, get_job, get_or_create_job, get_session, update_job,
+from nailit.store import (
+    create_session,
+    fail_stale_jobs,
+    get_job,
+    get_or_create_job,
+    get_session,
+    update_job,
 )
-from lua_coach import adapt_lua_response, build_lua_coach_response, build_session_lua_brief
+from nailit.coach import (
+    adapt_lua_response,
+    build_lua_coach_response,
+    build_session_lua_brief,
+)
+from pydantic import BaseModel, Field
 
 app = FastAPI(title="NailIt")
 
