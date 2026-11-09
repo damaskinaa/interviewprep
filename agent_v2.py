@@ -163,14 +163,21 @@ def extract_json(text):
         parsed = json.loads(cleaned)
         return json.dumps(parsed, indent=2)
     except Exception:
-        return json.dumps({"error": "Could not parse model output as valid JSON", "raw_output": text[:6000]}, indent=2)
+        return json.dumps({"error": JSON_PARSE_ERROR, "raw_output": text[:6000]}, indent=2)
+
+
+JSON_PARSE_ERROR = "Could not parse model output as valid JSON"
 
 
 def parse_json_object(text, fallback=None):
+    fallback = fallback if fallback is not None else {}
     try:
-        return json.loads(extract_json(text))
+        parsed = json.loads(extract_json(text))
     except Exception:
-        return fallback if fallback is not None else {}
+        return fallback
+    if isinstance(parsed, dict) and parsed.get("error") == JSON_PARSE_ERROR:
+        return fallback
+    return parsed
 
 
 def json_dumps(data):
@@ -6008,6 +6015,13 @@ why_this_role_answer must follow this structure:
 Do not invent candidate background.
 """
     result = ask_json(prompt, model=MODEL_STRATEGY, max_tokens=15000, retries=2, fallback={})
+    if not any(
+        isinstance(round_item, dict) and round_item.get("questions")
+        for round_item in as_list(result.get("questions_by_round"))
+    ):
+        raise ValueError(
+            "Interview strategy generation returned no usable questions (model output was empty or not valid JSON). Please run it again."
+        )
     report_progress(progress_callback, "Strategy answer validation", 86)
     result = normalize_modular_strategy(result, session, company_intelligence, role_intelligence, candidate_profile, gap_map)
     write_module_json(session_id, "interview_strategy", result)

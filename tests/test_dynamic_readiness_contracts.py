@@ -300,6 +300,11 @@ class DynamicReadinessContractsTest(unittest.TestCase):
             agent_v2._current_results.reset(token_r)
         self.assertEqual(results[0]["sources"], [{"url": "x"}])
 
+    def test_unparseable_model_output_never_becomes_an_artifact(self):
+        agent_v2 = importlib.import_module("agent_v2")
+        self.assertEqual(agent_v2.parse_json_object('{"questions_by_round": [', fallback={}), {})
+        self.assertEqual(agent_v2.parse_json_object('{"a": 1}'), {"a": 1})
+
     def test_module_status_is_owner_scoped(self):
         session_id = self._create_owned_session("owner-1")
         job_store = sys.modules["job_store"]
