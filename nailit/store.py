@@ -407,4 +407,4 @@ def mode_c_progress():
                 "SELECT AVG(score) FROM drill_log WHERE score IS NOT NULL AND created_at >= ? AND created_at < ?",
                 ((start + timedelta(days=7)).isoformat(), (start + timedelta(days=14)).isoformat()),
             ).fetchone()[0]
-    return {"freeze_drills": freeze, "week2_average": round(average, 2) if average is not None else None}
+    return {"freeze_drills": freeze, "week2_average": average}
