@@ -129,6 +129,8 @@ class InterviewerTest(unittest.TestCase):
         self.assertEqual(iv._wrong_claim("It took 3.5 days.", iv.random.Random(0))[1], "7")
         self.assertEqual(iv._wrong_claim("It took 1.25 days.", iv.random.Random(0))[1], "2.5")
         self.assertEqual(iv._wrong_claim("We saved 1234567 dollars.", iv.random.Random(0))[1], "2469134")
+        self.assertEqual(iv._wrong_claim("Error rate was 0.0000002 overall.", iv.random.Random(0))[1], "0.0000004")
+        self.assertEqual(iv._wrong_claim("We had 0 incidents and 10 people.", iv.random.Random(0))[1] in {"2", "20"}, True)
 
     def test_resume_skips_questions_removed_from_library(self):
         state, _ = self.start()
