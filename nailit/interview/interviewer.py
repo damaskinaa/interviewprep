@@ -45,6 +45,33 @@ INTERVIEWER_RULES = (
 )
 
 
+TYPE_TIPS = {
+    "opening": "Lead with what you're known for and one result; end with why this role. Aim for 90 seconds.",
+    "motivation": "Start from their need, then your proof. Be specific about this company.",
+    "behavioural": "Result first, then 2 sentences of context, the decision you made and what you rejected, the result, the lesson.",
+    "failure": "Admit it in the first sentence, name your part, the concrete change, and the evidence it's different now.",
+    "weakness": "A real weakness, the action you took, and evidence it's improving.",
+    "strength": "Two or three strengths, each with one fact.",
+    "situational": "Ask a clarifying question if needed, then give options with trade-offs.",
+    "planning": "Listen and map, one pilot, then full contribution with a feedback check.",
+    "self_assessment": "Specific strengths, specific gaps, no fog.",
+    "hard_skills": "The method in plain words, then one real example.",
+    "closing": "Ask your prepared questions, then close: who you are, the value, one proof, next step.",
+    "negotiation": "Anchor on value and a researched range; pause after the number.",
+    "presentation": "Outcome first, 3 blocks with mini-summaries, a memorable last line.",
+    "default": "Answer in the first sentence; keep it under 90 seconds.",
+}
+
+
+def end_mock(state):
+    """End early at the candidate's request; the summary covers the questions answered so far."""
+    if state.get("current") and state["current"].get("answers"):
+        _finish_question(state, library.load_library(), _load_me())
+    state["phase"] = "done"
+    state["ended_early"] = True
+    return summary(state)
+
+
 # ---------- setup ----------
 
 def _by_id(items, item_id):
@@ -108,6 +135,7 @@ def start_mock(round_id, mode="A", company_id=None, temperament_id=None, seed=No
         "turns": [], "scores": [], "error_counts": {}, "retired_gaps": [], "repeat_errors": [],
         "stories_used": {}, "asked_followups": [], "events_fired": [], "rule_violations": [],
         "deescalated": False, "extra_question_used": False, "candidate_questions": 0,
+        "rounds_meta": [{"id": r.get("id"), "label": r.get("label")} for r in personas.get("rounds") or []],
     }
     return state, _advance(state, lib)
 
@@ -266,8 +294,15 @@ def _ask_question(state, lib, item, lead=""):
     questions = library._questions(lib["questions"])[0]
     question = _by_id(questions, item["id"])
     text = _rng(state).choice([question["text"], *(question.get("variants") or [])])
+    if not any(t.get("kind") == "question" for t in state["turns"]):
+        round_label = next((r.get("label") for r in state.get("rounds_meta") or [] if r.get("id") == state["round_id"]),
+                           state["round_id"].replace("_", " "))
+        lead = (f"Hi, thanks for making the time today. I'll be running your {round_label.lower()}. "
+                f"Let's get started. {lead}").strip()
+    hint = None
     if state["mode"] == "A":
-        lead = (lead + f" This one is a {question['type'].replace('_', ' ')} question.").strip()
+        hint = {"type": question["type"].replace("_", " "), "tip": TYPE_TIPS.get(question["type"], TYPE_TIPS["default"]),
+                "tests_for": question.get("tests_for") or []}
     event = _pick_event(state, lib)
     state["current"] = {"question_id": question["id"], "answers": [], "followups": 0, "triggers": [],
                         "event": event["id"] if event else None}
@@ -277,6 +312,9 @@ def _ask_question(state, lib, item, lead=""):
         state["current"]["event"] = None
         key = "interrupt_after_s" if "interrupt" in event["id"] else "cut_off_s"
         extra = {key: 20 if key == "interrupt_after_s" else CUT_OFF_S, "event": event["id"]}
+    if hint:
+        extra["hint"] = hint
+    extra["question_text"] = text
     return _turn(state, f"{lead} {text}", "question", question_id=question["id"], **extra)
 
 
@@ -298,6 +336,8 @@ def _advance(state, lib, me=None, lead=""):
         elif item["kind"] == "round":
             lines.append(f"Next: the {item['label']} part.")
         elif _by_id(library._questions(lib["questions"])[0], item["id"]):
+            if (_by_id(library._questions(lib["questions"])[0], item["id"]) or {}).get("type") == "closing":
+                continue  # the end of every mock already asks for their questions and a closing statement
             return _ask_question(state, lib, item, " ".join(lines))
         else:
             logger.warning("mock %s: question %s is no longer in the library; skipped", state["id"], item["id"])
@@ -386,5 +426,5 @@ def answer(state, text, seconds=None, pre_answer_silence_s=None, lib=None):
 
 
 def summary(state):
-    return {key: state[key] for key in ("id", "round_id", "mode", "phase", "scores", "stories_used", "repeat_errors",
-                                        "events_fired", "rule_violations", "deescalated")}
+    return {key: state.get(key) for key in ("id", "round_id", "mode", "phase", "scores", "stories_used", "repeat_errors",
+                                            "events_fired", "rule_violations", "deescalated", "ended_early")}

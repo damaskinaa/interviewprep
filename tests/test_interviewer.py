@@ -47,8 +47,10 @@ class InterviewerTest(unittest.TestCase):
         state, turn = self.start()
         self.assertEqual(turn["kind"], "question")
         self.assertEqual(turn["question_id"], "tell_me_about_yourself")
-        self.assertTrue(turn["say"].startswith("LLM LINE"))
-        self.assertIn("opening question", turn["say"])
+        self.assertTrue(turn["say"].startswith("Hi, thanks for making the time"))
+        self.assertIn("LLM LINE", turn["say"])
+        self.assertNotIn("This one is a", turn["say"])  # the question type is an on-screen hint, never spoken
+        self.assertEqual(turn["hint"]["type"], "opening")
         self.assertEqual(turn["say"].count("?") + turn["say"].count("Tell me"), 1)
 
     def test_weak_answer_gets_bank_followups_capped_at_three(self):

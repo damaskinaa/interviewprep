@@ -102,7 +102,7 @@ class VoiceApiTest(unittest.TestCase):
             p.stop()
 
     def test_spoken_turn_round_trip(self):
-        self.assertIn("Silero", self.client.get("/mock").text)
+        self.assertIn("vad-web", self.client.get("/mock").text)
         mock_id = self.client.post("/interview/start", json={"round_id": "behavioural"}).json()["mock_id"]
         first = self.client.post("/voice/say", json={"mock_id": mock_id, "engine": "openai"}).json()
         self.assertEqual(first["audio_url"], f"/voice/audio/{mock_id}/interviewer_000.mp3")

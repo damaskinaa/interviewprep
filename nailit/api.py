@@ -1,3 +1,4 @@
+import logging
 import os
 import shutil
 import statistics
@@ -13,6 +14,7 @@ from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 from pathlib import Path
 from nailit import library
 from nailit.interview import interviewer, voice
+logger = logging.getLogger("nailit.api")
 from nailit.store import (
     create_session,
     load_mock,
@@ -313,6 +315,37 @@ def _speak_last_turn(state, engine, timer=None):
     return {"turn_index": index, "audio_url": audio_url, "tts_engine": used}
 
 
+class MockEndRequest(BaseModel):
+    mock_id: str = Field(min_length=1, max_length=80)
+
+
+@app.post("/interview/end")
+def interview_end(req: MockEndRequest):
+    """End the mock now (the candidate pressed End); returns the summary so far."""
+    with _mock_lock(req.mock_id):
+        state = load_mock(req.mock_id)
+        if not state:
+            raise HTTPException(status_code=404, detail="Mock not found")
+        result = interviewer.end_mock(state) if state["phase"] != "done" else interviewer.summary(state)
+        save_mock(state)
+    return {**result, "turns": state["turns"]}
+
+
+@app.post("/voice/preview")
+def voice_preview(mock_id: str = Form(...), audio: UploadFile = File(...), take: str = Form("")):
+    """Live caption while you speak; also transcribes finished chunks early so the final answer is fast."""
+    try:
+        path = voice.save_upload(mock_id, "preview_live.webm", audio.file.read())
+        return {"text": voice.live_update(mock_id, take or "default", path)}
+    except voice.VoiceUnavailable as error:
+        raise HTTPException(status_code=503, detail=str(error)) from error
+    except ValueError as error:
+        raise HTTPException(status_code=400, detail=str(error)) from error
+    except Exception as error:  # noqa: BLE001 - a partial webm can be cut mid-frame; the next preview will catch up
+        logger.info("preview transcription skipped: %s", error)
+        return {"text": ""}
+
+
 @app.get("/mock", response_class=HTMLResponse)
 def mock_page():
     return (STATIC / "mock.html").read_text(encoding="utf8")
@@ -333,7 +366,7 @@ def voice_say(req: VoiceSayRequest):
 
 @app.post("/voice/answer")
 def voice_answer(mock_id: str = Form(...), audio: UploadFile = File(...), engine: str = Form(""),
-                 gap_before_record_s: float = Form(0.0)):
+                 gap_before_record_s: float = Form(0.0), take: str = Form("")):
     """One spoken answer: save, transcribe locally (fillers kept), run the interviewer, speak the reply."""
     if engine and engine not in voice.TTS_ENGINES:
         raise HTTPException(status_code=400, detail=f"unknown TTS engine {engine}")
@@ -346,7 +379,7 @@ def voice_answer(mock_id: str = Form(...), audio: UploadFile = File(...), engine
         name = f"answer_{len(state['turns']):03d}.{suffix if suffix in ('webm', 'wav', 'ogg', 'mp4', 'm4a') else 'webm'}"
         try:
             path = voice.save_upload(mock_id, name, audio.file.read())
-            transcript = voice.transcribe(path)
+            transcript = voice.transcribe(path, mock_id=mock_id, take=take or None)
         except voice.VoiceUnavailable as error:
             raise HTTPException(status_code=503, detail=str(error)) from error
         except ValueError as error:

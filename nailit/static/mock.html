@@ -2,219 +2,498 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<title>NailIt mock</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>NailIt · Practice room</title>
 <style>
-  body { font: 15px/1.5 -apple-system, system-ui, sans-serif; max-width: 860px; margin: 24px auto; padding: 0 16px; color: #222; }
-  fieldset { border: 1px solid #ddd; border-radius: 8px; margin-bottom: 12px; }
-  label { margin-right: 14px; }
-  #log p { margin: 6px 0; padding: 8px 10px; border-radius: 8px; }
-  .interviewer { background: #f1f3f8; }
-  .candidate { background: #eef8ee; }
-  .meta { color: #777; font-size: 12px; }
-  #status { font-weight: 600; margin: 10px 0; }
-  #talk { font-size: 18px; padding: 14px 28px; }
-  #talk.on { background: #d33; color: #fff; }
-  video { width: 200px; float: right; border-radius: 8px; }
+  :root {
+    --bg: #f6f4ef; --card: #ffffff; --ink: #1d1d1b; --muted: #6b6a66; --line: #e4e1d8;
+    --accent: #1f4fd8; --accent-ink: #ffffff; --accent-soft: #e8eeff;
+    --rec: #d7263d; --rec-soft: #fde8eb; --ok: #1d7a46; --ok-soft: #e4f4ea; --warn: #9a5b00; --warn-soft: #fff3dc;
+    --radius: 18px;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg: #151514; --card: #1f1f1d; --ink: #f2f1ec; --muted: #a3a29c; --line: #34332f;
+      --accent: #7d9cff; --accent-ink: #0d1430; --accent-soft: #232c4a; --rec: #ff5a6e; --rec-soft: #3a1c22;
+      --ok: #59c98a; --ok-soft: #173326; --warn: #f2b45a; --warn-soft: #3a2b12; }
+  }
+  * { box-sizing: border-box; }
+  html { font-size: 19px; }
+  body { margin: 0; background: var(--bg); color: var(--ink); font: 1rem/1.55 -apple-system, BlinkMacSystemFont, "Inter", system-ui, sans-serif; }
+  .wrap { max-width: 1100px; margin: 0 auto; padding: 28px 24px 80px; }
+  header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 26px; }
+  .brand { font-weight: 750; font-size: 1.35rem; letter-spacing: -0.02em; }
+  .brand span { color: var(--accent); }
+  .pill { font-size: .8rem; padding: 6px 12px; border-radius: 999px; background: var(--card); border: 1px solid var(--line); color: var(--muted); }
+  h1 { font-size: 2.2rem; line-height: 1.15; letter-spacing: -0.025em; margin: 0 0 8px; }
+  h2 { font-size: 1.15rem; margin: 0 0 14px; }
+  p.lead { color: var(--muted); font-size: 1.1rem; margin: 0 0 28px; }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: var(--radius); padding: 24px; }
+  .grid { display: grid; gap: 14px; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); }
+  .choice { text-align: left; background: var(--card); border: 2px solid var(--line); border-radius: 14px; padding: 16px 18px; cursor: pointer; font: inherit; color: inherit; }
+  .choice:hover { border-color: var(--muted); }
+  .choice[aria-pressed="true"] { border-color: var(--accent); background: var(--accent-soft); }
+  .choice b { display: block; font-size: 1.02rem; }
+  .choice small { color: var(--muted); font-size: .85rem; }
+  .choice[disabled] { opacity: .45; cursor: not-allowed; }
+  .section { margin-top: 26px; }
+  .row { display: flex; gap: 14px; flex-wrap: wrap; align-items: center; }
+  select, input[type=number] { font: inherit; font-size: .95rem; padding: 10px 12px; border-radius: 12px; border: 1px solid var(--line); background: var(--card); color: var(--ink); }
+  label.inline { display: flex; gap: 10px; align-items: center; color: var(--muted); font-size: .95rem; }
+  .btn { font: inherit; font-weight: 650; border: 0; border-radius: 14px; padding: 16px 26px; cursor: pointer; background: var(--accent); color: var(--accent-ink); font-size: 1.05rem; }
+  .btn.ghost { background: transparent; color: var(--ink); border: 1px solid var(--line); font-weight: 550; }
+  .btn.danger { background: transparent; color: var(--rec); border: 1px solid var(--rec); }
+  .btn:disabled { opacity: .5; cursor: not-allowed; }
+  .mic-test { display: flex; align-items: center; gap: 14px; }
+  .meter { flex: 1; height: 12px; border-radius: 99px; background: var(--line); overflow: hidden; min-width: 160px; }
+  .meter i { display: block; height: 100%; width: 0%; background: var(--ok); transition: width .08s; }
+  details summary { cursor: pointer; color: var(--muted); }
+
+  /* interview */
+  #room { display: none; }
+  .stage { display: grid; grid-template-columns: 1fr 340px; gap: 22px; }
+  @media (max-width: 900px) { .stage { grid-template-columns: 1fr; } }
+  .who { display: flex; align-items: center; gap: 12px; color: var(--muted); font-size: .9rem; margin-bottom: 14px; }
+  .avatar { width: 40px; height: 40px; border-radius: 50%; background: var(--accent-soft); color: var(--accent); display: grid; place-items: center; font-weight: 750; }
+  .speaking .avatar { box-shadow: 0 0 0 6px var(--accent-soft); animation: pulse 1.2s infinite; }
+  @keyframes pulse { 50% { box-shadow: 0 0 0 12px transparent; } }
+  #question { font-size: 1.9rem; line-height: 1.3; letter-spacing: -0.015em; font-weight: 650; margin: 0 0 18px; min-height: 2.6em; }
+  .hint { background: var(--warn-soft); color: var(--warn); border-radius: 12px; padding: 12px 16px; font-size: .92rem; }
+  .hint b { text-transform: capitalize; }
+  .controls { display: flex; flex-direction: column; align-items: center; gap: 18px; padding: 30px 10px 8px; }
+  #micBtn { width: 150px; height: 150px; border-radius: 50%; border: 0; cursor: pointer; background: var(--accent); color: var(--accent-ink); font: inherit; font-weight: 700; font-size: 1.05rem; display: grid; place-items: center; transition: transform .1s; }
+  #micBtn:active { transform: scale(.97); }
+  #micBtn.rec { background: var(--rec); color: #fff; animation: ring 1.4s infinite; }
+  @keyframes ring { 0% { box-shadow: 0 0 0 0 rgba(215,38,61,.45); } 100% { box-shadow: 0 0 0 26px rgba(215,38,61,0); } }
+  #micBtn:disabled { background: var(--line); color: var(--muted); animation: none; cursor: default; }
+  #micBtn svg { width: 46px; height: 46px; display: block; margin: 0 auto 6px; }
+  #state { font-size: 1.15rem; font-weight: 650; text-align: center; min-height: 1.6em; }
+  #substate { color: var(--muted); font-size: .92rem; text-align: center; min-height: 1.4em; }
+  .timer { width: 100%; max-width: 520px; }
+  .timer .bar { height: 10px; border-radius: 99px; background: var(--line); overflow: hidden; }
+  .timer .bar i { display: block; height: 100%; width: 0; background: var(--ok); }
+  .timer .bar i.over { background: var(--rec); }
+  .timer .lbl { display: flex; justify-content: space-between; font-size: .85rem; color: var(--muted); margin-top: 6px; }
+  #caption { width: 100%; min-height: 4.5em; background: var(--bg); border: 1px dashed var(--line); border-radius: 14px; padding: 14px 16px; font-size: 1.05rem; color: var(--ink); }
+  #caption:empty::before { content: "Your words will appear here as you speak."; color: var(--muted); }
+  .actions { display: flex; gap: 10px; flex-wrap: wrap; justify-content: center; }
+  .side h2 { font-size: 1rem; color: var(--muted); text-transform: uppercase; letter-spacing: .06em; }
+  #log { display: flex; flex-direction: column; gap: 10px; max-height: 62vh; overflow: auto; }
+  .msg { border-radius: 12px; padding: 10px 12px; font-size: .9rem; }
+  .msg.i { background: var(--accent-soft); }
+  .msg.c { background: var(--ok-soft); }
+  .msg .m { font-size: .75rem; color: var(--muted); margin-top: 4px; }
+  #textBox { display: none; width: 100%; }
+  #textBox textarea { width: 100%; min-height: 140px; font: inherit; padding: 14px; border-radius: 14px; border: 1px solid var(--line); background: var(--card); color: var(--ink); }
+  .err { background: var(--rec-soft); color: var(--rec); border-radius: 12px; padding: 12px 16px; display: none; margin-bottom: 16px; }
+
+  /* results */
+  #results { display: none; }
+  .score { display: flex; justify-content: space-between; align-items: center; padding: 14px 0; border-bottom: 1px solid var(--line); gap: 16px; }
+  .score:last-child { border-bottom: 0; }
+  .dots { display: flex; gap: 5px; }
+  .dots i { width: 14px; height: 14px; border-radius: 50%; background: var(--line); }
+  .dots i.on { background: var(--accent); }
+  .gaps { font-size: .85rem; color: var(--warn); }
+  kbd { font: inherit; font-size: .8rem; border: 1px solid var(--line); border-bottom-width: 2px; border-radius: 6px; padding: 1px 7px; background: var(--card); }
 </style>
 </head>
 <body>
-<h1>NailIt mock interview</h1>
-<fieldset id="setup">
-  <label>Round <select id="round"></select></label>
-  <label>Mode <select id="mode"></select></label>
-  <label>Company <select id="company"><option value="">(none)</option></select></label>
-  <label>Temperament <select id="temperament"><option value="">(default)</option></select></label>
-  <br>
-  <label>Input <select id="input">
-    <option value="ptt">Push-to-talk (hold Space)</option>
-    <option value="vad">Hands-free (Silero VAD)</option>
-    <option value="text">Text only</option>
-  </select></label>
-  <label>End of answer after <input id="endSilence" type="number" value="2.0" step="0.5" min="0.5" style="width:4em"> s silence</label>
-  <label>Voice <select id="tts">
-    <option value="openai">OpenAI TTS</option>
-    <option value="say">macOS say (free)</option>
-    <option value="none">None (read it)</option>
-  </select></label>
-  <label><input type="checkbox" id="webcam"> Record webcam locally</label>
-  <button id="start">Start</button>
-</fieldset>
-<video id="preview" muted playsinline hidden></video>
-<div id="status">Pick a round and press Start.</div>
-<button id="talk" hidden>Hold to talk</button>
-<form id="textForm" hidden><textarea id="text" rows="4" style="width:100%"></textarea><button>Send</button></form>
-<div id="log"></div>
+<div class="wrap">
+  <header>
+    <div class="brand">Nail<span>It</span> · Practice room</div>
+    <div class="pill" id="sessionPill">Not started</div>
+  </header>
 
-<script src="https://cdn.jsdelivr.net/npm/onnxruntime-web@1.14.0/dist/ort.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/@ricky0123/vad-web@0.0.22/dist/bundle.min.js"></script>
+  <!-- SETUP -->
+  <section id="setup">
+    <h1>Ready for a mock interview?</h1>
+    <p class="lead">Pick a round, check your microphone, and start. Click the big button to answer, and click it again when you're done.</p>
+    <div class="err" id="setupErr"></div>
+
+    <div class="card">
+      <h2>1 · Which round?</h2>
+      <div class="grid" id="rounds"></div>
+
+      <div class="section">
+        <h2>2 · How hard?</h2>
+        <div class="grid" id="modes"></div>
+      </div>
+
+      <div class="section">
+        <h2>3 · Check your microphone</h2>
+        <div class="mic-test">
+          <button class="btn ghost" id="micTest">Test microphone</button>
+          <div class="meter"><i id="testLevel"></i></div>
+          <span id="micMsg" class="pill">Not tested</span>
+        </div>
+      </div>
+
+      <details class="section">
+        <summary>More options (company style, interviewer voice, typing instead of talking)</summary>
+        <div class="row" style="margin-top:14px">
+          <label class="inline">Company style <select id="company"><option value="">Any company</option></select></label>
+          <label class="inline">Interviewer <select id="temperament"><option value="">Default</option></select></label>
+          <label class="inline">Voice <select id="tts"><option value="openai">Natural voice (OpenAI)</option><option value="say">Mac voice (free)</option><option value="none">No voice, read only</option></select></label>
+          <label class="inline">Answer by <select id="input"><option value="click">Talking: click to start and stop</option><option value="vad">Talking: hands-free (stops when you pause)</option><option value="text">Typing</option></select></label>
+          <label class="inline">Pause that ends an answer (hands-free) <input id="endSilence" type="number" value="2.5" step="0.5" min="1" style="width:5em"> s</label>
+          <label class="inline"><input type="checkbox" id="webcam"> Record my webcam (saved only on this Mac)</label>
+        </div>
+      </details>
+
+      <div class="section row">
+        <button class="btn" id="start">Start interview</button>
+        <span class="pill">Shortcut: <kbd>Space</kbd> starts and stops your answer</span>
+      </div>
+    </div>
+  </section>
+
+  <!-- ROOM -->
+  <section id="room">
+    <div class="err" id="roomErr"></div>
+    <div class="stage">
+      <div class="card">
+        <div class="who" id="who"><div class="avatar">IN</div><div><b id="interviewerName">Interviewer</b><br><span id="roundName"></span></div></div>
+        <p id="question">…</p>
+        <div class="hint" id="hint" hidden></div>
+
+        <div class="controls">
+          <div id="state">Getting ready…</div>
+          <button id="micBtn" disabled aria-label="Start answering">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/></svg>
+            <span id="micLabel">Wait</span>
+          </button>
+          <div id="substate"></div>
+          <div class="timer"><div class="bar"><i id="timeBar"></i></div><div class="lbl"><span id="timeNow">0:00</span><span>target 1:30 · flag at 2:00</span></div></div>
+          <div class="meter" style="max-width:520px;width:100%"><i id="liveLevel"></i></div>
+          <div id="caption" aria-live="polite"></div>
+          <div id="textBox"><textarea id="text" placeholder="Type your answer…"></textarea><div class="actions" style="margin-top:10px"><button class="btn" id="sendText">Send answer</button></div></div>
+          <div class="actions">
+            <button class="btn ghost" id="repeat">Repeat question</button>
+            <button class="btn ghost" id="switchType">Type instead</button>
+            <button class="btn danger" id="end">End interview</button>
+          </div>
+        </div>
+      </div>
+      <aside class="card side">
+        <h2>Conversation</h2>
+        <div id="log"></div>
+      </aside>
+    </div>
+  </section>
+
+  <!-- RESULTS -->
+  <section id="results">
+    <h1>Interview finished</h1>
+    <p class="lead" id="resLead"></p>
+    <div class="card" id="resCard"></div>
+    <div class="section row"><button class="btn" id="again">Practise again</button></div>
+  </section>
+</div>
+
 <script>
 const $ = (id) => document.getElementById(id);
-let mockId = null, done = false, micStream = null, recorder = null, chunks = [], recordStart = 0, recordStop = 0;
-let playbackEnded = 0, myvad = null, answerTimer = null, turnLimit = null, camRecorder = null, camUploads = Promise.resolve(), camLost = 0;
+const S = { mockId: null, done: false, stream: null, rec: null, chunks: [], recStart: 0, recStop: 0, playEnded: 0,
+  audio: null, lastAudioUrl: null, timerId: null, previewId: null, previewBusy: false, meterId: null, analyser: null,
+  vad: null, turnLimit: null, limitId: null, busy: false, camRec: null, camUploads: Promise.resolve(), round: null, mode: "A",
+  questionsAsked: 0 };
+let OPTIONS = null;
 
 async function api(path, body, form) {
-  const res = await fetch(path, form ? {method: "POST", body} : body ? {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify(body)} : {});
-  const data = await res.json();
-  if (!res.ok) throw new Error(data.error || res.statusText);
+  const init = form ? { method: "POST", body } : body ? { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) } : {};
+  const res = await fetch(path, init);
+  let data = {};
+  try { data = await res.json(); } catch {}
+  if (!res.ok) { const e = new Error(data.error || data.detail || res.statusText); e.status = res.status; throw e; }
   return data;
 }
-function say(role, text, meta) {
-  const p = document.createElement("p");
-  p.className = role;
-  p.textContent = (role === "interviewer" ? "Interviewer: " : "You: ") + text;
-  if (meta) { const m = document.createElement("div"); m.className = "meta"; m.textContent = meta; p.appendChild(m); }
-  $("log").appendChild(p);
-  p.scrollIntoView();
-}
-function status(text) { $("status").textContent = text; }
 const sleep = (s) => new Promise((r) => setTimeout(r, s * 1000));
-
-async function loadOptions() {
-  const o = await api("/interview/options");
-  for (const r of o.rounds) $("round").add(new Option(`${r.label} (${r.minutes} min)`, r.id));
-  for (const m of o.modes) { const opt = new Option(`${m.id}: ${m.label}${m.locked ? " (locked)" : ""}`, m.id); opt.disabled = m.locked; $("mode").add(opt); }
-  for (const c of o.companies) $("company").add(new Option(c.name, c.id));
-  for (const t of o.temperaments) $("temperament").add(new Option(t.label, t.id));
+const fmt = (s) => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, "0")}`;
+function showErr(where, msg) { const el = $(where); el.textContent = msg; el.style.display = msg ? "block" : "none"; }
+function setState(main, sub = "") { $("state").textContent = main; $("substate").textContent = sub; }
+function mic(mode) {
+  const b = $("micBtn"), l = $("micLabel");
+  b.classList.toggle("rec", mode === "rec");
+  b.disabled = mode === "off";
+  l.textContent = mode === "rec" ? "Stop" : mode === "ready" ? "Answer" : "Wait";
+  b.setAttribute("aria-label", mode === "rec" ? "Stop answering" : "Start answering");
+}
+function log(role, text, meta) {
+  const d = document.createElement("div");
+  d.className = "msg " + (role === "i" ? "i" : "c");
+  d.textContent = (role === "i" ? "Interviewer: " : "You: ") + text;
+  if (meta) { const m = document.createElement("div"); m.className = "m"; m.textContent = meta; d.appendChild(m); }
+  $("log").appendChild(d); $("log").scrollTop = 1e9;
 }
 
+/* ---------- setup ---------- */
+function choiceGroup(container, items, onPick, selectedId) {
+  container.innerHTML = "";
+  for (const it of items) {
+    const b = document.createElement("button");
+    b.className = "choice"; b.type = "button"; b.dataset.id = it.id;
+    b.innerHTML = `<b></b><small></small>`;
+    b.querySelector("b").textContent = it.title; b.querySelector("small").textContent = it.sub || "";
+    if (it.disabled) b.disabled = true;
+    b.setAttribute("aria-pressed", String(it.id === selectedId));
+    b.onclick = () => { for (const x of container.children) x.setAttribute("aria-pressed", "false"); b.setAttribute("aria-pressed", "true"); onPick(it.id); };
+    container.appendChild(b);
+  }
+}
+const MODE_TEXT = { A: ["Guided", "Tips on screen, gentle pace. Best to start."], B: ["Realistic", "Normal pace, scored, answer within 3 seconds."], C: ["Tough", "Cold, sceptical, interrupts you."] };
+async function loadOptions() {
+  OPTIONS = await api("/interview/options");
+  S.round = OPTIONS.rounds[0]?.id;
+  choiceGroup($("rounds"), OPTIONS.rounds.map((r) => ({ id: r.id, title: r.label, sub: `${r.minutes} minutes` })), (id) => (S.round = id), S.round);
+  choiceGroup($("modes"), OPTIONS.modes.map((m) => ({ id: m.id, title: (MODE_TEXT[m.id] || [m.label])[0] + (m.locked ? " · locked" : ""),
+    sub: m.locked ? "Unlocks after 5 freeze drills and a week-2 average of 3.5" : (MODE_TEXT[m.id] || ["", m.label])[1], disabled: m.locked })), (id) => (S.mode = id), "A");
+  for (const c of OPTIONS.companies) $("company").add(new Option(c.name, c.id));
+  for (const t of OPTIONS.temperaments) $("temperament").add(new Option(t.label, t.id));
+}
+
+async function getMic() {
+  if (S.stream) return S.stream;
+  S.stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true } });
+  const ctx = new (window.AudioContext || window.webkitAudioContext)();
+  const src = ctx.createMediaStreamSource(S.stream);
+  S.analyser = ctx.createAnalyser(); S.analyser.fftSize = 1024; src.connect(S.analyser);
+  return S.stream;
+}
+function level() {
+  if (!S.analyser) return 0;
+  const a = new Uint8Array(S.analyser.fftSize); S.analyser.getByteTimeDomainData(a);
+  let sum = 0; for (const v of a) sum += ((v - 128) / 128) ** 2;
+  return Math.min(1, Math.sqrt(sum / a.length) * 5);
+}
+function runMeter(el) { clearInterval(S.meterId); S.meterId = setInterval(() => (el.style.width = Math.round(level() * 100) + "%"), 80); }
+
+$("micTest").onclick = async () => {
+  showErr("setupErr", "");
+  try {
+    await getMic(); runMeter($("testLevel"));
+    $("micMsg").textContent = "Speak now: the bar should move";
+    let peak = 0; const t0 = Date.now();
+    while (Date.now() - t0 < 4000) { peak = Math.max(peak, level()); await sleep(0.1); }
+    $("micMsg").textContent = peak > 0.08 ? "Microphone works" : "Very quiet: check the input in System Settings → Sound";
+  } catch (e) { showErr("setupErr", "Microphone blocked. Click the camera/mic icon in Chrome's address bar and allow the microphone, then try again."); }
+};
+
+$("start").onclick = async () => {
+  showErr("setupErr", "");
+  $("start").disabled = true;
+  try {
+    const mode = $("input").value;
+    if (mode !== "text") await getMic();
+    if ($("webcam").checked) await startWebcam();
+    if (mode === "vad") await setupVad();
+    const started = await api("/interview/start", { round_id: S.round, mode: S.mode, company_id: $("company").value || null, temperament_id: $("temperament").value || null });
+    S.mockId = started.mock_id;
+    if (S.camRec) S.camRec.start(10000);
+    $("setup").style.display = "none"; $("room").style.display = "block";
+    const r = OPTIONS.rounds.find((x) => x.id === S.round);
+    $("roundName").textContent = (r ? r.label : S.round) + " · " + (MODE_TEXT[S.mode] || [S.mode])[0];
+    $("sessionPill").textContent = "Live";
+    if (mode === "text") showTyping(true);
+    runMeter($("liveLevel"));
+    setState("The interviewer is about to speak…");
+    await interviewerTurn(await api("/voice/say", { mock_id: S.mockId, engine: $("tts").value }));
+  } catch (e) {
+    $("start").disabled = false;
+    showErr(e.status === 503 ? "roomErr" : "setupErr", "Couldn't start: " + e.message);
+    if ($("room").style.display === "block") showErr("roomErr", "Couldn't start: " + e.message);
+  }
+};
+
+/* ---------- interviewer ---------- */
 async function interviewerTurn(data, lastWordAt) {
   const turn = data.turn;
-  turnLimit = turn.interrupt_after_s || turn.cut_off_s || null;
-  if (turn.silence_before_s) { status("…"); await sleep(turn.silence_before_s); }
-  say("interviewer", turn.say);
+  S.turnLimit = turn.interrupt_after_s || turn.cut_off_s || null;
+  if (turn.silence_before_s) { setState("…"); await sleep(turn.silence_before_s); }
+  $("question").textContent = turn.say;
+  if (turn.kind === "question") S.questionsAsked += 1;
+  const hint = turn.hint;
+  $("hint").hidden = !hint;
+  if (hint) $("hint").innerHTML = `<b></b> question · <span></span>`, $("hint").querySelector("b").textContent = hint.type, $("hint").querySelector("span").textContent = hint.tip;
+  log("i", turn.say);
+  $("caption").textContent = "";
+  mic("off");
   if (data.audio_url) {
-    const audio = new Audio(data.audio_url);
-    pauseListening();
-    await audio.play();
-    if (lastWordAt) api("/voice/latency", {mock_id: mockId, turn: data.turn_index, latency_s: (performance.now() - lastWordAt) / 1000}).catch(() => {});
-    await new Promise((r) => (audio.onended = r));
+    S.lastAudioUrl = data.audio_url;
+    $("who").classList.add("speaking"); setState("Interviewer is speaking…", "Listen, then answer.");
+    pauseVad();
+    try {
+      S.audio = new Audio(data.audio_url);
+      await S.audio.play();
+      if (lastWordAt) api("/voice/latency", { mock_id: S.mockId, turn: data.turn_index, latency_s: (performance.now() - lastWordAt) / 1000 }).catch(() => {});
+      await new Promise((r) => { S.audio.onended = r; S.audio.onerror = r; });
+    } catch { /* autoplay blocked: the text is on screen */ }
+    $("who").classList.remove("speaking");
   }
-  playbackEnded = performance.now();
-  done = data.done;
-  if (done) return finish();
-  listen();
+  S.playEnded = performance.now();
+  S.done = data.done;
+  if (S.done) return finish();
+  readyToAnswer();
+}
+function readyToAnswer() {
+  const mode = $("input").value;
+  resetTimer();
+  if (mode === "text") { setState("Your turn: type your answer."); showTyping(true); return; }
+  if (mode === "vad") { setState("Listening… start speaking when ready.", "It stops by itself when you pause."); startRecording(); S.vad && S.vad.start(); return; }
+  mic("ready"); setState("Your turn.", "Click Answer (or press Space) and speak. Click Stop when you're done.");
 }
 
-function startRecorder() {
-  chunks = [];
-  recorder = new MediaRecorder(micStream, {mimeType: "audio/webm"});
-  recorder.ondataavailable = (e) => chunks.push(e.data);
-  recorder.start();
-  recordStart = performance.now();
-  if ($("input").value !== "vad") startTurnLimit();
+/* ---------- recording ---------- */
+function pickMime() { for (const m of ["audio/webm;codecs=opus", "audio/webm", "audio/mp4"]) if (window.MediaRecorder && MediaRecorder.isTypeSupported(m)) return m; return ""; }
+function startRecording() {
+  if (S.rec && S.rec.state === "recording") return;
+  S.chunks = []; S.take = Math.random().toString(36).slice(2);
+  const mime = pickMime();
+  S.rec = new MediaRecorder(S.stream, mime ? { mimeType: mime } : undefined);
+  S.rec.ondataavailable = (e) => { if (e.data.size) S.chunks.push(e.data); };
+  S.rec.start(1000);
+  S.recStart = performance.now();
+  mic("rec"); setState("Recording… speak now.", "Click Stop (or press Space) when you've finished.");
+  startTimer(); startPreview();
+  clearTimeout(S.limitId);
+  if (S.turnLimit && $("input").value !== "vad") S.limitId = setTimeout(() => stopRecording("cut"), S.turnLimit * 1000);
 }
-function startTurnLimit() {
-  clearTimeout(answerTimer);
-  if (turnLimit) answerTimer = setTimeout(() => stopRecorder("cut"), turnLimit * 1000);
+function stopRecording(reason) {
+  if (!S.rec || S.rec.state !== "recording") return;
+  clearTimeout(S.limitId); stopTimer(); stopPreview();
+  S.recStop = performance.now();
+  const rec = S.rec;
+  rec.onstop = () => sendAnswer(new Blob(S.chunks, { type: rec.mimeType || "audio/webm" }));
+  rec.stop();
+  mic("off");
+  setState(reason === "cut" ? "The interviewer cut in." : "Got it. Transcribing your answer…", "This takes a few seconds on your Mac.");
 }
-function stopRecorder(reason) {
-  if (!recorder || recorder.state !== "recording") return;
-  clearTimeout(answerTimer);
-  answerTimer = null;
-  recordStop = performance.now();
-  recorder.onstop = () => sendAnswer(new Blob(chunks, {type: "audio/webm"}));
-  recorder.stop();
-  status(reason === "cut" ? "Interrupted." : "Thinking…");
+$("micBtn").onclick = () => { if (S.rec && S.rec.state === "recording") stopRecording(); else if (!$("micBtn").disabled) startRecording(); };
+document.addEventListener("keydown", (e) => {
+  if (e.code !== "Space" || ["TEXTAREA", "INPUT", "SELECT", "BUTTON"].includes(e.target.tagName)) return;
+  if ($("room").style.display !== "block") return;
+  e.preventDefault(); if (e.repeat) return;
+  $("micBtn").click();
+});
+
+/* timer */
+function resetTimer() { $("timeBar").style.width = "0%"; $("timeBar").classList.remove("over"); $("timeNow").textContent = "0:00"; }
+function startTimer() {
+  const t0 = performance.now(); clearInterval(S.timerId);
+  S.timerId = setInterval(() => {
+    const s = (performance.now() - t0) / 1000;
+    $("timeNow").textContent = fmt(s);
+    $("timeBar").style.width = Math.min(100, (s / 120) * 100) + "%";
+    $("timeBar").classList.toggle("over", s > 90);
+  }, 250);
 }
+function stopTimer() { clearInterval(S.timerId); }
+
+/* live caption: transcribe the recording so far every ~3 s, locally */
+function startPreview() {
+  stopPreview();
+  S.previewId = setInterval(async () => {
+    if (S.previewBusy || !S.chunks.length) return;
+    S.previewBusy = true;
+    try {
+      const form = new FormData(); form.append("mock_id", S.mockId); form.append("take", S.take);
+      form.append("audio", new Blob(S.chunks, { type: S.rec.mimeType || "audio/webm" }), "preview.webm");
+      const r = await api("/voice/preview", form, true);
+      if (r.text && S.rec && S.rec.state === "recording") $("caption").textContent = r.text;
+    } catch {} finally { S.previewBusy = false; }
+  }, 2500);
+}
+function stopPreview() { clearInterval(S.previewId); }
 
 async function sendAnswer(blob) {
   const form = new FormData();
-  form.append("mock_id", mockId);
-  form.append("audio", blob, "answer.webm");
+  form.append("mock_id", S.mockId);
+  form.append("audio", blob, blob.type.includes("mp4") ? "answer.mp4" : "answer.webm");
   form.append("engine", $("tts").value);
-  form.append("gap_before_record_s", $("input").value === "ptt" ? ((recordStart - playbackEnded) / 1000).toFixed(2) : "0");
+  form.append("take", S.take || "");
+  form.append("gap_before_record_s", $("input").value === "click" ? ((S.recStart - S.playEnded) / 1000).toFixed(2) : "0");
   try {
     const data = await api("/voice/answer", form, true);
     const t = data.transcript;
-    say("candidate", t.text, `${t.speech_s}s · ${t.filled_pauses} filled pauses · stt ${data.timings.stt_s}s llm ${data.timings.llm_s}s tts ${data.timings.tts_s}s`);
-    await interviewerTurn(data, recordStop - t.trailing_silence_s * 1000);
-  } catch (e) { status("Error: " + e.message + " (you can switch to text)"); listen(); }
-}
-
-function pauseListening() { if (myvad) myvad.pause(); }
-function listen() {
-  const mode = $("input").value;
-  if (mode === "text") { status("Type your answer."); $("textForm").hidden = false; return; }
-  if (mode === "ptt") { status("Hold Space (or the button) while you answer."); $("talk").hidden = false; return; }
-  status("Listening… answer when ready.");
-  startRecorder();
-  myvad.start();
-}
-
-async function setupVad() {
-  const frames = Math.round(parseFloat($("endSilence").value) / 0.096);
-  myvad = await vad.MicVAD.new({
-    stream: micStream,
-    redemptionFrames: frames,
-    onSpeechStart: () => { if (recorder && recorder.state === "recording" && !answerTimer) startTurnLimit(); status("Recording…"); },
-    onSpeechEnd: () => { myvad.pause(); stopRecorder(); },
-  });
-}
-
-async function finish() {
-  status("Mock finished.");
-  $("talk").hidden = true; $("textForm").hidden = true;
-  if (camRecorder) {
-    camRecorder.onstop = () => camUploads.then(() => status(camLost
-      ? `Mock finished. Webcam video is INCOMPLETE: ${camLost} chunk(s) of 10 s could not be saved.`
-      : "Mock finished. Webcam video saved locally."));
-    camRecorder.stop();
+    $("caption").textContent = t.text;
+    log("c", t.text, `${fmt(t.speech_s)} · ${t.filled_pauses} um/uh · transcribe ${data.timings.stt_s}s · interviewer ${data.timings.llm_s}s · voice ${data.timings.tts_s}s`);
+    setState("Interviewer is thinking…");
+    await interviewerTurn(data, S.recStop - t.trailing_silence_s * 1000);
+  } catch (e) {
+    if (e.status === 422) { setState("I didn't hear anything.", "Check the level bar moves when you speak, then click Answer again."); }
+    else { showErr("roomErr", "Something went wrong: " + e.message + ". You can try again or type instead."); setState("Try again."); }
+    readyToAnswer();
   }
-  const summary = await api(`/interview/get?mock_id=${mockId}`);
-  say("interviewer", "(end of mock)", JSON.stringify({scores: summary.scores, stories_used: summary.stories_used}));
 }
 
-$("start").onclick = async () => {
-  $("setup").disabled = true;
+/* hands-free (optional, loads the voice-detection model on demand) */
+function loadScript(src) { return new Promise((ok, bad) => { const s = document.createElement("script"); s.src = src; s.onload = ok; s.onerror = bad; document.head.appendChild(s); }); }
+async function setupVad() {
+  await loadScript("https://cdn.jsdelivr.net/npm/onnxruntime-web@1.14.0/dist/ort.js");
+  await loadScript("https://cdn.jsdelivr.net/npm/@ricky0123/vad-web@0.0.22/dist/bundle.min.js");
+  S.vad = await vad.MicVAD.new({ stream: S.stream, redemptionFrames: Math.round(parseFloat($("endSilence").value) / 0.096),
+    onSpeechStart: () => setState("Recording…", "It stops when you pause."),
+    onSpeechEnd: () => { S.vad.pause(); stopRecording(); } });
+}
+function pauseVad() { if (S.vad) S.vad.pause(); }
+
+/* typing */
+function showTyping(on) { $("textBox").style.display = on ? "block" : "none"; $("micBtn").style.display = on ? "none" : "grid";
+  for (const el of [document.querySelector(".timer"), $("liveLevel").parentElement, $("caption")]) el.style.display = on ? "none" : ""; $("switchType").textContent = on ? "Talk instead" : "Type instead"; if (on) $("text").focus(); }
+$("switchType").onclick = () => { const typing = $("textBox").style.display !== "block"; if (S.rec && S.rec.state === "recording") stopRecording(); $("input").value = typing ? "text" : "click"; showTyping(typing); if (!typing) readyToAnswer(); };
+$("sendText").onclick = async () => {
+  const text = $("text").value.trim(); if (!text) return;
+  $("text").value = ""; log("c", text); setState("Interviewer is thinking…"); $("sendText").disabled = true;
   try {
-    if ($("input").value !== "text") micStream = await navigator.mediaDevices.getUserMedia({audio: {echoCancellation: true}});
-    if ($("webcam").checked) {
-      const cam = await navigator.mediaDevices.getUserMedia({video: true, audio: true});
-      $("preview").srcObject = cam; $("preview").hidden = false; $("preview").play();
-      camRecorder = new MediaRecorder(cam, {mimeType: "video/webm"});
-      // Each 10 s chunk is appended to the file on disk in order, so a long loop never sits in browser memory.
-      camRecorder.ondataavailable = (e) => {
-        camUploads = camUploads.then(async () => {
-          if (!mockId || !e.data.size) return;
-          for (let attempt = 1; attempt <= 3; attempt++) {
-            const form = new FormData();
-            form.append("mock_id", mockId);
-            form.append("video", e.data, "webcam.webm");
-            try { return await api("/voice/video", form, true); } catch { await sleep(attempt); }
-          }
-          camLost += 1;
-        });
-      };
-    }
-    if ($("input").value === "vad") await setupVad();
-    const started = await api("/interview/start", {round_id: $("round").value, mode: $("mode").value,
-      company_id: $("company").value || null, temperament_id: $("temperament").value || null});
-    mockId = started.mock_id;
-    if (camRecorder) camRecorder.start(10000);
-    await interviewerTurn(await api("/voice/say", {mock_id: mockId, engine: $("tts").value}));
-  } catch (e) { status("Error: " + e.message); $("setup").disabled = false; }
+    await api("/interview/answer", { mock_id: S.mockId, text, seconds: null, pre_answer_silence_s: null });
+    await interviewerTurn(await api("/voice/say", { mock_id: S.mockId, engine: $("tts").value }));
+  } catch (e) { showErr("roomErr", "Something went wrong: " + e.message); } finally { $("sendText").disabled = false; }
 };
 
-const talkDown = () => { if ($("talk").hidden || (recorder && recorder.state === "recording")) return; $("talk").classList.add("on"); status("Recording…"); startRecorder(); };
-const talkUp = () => { if ($("talk").hidden) return; $("talk").classList.remove("on"); $("talk").hidden = true; stopRecorder(); };
-$("talk").onmousedown = talkDown; $("talk").onmouseup = talkUp;
-document.addEventListener("keydown", (e) => { if (e.code === "Space" && e.target.tagName !== "TEXTAREA") { e.preventDefault(); talkDown(); } });
-document.addEventListener("keyup", (e) => { if (e.code === "Space" && e.target.tagName !== "TEXTAREA") { e.preventDefault(); talkUp(); } });
-
-$("textForm").onsubmit = async (e) => {
-  e.preventDefault();
-  const text = $("text").value.trim();
-  if (!text) return;
-  $("text").value = ""; $("textForm").hidden = true;
-  say("candidate", text);
-  status("Thinking…");
-  try {
-    await api("/interview/answer", {mock_id: mockId, text, seconds: null, pre_answer_silence_s: null});
-    await interviewerTurn(await api("/voice/say", {mock_id: mockId, engine: $("tts").value}));
-  } catch (err) { status("Error: " + err.message); $("textForm").hidden = false; }
+$("repeat").onclick = async () => { if (!S.lastAudioUrl || (S.rec && S.rec.state === "recording")) return; const a = new Audio(S.lastAudioUrl); await a.play().catch(() => {}); };
+$("end").onclick = async () => {
+  if (!confirm("End the interview now? You'll see feedback on the questions you've answered.")) return;
+  if (S.rec && S.rec.state === "recording") { S.rec.onstop = null; S.rec.stop(); stopTimer(); stopPreview(); }
+  if (S.audio) S.audio.pause();
+  try { await api("/interview/end", { mock_id: S.mockId }); } catch {}
+  finish();
 };
 
-loadOptions().catch((e) => status("Error loading library: " + e.message));
+/* webcam */
+async function startWebcam() {
+  const cam = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+  S.camRec = new MediaRecorder(cam, { mimeType: "video/webm" });
+  S.camRec.ondataavailable = (e) => {
+    S.camUploads = S.camUploads.then(async () => {
+      if (!S.mockId || !e.data.size) return;
+      const form = new FormData(); form.append("mock_id", S.mockId); form.append("video", e.data, "webcam.webm");
+      for (let i = 1; i <= 3; i++) { try { return await api("/voice/video", form, true); } catch { await sleep(i); } }
+    });
+  };
+}
+
+/* results */
+async function finish() {
+  stopTimer(); stopPreview(); clearInterval(S.meterId);
+  if (S.camRec && S.camRec.state === "recording") S.camRec.stop();
+  const sum = await api(`/interview/get?mock_id=${S.mockId}`);
+  $("room").style.display = "none"; $("results").style.display = "block"; $("sessionPill").textContent = "Finished";
+  const scores = sum.scores || [];
+  const avg = scores.length ? (scores.reduce((a, s) => a + s.score, 0) / scores.length) : 0;
+  $("resLead").textContent = scores.length ? `${scores.length} question${scores.length > 1 ? "s" : ""} scored · average ${avg.toFixed(1)} / 5${sum.ended_early ? " · ended early" : ""}. The full debrief arrives in the next build step.` : "No answers were scored this time.";
+  const qText = {}; for (const t of sum.turns) if (t.kind === "question" && t.question_id && !qText[t.question_id]) qText[t.question_id] = t.question_text || t.say;
+  const GAP = { missing_ownership: "say what YOU did", missing_number: "add a number", missing_result: "say the result", missing_tradeoff: "name the trade-off", missing_resistance: "name who pushed back", vague: "be more specific", over_90s: "keep it under 90 seconds", ic_level_answer: "say what you decided" };
+  $("resCard").innerHTML = scores.length ? "" : "<p>Answer at least one question to get scores.</p>";
+  for (const s of scores) {
+    const row = document.createElement("div"); row.className = "score";
+    const left = document.createElement("div");
+    const q = document.createElement("div"); q.textContent = qText[s.question_id] || s.question_id; left.appendChild(q);
+    if (s.gaps && s.gaps.length) { const g = document.createElement("div"); g.className = "gaps"; g.textContent = "Next time: " + s.gaps.map((x) => GAP[x] || x.replace(/_/g, " ")).join(" · "); left.appendChild(g); }
+    const dots = document.createElement("div"); dots.className = "dots"; for (let i = 1; i <= 5; i++) { const d = document.createElement("i"); if (i <= s.score) d.className = "on"; dots.appendChild(d); }
+    row.append(left, dots); $("resCard").appendChild(row);
+  }
+}
+$("again").onclick = () => location.reload();
+
+loadOptions().catch((e) => showErr("setupErr", "Couldn't load your library: " + e.message));
 </script>
 </body>
 </html>
