@@ -3,6 +3,7 @@
 Formats: library files follow SCHEMA.md (schemas in nailit/schemas/); me/ files are parsed from markdown.
 """
 import json
+import logging
 import os
 import re
 from pathlib import Path
@@ -330,15 +331,23 @@ def summary(lib):
 
 
 def anonymise(text, people):
-    """Replace colleague names (profile.md `## People`) with their roles; a unique first name is replaced too."""
+    """Best effort: replace colleague names (profile.md `## People`) with their roles.
+
+    Full names and unique first names are replaced; nicknames or initials not listed in profile.md are not,
+    so list every form you use. A warning is logged when a listed name part survives replacement.
+    """
     if not text or not people:
         return text
     firsts = [name.split()[0] for name in people]
     replacements = dict(people)
     for name, role in people.items():
         first = name.split()[0]
-        if first != name and firsts.count(first) == 1 and len(first) > 2:
+        if first != name and firsts.count(first) == 1 and len(first) >= 2:
             replacements.setdefault(first, role)
     for name in sorted(replacements, key=len, reverse=True):
         text = re.sub(rf"(?<!\w){re.escape(name)}(?!\w)", replacements[name], text, flags=re.IGNORECASE)
+    parts = {part for name in people for part in name.split() if len(part) >= 3}
+    leftovers = sum(1 for part in parts if re.search(rf"(?<!\w){re.escape(part)}(?!\w)", text))
+    if leftovers:
+        logging.getLogger(__name__).warning("anonymise: %d listed name part(s) left in the text; add that form to profile.md", leftovers)
     return text

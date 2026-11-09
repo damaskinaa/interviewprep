@@ -38,7 +38,8 @@ class AnonymiseTest(HomeMixin, unittest.TestCase):
 
     def test_shared_first_name_is_left_alone(self):
         people = {"Sam One": "the PM", "Sam Two": "the designer"}
-        self.assertEqual(library.anonymise("Sam One and Sam", people), "the PM and Sam")
+        with self.assertLogs("nailit.library", level="WARNING"):
+            self.assertEqual(library.anonymise("Sam One and Sam", people), "the PM and Sam")
 
     def test_prompt_is_anonymised_before_the_llm(self):
         sent = []
@@ -69,6 +70,7 @@ class AppFilesTest(HomeMixin, unittest.TestCase):
         apps.write_research(SESSION, {"official_company_signals": [{"signal": "Ships weekly", "confidence": "high"}]}, sources)
         stories = library.load_me()["stories"]["stories"]
         competency = stories[0]["competencies"][0]
+        self.assertEqual(apps._story_for(competency[:2], stories), "no story yet (gap)")
         apps.write_jd_map(SESSION, {"question_seeds": [
             {"maps_to_jd_line_or_requirement": "Own reliability", "competency": competency},
             {"maps_to_jd_line_or_requirement": "Lead hiring", "competency": "zzz unmatched"},
@@ -84,6 +86,11 @@ class AppFilesTest(HomeMixin, unittest.TestCase):
         self.assertIn(f"| Own reliability | {competency} | {stories[0]['id']}", jd_map)
         self.assertIn("| Lead hiring | zzz unmatched | no story yet (gap) |", jd_map)
         self.assertIn(f"- Tell me about a failure. — story: {stories[0]['id']}", (folder / "questions.md").read_text())
+
+    def test_export_failure_only_logs(self):
+        (self.home / "apps").write_text("not a folder")
+        with self.assertLogs("nailit.prep.apps", level="WARNING"):
+            self.assertIsNone(apps.write_questions(SESSION, {"questions_by_round": []}))
 
 
 if __name__ == "__main__":

@@ -24,9 +24,14 @@ def _today():
 
 
 def _write(session, name, lines):
-    path = app_dir(session) / name
-    path.write_text("\n".join(lines).rstrip() + "\n", encoding="utf8")
-    return path
+    """Best effort: the module JSON is already saved, so a failed markdown export only logs."""
+    try:
+        path = app_dir(session) / name
+        path.write_text("\n".join(lines).rstrip() + "\n", encoding="utf8")
+        return path
+    except OSError as error:
+        logger.warning("could not write %s: %s", name, error)
+        return None
 
 
 def write_research(session, result, sources):
@@ -47,9 +52,13 @@ def write_research(session, result, sources):
 
 def _story_for(competency, stories):
     wanted = normalize_text(competency).lower()
+
+    def whole_words(short, long):
+        return bool(short) and re.search(rf"(?<!\w){re.escape(short)}(?!\w)", long) is not None
+
     for story in stories:
-        tags = [t.lower() for t in as_list(story.get("competencies")) + as_list(story.get("lp_tags"))]
-        if wanted and any(wanted in tag or tag in wanted for tag in tags):
+        tags = [normalize_text(t).lower() for t in as_list(story.get("competencies")) + as_list(story.get("lp_tags"))]
+        if wanted and any(whole_words(tag, wanted) or whole_words(wanted, tag) for tag in tags):
             return f"{story['id']} {story.get('title', '')}".strip()
     return "no story yet (gap)"
 
