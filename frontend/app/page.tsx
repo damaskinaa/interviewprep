@@ -212,14 +212,19 @@ function isQuestionBankSection(section: string) {
 }
 
 function parseQuestionBlocks(section: string) {
-  const matches = [...section.matchAll(/^(\d+)\.\s+\*\*(.+?)\*\*/gm)];
+  const numbered = [...section.matchAll(/^(\d+)\.\s+\*\*(.+?)\*\*/gm)];
+  const matches = numbered.length ? numbered : [...section.matchAll(/^(####)\s+(.+)$/gm)];
   if (!matches.length) return { intro: section, questions: [] as { block: string; question: string; round_name: string }[] };
   const intro = section.slice(0, matches[0].index).trim();
   const questions = matches.map((match, index) => {
     const start = match.index || 0;
     const end = matches[index + 1]?.index ?? section.length;
     const block = section.slice(start, end).trim();
-    const round = block.match(/^\s*-\s*Round:\s*(.+)$/m)?.[1]?.trim() || "";
+    const roundHeadings = [...section.slice(0, start).matchAll(/^###\s+(.+)$/gm)];
+    const round =
+      block.match(/^\s*-\s*Round:\s*(.+)$/m)?.[1]?.trim() ||
+      roundHeadings[roundHeadings.length - 1]?.[1]?.trim() ||
+      "";
     return {
       block,
       question: match[2].trim(),
@@ -544,17 +549,17 @@ export default function Home() {
   const markdownSections = activeState?.markdown ? splitMarkdown(activeState.markdown) : [];
   const questionContexts = useMemo(() => strategyQuestionContexts(modules.interview_strategy.result), [modules.interview_strategy.result]);
 
-  async function generateAnswersForQuestion(context: QuestionContext) {
-    if (!session) return;
+  async function generateAnswersForQuestion(context: QuestionContext): Promise<AnswerOption[]> {
+    if (!session) return [];
     // Ref-based guard: synchronous check prevents double-calls even with async state lag
-    if (generatingRef.current) return;
+    if (generatingRef.current) return [];
     generatingRef.current = true;
     const id = questionId(context.question, context.round_name);
     // Guard: don't fire if already loading or done
     const existing = answersByQuestion[id];
     if (existing?.status === "loading" || existing?.status === "done") {
       generatingRef.current = false;
-      return;
+      return existing.answers ?? [];
     }
     setError("");
     setAnswersByQuestion((current) => ({
@@ -577,21 +582,24 @@ export default function Home() {
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data?.body || data?.message || data?.error || "Could not generate answers.");
+      const answers: AnswerOption[] = Array.isArray(data.answers) ? data.answers : [];
       setAnswersByQuestion((current) => ({
         ...current,
         [id]: {
           ...(current[id] || {}),
           status: "done",
-          answers: Array.isArray(data.answers) ? data.answers : [],
+          answers,
           error: "",
         },
       }));
+      return answers;
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : "Could not generate answers.";
       setAnswersByQuestion((current) => ({
         ...current,
         [id]: { ...(current[id] || { answers: [] }), status: "failed", error: message },
       }));
+      return [];
     } finally {
       generatingRef.current = false;
     }
@@ -654,7 +662,7 @@ export default function Home() {
     });
     const firstQ = all[0];
     // Pre-load answers for first question if already generated
-    const firstState = answersByQuestion[normalizeQuestion(firstQ.question)];
+    const firstState = answersByQuestion[questionId(firstQ.question, firstQ.round_name)];
     const preloaded = firstState?.answers ?? [];
     setMockState({
       active: true,
@@ -673,12 +681,8 @@ export default function Home() {
     setActiveModule("");
     // If no answers preloaded, fetch them now
     if (preloaded.length === 0) {
-      generateAnswersForQuestion(firstQ).then(() => {
-        setMockState((s) => {
-          if (!s) return s;
-          const st = answersByQuestion[normalizeQuestion(firstQ.question)];
-          return { ...s, loadingAnswers: false, availableAnswers: st?.answers ?? [] };
-        });
+      generateAnswersForQuestion(firstQ).then((answers) => {
+        setMockState((s) => (s ? { ...s, loadingAnswers: false, availableAnswers: answers } : s));
       }).catch(() => {
         setMockState((s) => s ? { ...s, loadingAnswers: false } : s);
       });
@@ -697,7 +701,7 @@ export default function Home() {
       setMockState((s) => s ? { ...s, done: true } : s);
       return;
     }
-    const existing = answersByQuestion[normalizeQuestion(q.question)];
+    const existing = answersByQuestion[questionId(q.question, q.round_name)];
     const preloaded = existing?.answers ?? [];
     setMockState((s) => s ? {
       ...s,
@@ -712,12 +716,8 @@ export default function Home() {
     } : s);
     if (preloaded.length === 0) {
       try {
-        await generateAnswersForQuestion(q);
-        setMockState((s) => {
-          if (!s) return s;
-          const st = answersByQuestion[normalizeQuestion(q.question)];
-          return { ...s, loadingAnswers: false, availableAnswers: st?.answers ?? [] };
-        });
+        const answers = await generateAnswersForQuestion(q);
+        setMockState((s) => (s ? { ...s, loadingAnswers: false, availableAnswers: answers } : s));
       } catch {
         setMockState((s) => s ? { ...s, loadingAnswers: false } : s);
       }
@@ -1127,12 +1127,8 @@ export default function Home() {
                               <button
                                 onClick={() => {
                                   setMockState(s => s ? { ...s, loadingAnswers: true } : s);
-                                  generateAnswersForQuestion(currentQ).then(() => {
-                                    setMockState(s => {
-                                      if (!s) return s;
-                                      const st = answersByQuestion[normalizeQuestion(currentQ.question)];
-                                      return { ...s, loadingAnswers: false, availableAnswers: st?.answers ?? [] };
-                                    });
+                                  generateAnswersForQuestion(currentQ).then((answers) => {
+                                    setMockState(s => (s ? { ...s, loadingAnswers: false, availableAnswers: answers } : s));
                                   }).catch(() => setMockState(s => s ? { ...s, loadingAnswers: false } : s));
                                 }}
                                 className="rounded-xl bg-[#c9a96e] px-4 py-2 text-sm font-bold text-[#0a0a0a] hover:bg-[#f5f0e8] transition"
