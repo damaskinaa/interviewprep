@@ -19,8 +19,8 @@ load_dotenv()
 
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 TAVILY_API_KEY = os.getenv("TAVILY_API_KEY")
-MODEL_FAST = os.getenv("OPENAI_MODEL_FAST", "gpt-4o-mini")
-MODEL_STRATEGY = os.getenv("OPENAI_MODEL_STRATEGY", "gpt-4o-mini")
+MODEL_FAST = os.getenv("OPENAI_MODEL_FAST") or "gpt-4o-mini"
+MODEL_STRATEGY = os.getenv("OPENAI_MODEL_STRATEGY") or "gpt-4o-mini"
 
 openai_client = OpenAI(api_key=OPENAI_API_KEY)
 
