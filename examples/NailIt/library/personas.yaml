@@ -11,10 +11,14 @@ temperaments:
   - {id: warm, label: Warm, behaviour: Friendly and patient., how_to_handle: Stay concise anyway., src: [D08]}
   - {id: sceptic, label: Cold sceptic, behaviour: Flat tone and interrupts., how_to_handle: Answer the question asked first., src: [D08]}
 modes:
-  - {id: A, label: Guided, behaviour: Hints allowed between questions., unlock: always, src: [D08]}
+  - {id: A, label: Guided, behaviour: Names the question type before asking., unlock: always, src: [D08]}
+  - {id: B, label: Scored, behaviour: Three-second answer rule and pressure events., unlock: always, src: [D08]}
   - {id: C, label: Cold sceptic, behaviour: No hints and hostile follow-ups., unlock: 5 freeze drills and week-2 average of 3.5, src: [D08]}
 pressure_events:
   - {id: interrupt, label: Interrupt mid-answer, how: Cut in after the second sentence., scored_by: recovery time, min_mode: B, src: [D08]}
+  - {id: silence, label: Deliberate silence, how: Say nothing for six seconds after the answer., scored_by: gap after silence, min_mode: B, src: [D08]}
+  - {id: wrong_claim, label: Wrong claim, how: Restate one of the candidate's numbers wrongly., scored_by: pushback, min_mode: B, src: [D08]}
+  - {id: hostile_red, label: Red hostile question, how: Ask why anyone should believe that result., scored_by: composure, min_mode: C, src: [D08]}
 rounds:
   - id: behavioural
     label: Behavioural

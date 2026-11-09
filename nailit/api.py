@@ -8,8 +8,13 @@ from nailit.prep.answers import generate_answer_options
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from nailit import library
+from nailit.interview import interviewer
 from nailit.store import (
     create_session,
+    load_mock,
+    mode_c_progress,
+    save_mock,
     fail_stale_jobs,
     get_job,
     get_or_create_job,
@@ -193,3 +198,74 @@ async def lua_coach(payload: dict):
         lua_brief=payload.get("lua_brief") or build_session_lua_brief(session_id),
     )
     return adapt_lua_response(response)
+
+
+class MockStartRequest(BaseModel):
+    round_id: str = Field(min_length=1, max_length=80)
+    mode: str = Field(default="A", pattern="^[ABC]$")
+    company_id: str | None = Field(default=None, max_length=80)
+    temperament_id: str | None = Field(default=None, max_length=80)
+    seed: int | None = None
+
+
+class MockAnswerRequest(BaseModel):
+    mock_id: str = Field(min_length=1, max_length=80)
+    text: str = Field(min_length=1, max_length=20000)
+    seconds: float | None = Field(default=None, ge=0)
+    pre_answer_silence_s: float | None = Field(default=None, ge=0)
+
+
+def _library():
+    try:
+        return library.load_library()
+    except library.LibraryError as error:
+        raise HTTPException(status_code=500, detail="Library invalid: " + "; ".join(error.errors[:5])) from error
+
+
+@app.get("/interview/options")
+def interview_options():
+    personas = _library()["personas"]
+    progress = mode_c_progress()
+    pick = lambda key, *fields: [{f: item.get(f) for f in ("id", *fields)} for item in personas[key]]  # noqa: E731
+    return {
+        "rounds": pick("rounds", "label", "minutes"),
+        "companies": pick("companies", "name"),
+        "temperaments": pick("temperaments", "label"),
+        "modes": [{**mode, "locked": mode["id"] == "C" and not interviewer.mode_c_unlocked(progress)}
+                  for mode in pick("modes", "label", "unlock")],
+        "progress": progress,
+    }
+
+
+@app.post("/interview/start")
+def interview_start(req: MockStartRequest):
+    try:
+        state, turn = interviewer.start_mock(req.round_id, req.mode, req.company_id, req.temperament_id, req.seed,
+                                             progress=mode_c_progress(), lib=_library())
+    except PermissionError as error:
+        raise HTTPException(status_code=403, detail=str(error)) from error
+    except ValueError as error:
+        raise HTTPException(status_code=400, detail=str(error)) from error
+    save_mock(state)
+    return {"mock_id": state["id"], "turn": turn, "done": False}
+
+
+@app.post("/interview/answer")
+def interview_answer(req: MockAnswerRequest):
+    state = load_mock(req.mock_id)
+    if not state:
+        raise HTTPException(status_code=404, detail="Mock not found")
+    try:
+        turn = interviewer.answer(state, req.text, req.seconds, req.pre_answer_silence_s, lib=_library())
+    except ValueError as error:
+        raise HTTPException(status_code=409, detail=str(error)) from error
+    save_mock(state)
+    return {"mock_id": state["id"], "turn": turn, "done": state["phase"] == "done"}
+
+
+@app.get("/interview/get")
+def interview_get(mock_id: str):
+    state = load_mock(mock_id)
+    if not state:
+        raise HTTPException(status_code=404, detail="Mock not found")
+    return {**interviewer.summary(state), "turns": state["turns"]}

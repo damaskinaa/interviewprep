@@ -81,6 +81,23 @@ def _connect():
             updated_at TEXT NOT NULL
         )
     """)
+    con.execute("""
+        CREATE TABLE IF NOT EXISTS mocks (
+            mock_id TEXT PRIMARY KEY,
+            state TEXT NOT NULL,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL
+        )
+    """)
+    con.execute("""
+        CREATE TABLE IF NOT EXISTS drill_log (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            drill_id TEXT NOT NULL,
+            kind TEXT NOT NULL DEFAULT '',
+            score REAL,
+            created_at TEXT NOT NULL
+        )
+    """)
     # Migrate existing DBs — add columns if they were created before this schema version
     for col, definition in [
         ("user_email",    "TEXT DEFAULT NULL"),
@@ -354,3 +371,40 @@ def fail_stale_jobs(minutes: int = 30) -> int:
         return cursor.rowcount or 0
 
 
+
+
+def save_mock(state):
+    now = _now()
+    with _connect() as con:
+        con.execute(
+            "INSERT INTO mocks (mock_id, state, created_at, updated_at) VALUES (?, ?, ?, ?) "
+            "ON CONFLICT(mock_id) DO UPDATE SET state = excluded.state, updated_at = excluded.updated_at",
+            (state["id"], json.dumps(state), now, now),
+        )
+
+
+def load_mock(mock_id):
+    with _connect() as con:
+        row = con.execute("SELECT state FROM mocks WHERE mock_id = ?", (mock_id,)).fetchone()
+    return json.loads(row["state"]) if row else None
+
+
+def log_drill(drill_id, kind="", score=None, when=None):
+    with _connect() as con:
+        con.execute("INSERT INTO drill_log (drill_id, kind, score, created_at) VALUES (?, ?, ?, ?)",
+                    (drill_id, kind, score, (when or datetime.now()).isoformat()))
+
+
+def mode_c_progress():
+    """Freeze drills done and the average drill score in days 8-14 after the first logged drill."""
+    with _connect() as con:
+        freeze = con.execute("SELECT COUNT(*) FROM drill_log WHERE kind = 'freeze'").fetchone()[0]
+        first = con.execute("SELECT MIN(created_at) FROM drill_log").fetchone()[0]
+        average = None
+        if first:
+            start = datetime.fromisoformat(first)
+            average = con.execute(
+                "SELECT AVG(score) FROM drill_log WHERE score IS NOT NULL AND created_at >= ? AND created_at < ?",
+                ((start + timedelta(days=7)).isoformat(), (start + timedelta(days=14)).isoformat()),
+            ).fetchone()[0]
+    return {"freeze_drills": freeze, "week2_average": round(average, 2) if average is not None else None}

@@ -49,3 +49,11 @@ It reports schema errors and unknown cross-references (rubric rules, follow-up b
 - Each story is a `## S1 Title` heading followed by a fenced yaml block. The block references fact IDs and holds the story fields: `trigger`, `stages` (HOOK … LESSON), `compressed` (`3_words`, `1_sentence`, `30s`, `90s`), and the rest. See `examples/NailIt/me/stories.md`.
 
 **profile.md**: a `## People` section lists `- Name: role`, and those names are replaced by roles before any text goes to an LLM.
+
+## Mock interviews (text, N3a)
+
+`POST /interview/start {"round_id", "mode": "A|B|C", "company_id"?, "temperament_id"?}` starts a mock from
+`personas.yaml`. Then send each answer to `POST /interview/answer {"mock_id", "text", "seconds"?, "pre_answer_silence_s"?}`.
+`GET /interview/options` lists rounds, companies, temperaments and modes; mode C stays locked until you've done
+5 freeze drills and your week-2 average is at least 3.5. `GET /interview/get?mock_id=` returns the transcript,
+per-question scores, the stories you used, repeated errors and the pressure events that fired.
