@@ -203,6 +203,7 @@ $("textForm").onsubmit = (e) => {
   ws.send(JSON.stringify({type: "text", text}));
 };
 
+window.addEventListener("beforeunload", () => { if (ws && ws.readyState === 1) ws.send(JSON.stringify({type: "end"})); });
 loadOptions().catch((e) => status("Error loading library: " + e.message));
 </script>
 </body>

@@ -143,6 +143,10 @@ class VoicePipelineTest(unittest.TestCase):
                 ws.send_bytes(b"\x00\x00" * 320)  # 20 ms frames at 16 kHz
             ws.send_text(json.dumps({"type": "ptt", "down": False}))
             events, audio = self._until(ws, "latency")
+            ws.send_text(json.dumps({"type": "end"}))
+            for _ in range(500):
+                if ws.receive()["type"] == "websocket.close":
+                    break
         turn = next(e for e in events if e["type"] == "turn")
         self.assertEqual((turn["candidate"], turn["filled_pauses"]), ("Um, I led uh the like migration.", 2))
         self.assertGreater(audio, 0)

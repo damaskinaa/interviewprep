@@ -29,6 +29,7 @@ from pipecat.frames.frames import (
 )
 from pipecat.processors.frame_processor import FrameProcessor
 from pipecat.serializers.base_serializer import FrameSerializer
+from pipecat.services.settings import STTSettings, TTSSettings
 from pipecat.services.stt_service import SegmentedSTTService
 from pipecat.services.tts_service import TTSService
 
@@ -141,7 +142,8 @@ class LocalWhisperSTT(SegmentedSTTService):
     """mlx-whisper on each segment: word timestamps, fillers kept; each answer is saved as WAV."""
 
     def __init__(self, mock_id, **kwargs):
-        super().__init__(sample_rate=IN_RATE, trailing_silence_secs=TRAILING_PAD_S, **kwargs)
+        super().__init__(sample_rate=IN_RATE, trailing_silence_secs=TRAILING_PAD_S,
+                         settings=STTSettings(model=None, language=None), **kwargs)
         self.mock_id, self.count = mock_id, 0
 
     async def run_stt(self, audio):
@@ -162,7 +164,8 @@ class KokoroTTS(TTSService):
     """Kokoro-82M through mlx-audio; falls back to macOS `say` if Kokoro can't run."""
 
     def __init__(self, engine="kokoro", **kwargs):
-        super().__init__(push_start_frame=True, push_stop_frames=True, sample_rate=OUT_RATE, **kwargs)
+        super().__init__(push_start_frame=True, push_stop_frames=True, sample_rate=OUT_RATE,
+                         settings=TTSSettings(model=None, voice=None, language=None), **kwargs)
         self.engine = engine
 
     def can_generate_metrics(self):
@@ -195,7 +198,11 @@ class InterviewerProcessor(FrameProcessor):
     def __init__(self, state, lib, turn, engine, **kwargs):
         super().__init__(**kwargs)
         self.state, self.lib, self.turn, self.engine = state, lib, turn, engine
-        self.pending = None
+        self.pending, self.worker = None, None
+
+    async def _end(self):
+        if self.worker:
+            await self.worker.queue_frame(EndFrame())
 
     async def _speak(self, kind="turn", extra=None):
         say = self.state["turns"][-1]
@@ -247,6 +254,8 @@ class InterviewerProcessor(FrameProcessor):
                 await self._speak("question")
             elif kind == "text" and (frame.message.get("text") or "").strip():
                 await self._answer(frame.message["text"].strip(), None)
+            elif kind == "end":
+                await self._end()
             elif kind == "input" and frame.message.get("mode") in ("ptt", "vad", "text"):
                 self.turn.input = frame.message["mode"]
             return
@@ -260,7 +269,7 @@ class InterviewerProcessor(FrameProcessor):
             await self.push_frame(message({"type": "latency", **row}))
         if isinstance(frame, BotStoppedSpeakingFrame) and self.state["phase"] == "done":
             await self.push_frame(message({"type": "done"}))
-            await self.push_frame(EndFrame())
+            await self._end()
         await self.push_frame(frame, direction)
 
 
@@ -290,13 +299,19 @@ async def run(websocket, state, lib, input_mode=None, stt=None, tts=None, vad=No
         from pipecat.processors.audio.vad_processor import VADProcessor
         vad = VADProcessor(vad_analyzer=SileroVADAnalyzer(params=VADParams(stop_secs=config["vad_stop_s"])))
     tts = tts or KokoroTTS(config["tts"])
-    steps = [transport.input(), vad, TurnGate(turn), stt or LocalWhisperSTT(state["id"]),
-             InterviewerProcessor(state, lib, turn, getattr(tts, "engine", config["tts"])), tts, transport.output()]
+    brain = InterviewerProcessor(state, lib, turn, getattr(tts, "engine", config["tts"]))
+    steps = [transport.input(), vad, TurnGate(turn), stt or LocalWhisperSTT(state["id"]), brain, tts, transport.output()]
     task = PipelineWorker(Pipeline([s for s in steps if s is not None]), idle_timeout_secs=None, params=PipelineParams(
         audio_in_sample_rate=IN_RATE, audio_out_sample_rate=OUT_RATE, enable_metrics=True))
+    brain.worker = task
 
     @transport.event_handler("on_client_disconnected")
     async def _closed(_transport, _client):
         await task.cancel()
 
-    await PipelineRunner(handle_sigint=False).run(task)
+    try:
+        await PipelineRunner(handle_sigint=False).run(task)
+    except asyncio.CancelledError:
+        # The page closing cancels the pipeline; only re-raise if this request itself is being cancelled.
+        if asyncio.current_task().cancelling():
+            raise

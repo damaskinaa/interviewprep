@@ -303,6 +303,10 @@ async def voice_ws(websocket: WebSocket, mock_id: str, input: str = "ptt"):
         return
     from nailit.interview import pipeline
     await pipeline.run(websocket, state, _library(), input_mode=input if input in ("ptt", "vad", "text") else None)
+    try:
+        await websocket.close()
+    except RuntimeError:
+        pass  # already closed by the page
 
 
 @app.get("/voice/latency")
