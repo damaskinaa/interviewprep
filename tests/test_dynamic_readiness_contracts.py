@@ -279,6 +279,32 @@ class DynamicReadinessContractsTest(unittest.TestCase):
         self.assertEqual(response.status_code, 500)
         self.assertEqual(self.api.get_credits("payer-2"), 3)
 
+    def test_round_research_threads_keep_job_context(self):
+        agent_v2 = importlib.import_module("agent_v2")
+        token_r = agent_v2._current_results.set({})
+        token_p = agent_v2._current_progress_log.set([])
+        old = agent_v2.collect_per_round_research
+
+        def fake_round(company, role, round_name, round_type, what_it_tests):
+            agent_v2.log(5, f"researching {round_name}")
+            return {"round_name": round_name, "sources": [{"url": "x"}], "reported_questions": []}
+
+        agent_v2.collect_per_round_research = fake_round
+        try:
+            results = agent_v2.run_all_rounds_research(
+                "TestCo", "PM", [{"round_name": "R1", "round_type": "t", "what_it_tests": "w"}]
+            )
+        finally:
+            agent_v2.collect_per_round_research = old
+            agent_v2._current_progress_log.reset(token_p)
+            agent_v2._current_results.reset(token_r)
+        self.assertEqual(results[0]["sources"], [{"url": "x"}])
+
+    def test_unparseable_model_output_never_becomes_an_artifact(self):
+        agent_v2 = importlib.import_module("agent_v2")
+        self.assertEqual(agent_v2.parse_json_object('{"questions_by_round": [', fallback={}), {})
+        self.assertEqual(agent_v2.parse_json_object('{"a": 1}'), {"a": 1})
+
     def test_module_status_is_owner_scoped(self):
         session_id = self._create_owned_session("owner-1")
         job_store = sys.modules["job_store"]

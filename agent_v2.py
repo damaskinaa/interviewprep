@@ -5,6 +5,7 @@ import logging as _logging
 import time
 import urllib.request
 import urllib.error
+import contextvars
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime
 from contextvars import ContextVar
@@ -64,6 +65,11 @@ def set_result(key, value):
 
 def get_result(key):
     return _active_results().get(key, "")
+
+
+def submit_with_context(executor, fn, *args):
+    """Submit to a thread pool while keeping this job's ContextVar state (results/progress log)."""
+    return executor.submit(contextvars.copy_context().run, fn, *args)
 
 
 def safe_path_part(value, fallback="item"):
@@ -143,6 +149,10 @@ def ask_llm(prompt, model=None, max_tokens=2400, retries=3):
     raise LLMError(f"LLM call failed after {retries} attempts: {last_error}")
 
 
+JSON_PARSE_ERROR = "Could not parse model output as valid JSON"
+JSON_PARSE_ERROR_KEY = "__nailit_parse_error__"
+
+
 def extract_json(text):
     text = text or "{}"
     cleaned = text.strip()
@@ -157,14 +167,18 @@ def extract_json(text):
         parsed = json.loads(cleaned)
         return json.dumps(parsed, indent=2)
     except Exception:
-        return json.dumps({"error": "Could not parse model output as valid JSON", "raw_output": text[:6000]}, indent=2)
+        return json.dumps({JSON_PARSE_ERROR_KEY: True, "error": JSON_PARSE_ERROR, "raw_output": text[:6000]}, indent=2)
 
 
 def parse_json_object(text, fallback=None):
+    fallback = fallback if fallback is not None else {}
     try:
-        return json.loads(extract_json(text))
+        parsed = json.loads(extract_json(text))
     except Exception:
-        return fallback if fallback is not None else {}
+        return fallback
+    if isinstance(parsed, dict) and parsed.get(JSON_PARSE_ERROR_KEY) is True:
+        return fallback
+    return parsed
 
 
 def json_dumps(data):
@@ -4952,7 +4966,7 @@ def collect_company_research(company_name, role_name):
     ]
     discovered = []
     with ThreadPoolExecutor(max_workers=20) as executor:
-        future_map = {executor.submit(tavily_search, query): query for query in queries}
+        future_map = {submit_with_context(executor, tavily_search, query): query for query in queries}
         for future in as_completed(future_map, timeout=45):
             try:
                 discovered.extend(future.result(timeout=2))
@@ -5185,7 +5199,7 @@ def collect_per_round_research(company_name, role_name, round_name, round_type, 
 
     discovered = []
     with ThreadPoolExecutor(max_workers=min(len(queries), 20)) as executor:
-        future_map = {executor.submit(tavily_with_retry, q): q for q in queries}
+        future_map = {submit_with_context(executor, tavily_with_retry, q): q for q in queries}
         for future in as_completed(future_map, timeout=50):
             try:
                 rows = future.result(timeout=2)
@@ -5243,7 +5257,8 @@ def run_all_rounds_research(company_name, role_name, rounds):
     results = []
     with ThreadPoolExecutor(max_workers=min(len(rounds), 6)) as executor:
         future_map = {
-            executor.submit(
+            submit_with_context(
+                executor,
                 collect_per_round_research,
                 company_name, role_name,
                 r["round_name"], r["round_type"], r["what_it_tests"],
@@ -6001,8 +6016,19 @@ why_this_role_answer must follow this structure:
 Do not invent candidate background.
 """
     result = ask_json(prompt, model=MODEL_STRATEGY, max_tokens=15000, retries=2, fallback={})
+    if not result:
+        raise ValueError(
+            "Interview strategy generation returned no usable output (model output was empty or not valid JSON). Please run it again."
+        )
     report_progress(progress_callback, "Strategy answer validation", 86)
     result = normalize_modular_strategy(result, session, company_intelligence, role_intelligence, candidate_profile, gap_map)
+    if not any(
+        isinstance(round_item, dict) and round_item.get("questions")
+        for round_item in as_list(result.get("questions_by_round"))
+    ):
+        raise ValueError(
+            "Interview strategy generation returned no usable questions (model output was empty or not valid JSON). Please run it again."
+        )
     write_module_json(session_id, "interview_strategy", result)
     report_progress(progress_callback, "Interview strategy complete", 100)
     return result
