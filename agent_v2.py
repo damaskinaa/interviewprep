@@ -241,8 +241,6 @@ def canonical_source_key(url):
     return url
 
 
-if __name__ == "__main__":
-    smoke_test()
 
 
 def source_record(source, index):
