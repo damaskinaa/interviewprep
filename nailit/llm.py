@@ -9,6 +9,7 @@ from contextvars import ContextVar
 from openai import OpenAI
 
 from nailit.config import llm_settings
+from nailit.library import anonymise, people_map
 
 logger = logging.getLogger("nailit.llm")
 
@@ -78,13 +79,14 @@ def ask_llm(prompt, model=None, max_tokens=2400, retries=3, temperature=0.25):
     model = model or MODEL_FAST
     if not os.getenv("OPENAI_API_KEY"):
         raise LLMError("OPENAI_API_KEY is not set (Keychain service 'nailit' or .env).")
+    user_prompt = anonymise(prompt.strip(), people_map())
     last_error = None
     for attempt in range(1, retries + 1):
         started = time.monotonic()
         try:
             response = client().chat.completions.create(
                 model=model,
-                messages=[{"role": "system", "content": SYSTEM_PROMPT}, {"role": "user", "content": prompt.strip()}],
+                messages=[{"role": "system", "content": SYSTEM_PROMPT}, {"role": "user", "content": user_prompt}],
                 temperature=temperature,
                 max_tokens=max_tokens,
                 timeout=150,

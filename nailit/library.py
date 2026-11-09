@@ -327,3 +327,18 @@ def summary(lib):
         "programmes": len(lib["programmes"]),
     }
     return ", ".join(f"{n} {k}" for k, n in counts.items())
+
+
+def anonymise(text, people):
+    """Replace colleague names (profile.md `## People`) with their roles; a unique first name is replaced too."""
+    if not text or not people:
+        return text
+    firsts = [name.split()[0] for name in people]
+    replacements = dict(people)
+    for name, role in people.items():
+        first = name.split()[0]
+        if first != name and firsts.count(first) == 1 and len(first) > 2:
+            replacements.setdefault(first, role)
+    for name in sorted(replacements, key=len, reverse=True):
+        text = re.sub(rf"(?<!\w){re.escape(name)}(?!\w)", replacements[name], text, flags=re.IGNORECASE)
+    return text
