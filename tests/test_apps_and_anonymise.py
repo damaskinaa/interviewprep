@@ -78,6 +78,7 @@ class AppFilesTest(HomeMixin, unittest.TestCase):
         apps.write_jd_map(SESSION, {"question_seeds": [
             {"maps_to_jd_line_or_requirement": "Own reliability", "competency": competency},
             {"maps_to_jd_line_or_requirement": "Lead hiring", "competency": "zzz unmatched"},
+            {"maps_to_jd_line_or_requirement": "SQL | Python", "competency": "zzz unmatched"},
         ]})
         apps.write_questions(SESSION, {"questions_by_round": [
             {"round_name": "Hiring manager", "questions": [{"question": "Tell me about a failure.", "assigned_story": stories[0]["id"]}]},
@@ -89,6 +90,7 @@ class AppFilesTest(HomeMixin, unittest.TestCase):
         jd_map = (folder / "jd_map.md").read_text()
         self.assertIn(f"| Own reliability | {competency} | {stories[0]['id']}", jd_map)
         self.assertIn("| Lead hiring | zzz unmatched | no story yet (gap) |", jd_map)
+        self.assertIn("| SQL \\| Python | zzz unmatched |", jd_map)
         self.assertIn(f"- Tell me about a failure. — story: {stories[0]['id']}", (folder / "questions.md").read_text())
 
     def test_export_failure_only_logs(self):

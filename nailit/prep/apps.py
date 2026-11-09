@@ -50,6 +50,10 @@ def write_research(session, result, sources):
     return _write(session, "research.md", lines)
 
 
+def _cell(text):
+    return normalize_text(text).replace("|", "\\|")
+
+
 def _story_for(competency, stories):
     wanted = normalize_text(competency).lower()
 
@@ -76,7 +80,8 @@ def write_jd_map(session, role_result, stories=None):
     for seed in as_list(role_result.get("question_seeds")):
         if isinstance(seed, dict) and seed.get("maps_to_jd_line_or_requirement"):
             competency = normalize_text(seed.get("competency")) or "unspecified"
-            lines.append(f"| {normalize_text(seed['maps_to_jd_line_or_requirement'])} | {competency} | {_story_for(competency, stories)} |")
+            row = (seed["maps_to_jd_line_or_requirement"], competency, _story_for(competency, stories))
+            lines.append("| " + " | ".join(_cell(c) for c in row) + " |")
     return _write(session, "jd_map.md", lines)
 
 
