@@ -57,3 +57,19 @@ It reports schema errors and unknown cross-references (rubric rules, follow-up b
 `GET /interview/options` lists rounds, companies, temperaments and modes; mode C stays locked until you've done
 5 freeze drills and your week-2 average is at least 3.5. `GET /interview/get?mock_id=` returns the transcript,
 per-question scores, the stories you used, repeated errors and the pressure events that fired.
+
+## Voice mock (N3b)
+
+On the Mac: `brew install ffmpeg`, then `uv sync --extra voice` (installs mlx-whisper; Apple silicon only), then
+`uv run nailit` and open http://127.0.0.1:8000/mock in Chrome.
+- **Input:** push-to-talk (hold Space), hands-free (Silero VAD in the page; it stops recording after the set
+  seconds of silence), or text.
+- **Transcription:** runs locally with mlx-whisper (`NAILIT_WHISPER_MODEL`, default
+  `mlx-community/whisper-large-v3-turbo`). It keeps word timestamps, and its prompt keeps fillers (um/uh/like).
+- **Interviewer voice:** OpenAI TTS (`OPENAI_TTS_API_KEY` in the Keychain, or `OPENAI_API_KEY`;
+  `NAILIT_TTS_VOICE`, default `alloy`), macOS `say` (`NAILIT_SAY_VOICE`), or none. If OpenAI fails, it uses
+  `say`, then text.
+- **Saved files:** answers, interviewer audio and the optional webcam video go to `~/NailIt/recordings/<mock_id>/`.
+- **Latency:** the time from your last word to the interviewer's audio starting is logged per turn;
+  `GET /voice/latency` shows it with the median.
+- **Needs internet:** the VAD script loads from jsDelivr, and OpenAI TTS is online.

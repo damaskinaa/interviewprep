@@ -90,6 +90,19 @@ def _connect():
         )
     """)
     con.execute("""
+        CREATE TABLE IF NOT EXISTS voice_log (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            mock_id TEXT NOT NULL,
+            turn INTEGER NOT NULL,
+            stt_s REAL,
+            llm_s REAL,
+            tts_s REAL,
+            latency_s REAL,
+            engine TEXT NOT NULL DEFAULT '',
+            created_at TEXT NOT NULL
+        )
+    """)
+    con.execute("""
         CREATE TABLE IF NOT EXISTS drill_log (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             drill_id TEXT NOT NULL,
@@ -408,3 +421,24 @@ def mode_c_progress():
                 ((start + timedelta(days=7)).isoformat(), (start + timedelta(days=14)).isoformat()),
             ).fetchone()[0]
     return {"freeze_drills": freeze, "week2_average": average}
+
+
+def log_voice(mock_id, turn, stt_s=None, llm_s=None, tts_s=None, engine=""):
+    with _connect() as con:
+        con.execute("INSERT INTO voice_log (mock_id, turn, stt_s, llm_s, tts_s, engine, created_at) "
+                    "VALUES (?, ?, ?, ?, ?, ?, ?)", (mock_id, turn, stt_s, llm_s, tts_s, engine, _now()))
+
+
+def set_voice_latency(mock_id, turn, latency_s):
+    """Seconds from the candidate's last word to the interviewer's audio starting, measured by the page."""
+    with _connect() as con:
+        cursor = con.execute(
+            "UPDATE voice_log SET latency_s = ? WHERE id = "
+            "(SELECT MAX(id) FROM voice_log WHERE mock_id = ? AND turn = ?)", (latency_s, mock_id, turn))
+        return cursor.rowcount
+
+
+def voice_latencies(mock_id=None):
+    query = "SELECT * FROM voice_log" + (" WHERE mock_id = ?" if mock_id else "") + " ORDER BY id"
+    with _connect() as con:
+        return [dict(row) for row in con.execute(query, (mock_id,) if mock_id else ())]

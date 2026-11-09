@@ -1,0 +1,220 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>NailIt mock</title>
+<style>
+  body { font: 15px/1.5 -apple-system, system-ui, sans-serif; max-width: 860px; margin: 24px auto; padding: 0 16px; color: #222; }
+  fieldset { border: 1px solid #ddd; border-radius: 8px; margin-bottom: 12px; }
+  label { margin-right: 14px; }
+  #log p { margin: 6px 0; padding: 8px 10px; border-radius: 8px; }
+  .interviewer { background: #f1f3f8; }
+  .candidate { background: #eef8ee; }
+  .meta { color: #777; font-size: 12px; }
+  #status { font-weight: 600; margin: 10px 0; }
+  #talk { font-size: 18px; padding: 14px 28px; }
+  #talk.on { background: #d33; color: #fff; }
+  video { width: 200px; float: right; border-radius: 8px; }
+</style>
+</head>
+<body>
+<h1>NailIt mock interview</h1>
+<fieldset id="setup">
+  <label>Round <select id="round"></select></label>
+  <label>Mode <select id="mode"></select></label>
+  <label>Company <select id="company"><option value="">(none)</option></select></label>
+  <label>Temperament <select id="temperament"><option value="">(default)</option></select></label>
+  <br>
+  <label>Input <select id="input">
+    <option value="ptt">Push-to-talk (hold Space)</option>
+    <option value="vad">Hands-free (Silero VAD)</option>
+    <option value="text">Text only</option>
+  </select></label>
+  <label>End of answer after <input id="endSilence" type="number" value="2.0" step="0.5" min="0.5" style="width:4em"> s silence</label>
+  <label>Voice <select id="tts">
+    <option value="openai">OpenAI TTS</option>
+    <option value="say">macOS say (free)</option>
+    <option value="none">None (read it)</option>
+  </select></label>
+  <label><input type="checkbox" id="webcam"> Record webcam locally</label>
+  <button id="start">Start</button>
+</fieldset>
+<video id="preview" muted playsinline hidden></video>
+<div id="status">Pick a round and press Start.</div>
+<button id="talk" hidden>Hold to talk</button>
+<form id="textForm" hidden><textarea id="text" rows="4" style="width:100%"></textarea><button>Send</button></form>
+<div id="log"></div>
+
+<script src="https://cdn.jsdelivr.net/npm/onnxruntime-web@1.14.0/dist/ort.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@ricky0123/vad-web@0.0.22/dist/bundle.min.js"></script>
+<script>
+const $ = (id) => document.getElementById(id);
+let mockId = null, done = false, micStream = null, recorder = null, chunks = [], recordStart = 0, recordStop = 0;
+let playbackEnded = 0, myvad = null, answerTimer = null, turnLimit = null, camRecorder = null, camUploads = Promise.resolve(), camLost = 0;
+
+async function api(path, body, form) {
+  const res = await fetch(path, form ? {method: "POST", body} : body ? {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify(body)} : {});
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.error || res.statusText);
+  return data;
+}
+function say(role, text, meta) {
+  const p = document.createElement("p");
+  p.className = role;
+  p.textContent = (role === "interviewer" ? "Interviewer: " : "You: ") + text;
+  if (meta) { const m = document.createElement("div"); m.className = "meta"; m.textContent = meta; p.appendChild(m); }
+  $("log").appendChild(p);
+  p.scrollIntoView();
+}
+function status(text) { $("status").textContent = text; }
+const sleep = (s) => new Promise((r) => setTimeout(r, s * 1000));
+
+async function loadOptions() {
+  const o = await api("/interview/options");
+  for (const r of o.rounds) $("round").add(new Option(`${r.label} (${r.minutes} min)`, r.id));
+  for (const m of o.modes) { const opt = new Option(`${m.id}: ${m.label}${m.locked ? " (locked)" : ""}`, m.id); opt.disabled = m.locked; $("mode").add(opt); }
+  for (const c of o.companies) $("company").add(new Option(c.name, c.id));
+  for (const t of o.temperaments) $("temperament").add(new Option(t.label, t.id));
+}
+
+async function interviewerTurn(data, lastWordAt) {
+  const turn = data.turn;
+  turnLimit = turn.interrupt_after_s || turn.cut_off_s || null;
+  if (turn.silence_before_s) { status("…"); await sleep(turn.silence_before_s); }
+  say("interviewer", turn.say);
+  if (data.audio_url) {
+    const audio = new Audio(data.audio_url);
+    pauseListening();
+    await audio.play();
+    if (lastWordAt) api("/voice/latency", {mock_id: mockId, turn: data.turn_index, latency_s: (performance.now() - lastWordAt) / 1000}).catch(() => {});
+    await new Promise((r) => (audio.onended = r));
+  }
+  playbackEnded = performance.now();
+  done = data.done;
+  if (done) return finish();
+  listen();
+}
+
+function startRecorder() {
+  chunks = [];
+  recorder = new MediaRecorder(micStream, {mimeType: "audio/webm"});
+  recorder.ondataavailable = (e) => chunks.push(e.data);
+  recorder.start();
+  recordStart = performance.now();
+  if ($("input").value !== "vad") startTurnLimit();
+}
+function startTurnLimit() {
+  clearTimeout(answerTimer);
+  if (turnLimit) answerTimer = setTimeout(() => stopRecorder("cut"), turnLimit * 1000);
+}
+function stopRecorder(reason) {
+  if (!recorder || recorder.state !== "recording") return;
+  clearTimeout(answerTimer);
+  answerTimer = null;
+  recordStop = performance.now();
+  recorder.onstop = () => sendAnswer(new Blob(chunks, {type: "audio/webm"}));
+  recorder.stop();
+  status(reason === "cut" ? "Interrupted." : "Thinking…");
+}
+
+async function sendAnswer(blob) {
+  const form = new FormData();
+  form.append("mock_id", mockId);
+  form.append("audio", blob, "answer.webm");
+  form.append("engine", $("tts").value);
+  form.append("gap_before_record_s", $("input").value === "ptt" ? ((recordStart - playbackEnded) / 1000).toFixed(2) : "0");
+  try {
+    const data = await api("/voice/answer", form, true);
+    const t = data.transcript;
+    say("candidate", t.text, `${t.speech_s}s · ${t.filled_pauses} filled pauses · stt ${data.timings.stt_s}s llm ${data.timings.llm_s}s tts ${data.timings.tts_s}s`);
+    await interviewerTurn(data, recordStop - t.trailing_silence_s * 1000);
+  } catch (e) { status("Error: " + e.message + " (you can switch to text)"); listen(); }
+}
+
+function pauseListening() { if (myvad) myvad.pause(); }
+function listen() {
+  const mode = $("input").value;
+  if (mode === "text") { status("Type your answer."); $("textForm").hidden = false; return; }
+  if (mode === "ptt") { status("Hold Space (or the button) while you answer."); $("talk").hidden = false; return; }
+  status("Listening… answer when ready.");
+  startRecorder();
+  myvad.start();
+}
+
+async function setupVad() {
+  const frames = Math.round(parseFloat($("endSilence").value) / 0.096);
+  myvad = await vad.MicVAD.new({
+    stream: micStream,
+    redemptionFrames: frames,
+    onSpeechStart: () => { if (recorder && recorder.state === "recording" && !answerTimer) startTurnLimit(); status("Recording…"); },
+    onSpeechEnd: () => { myvad.pause(); stopRecorder(); },
+  });
+}
+
+async function finish() {
+  status("Mock finished.");
+  $("talk").hidden = true; $("textForm").hidden = true;
+  if (camRecorder) {
+    camRecorder.onstop = () => camUploads.then(() => status(camLost
+      ? `Mock finished. Webcam video is INCOMPLETE: ${camLost} chunk(s) of 10 s could not be saved.`
+      : "Mock finished. Webcam video saved locally."));
+    camRecorder.stop();
+  }
+  const summary = await api(`/interview/get?mock_id=${mockId}`);
+  say("interviewer", "(end of mock)", JSON.stringify({scores: summary.scores, stories_used: summary.stories_used}));
+}
+
+$("start").onclick = async () => {
+  $("setup").disabled = true;
+  try {
+    if ($("input").value !== "text") micStream = await navigator.mediaDevices.getUserMedia({audio: {echoCancellation: true}});
+    if ($("webcam").checked) {
+      const cam = await navigator.mediaDevices.getUserMedia({video: true, audio: true});
+      $("preview").srcObject = cam; $("preview").hidden = false; $("preview").play();
+      camRecorder = new MediaRecorder(cam, {mimeType: "video/webm"});
+      // Each 10 s chunk is appended to the file on disk in order, so a long loop never sits in browser memory.
+      camRecorder.ondataavailable = (e) => {
+        camUploads = camUploads.then(async () => {
+          if (!mockId || !e.data.size) return;
+          for (let attempt = 1; attempt <= 3; attempt++) {
+            const form = new FormData();
+            form.append("mock_id", mockId);
+            form.append("video", e.data, "webcam.webm");
+            try { return await api("/voice/video", form, true); } catch { await sleep(attempt); }
+          }
+          camLost += 1;
+        });
+      };
+    }
+    if ($("input").value === "vad") await setupVad();
+    const started = await api("/interview/start", {round_id: $("round").value, mode: $("mode").value,
+      company_id: $("company").value || null, temperament_id: $("temperament").value || null});
+    mockId = started.mock_id;
+    if (camRecorder) camRecorder.start(10000);
+    await interviewerTurn(await api("/voice/say", {mock_id: mockId, engine: $("tts").value}));
+  } catch (e) { status("Error: " + e.message); $("setup").disabled = false; }
+};
+
+const talkDown = () => { if ($("talk").hidden || (recorder && recorder.state === "recording")) return; $("talk").classList.add("on"); status("Recording…"); startRecorder(); };
+const talkUp = () => { if ($("talk").hidden) return; $("talk").classList.remove("on"); $("talk").hidden = true; stopRecorder(); };
+$("talk").onmousedown = talkDown; $("talk").onmouseup = talkUp;
+document.addEventListener("keydown", (e) => { if (e.code === "Space" && e.target.tagName !== "TEXTAREA") { e.preventDefault(); talkDown(); } });
+document.addEventListener("keyup", (e) => { if (e.code === "Space" && e.target.tagName !== "TEXTAREA") { e.preventDefault(); talkUp(); } });
+
+$("textForm").onsubmit = async (e) => {
+  e.preventDefault();
+  const text = $("text").value.trim();
+  if (!text) return;
+  $("text").value = ""; $("textForm").hidden = true;
+  say("candidate", text);
+  status("Thinking…");
+  try {
+    await api("/interview/answer", {mock_id: mockId, text, seconds: null, pre_answer_silence_s: null});
+    await interviewerTurn(await api("/voice/say", {mock_id: mockId, engine: $("tts").value}));
+  } catch (err) { status("Error: " + err.message); $("textForm").hidden = false; }
+};
+
+loadOptions().catch((e) => status("Error loading library: " + e.message));
+</script>
+</body>
+</html>
