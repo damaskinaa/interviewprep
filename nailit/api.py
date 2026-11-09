@@ -215,7 +215,13 @@ class MockAnswerRequest(BaseModel):
     pre_answer_silence_s: float | None = Field(default=None, ge=0)
 
 
-_mock_lock = threading.Lock()
+_mock_locks: dict = {}
+_mock_locks_guard = threading.Lock()
+
+
+def _mock_lock(mock_id):
+    with _mock_locks_guard:
+        return _mock_locks.setdefault(mock_id, threading.Lock())
 
 
 def _library():
@@ -255,7 +261,7 @@ def interview_start(req: MockStartRequest):
 
 @app.post("/interview/answer")
 def interview_answer(req: MockAnswerRequest):
-    with _mock_lock:
+    with _mock_lock(req.mock_id):
         state = load_mock(req.mock_id)
         if not state:
             raise HTTPException(status_code=404, detail="Mock not found")
