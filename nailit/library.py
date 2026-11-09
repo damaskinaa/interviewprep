@@ -119,7 +119,8 @@ def check_stories(data):
     ids = [s["id"] for s in data["stories"]]
     errors += _duplicates(ids, "stories.md")
     for story in data["stories"]:
-        refs = set(story.get("facts") or []) | set(FACT_REF.findall(json.dumps(story.get("stages") or {})))
+        listed = story.get("facts") if isinstance(story.get("facts"), list) else []
+        refs = {f for f in listed if isinstance(f, str)} | set(FACT_REF.findall(json.dumps(story.get("stages") or {})))
         errors += [f"stories.md: {story['id']} references unknown fact {ref}" for ref in sorted(refs - set(data["facts"]))]
         fallback = story.get("fallback_story")
         if fallback and fallback not in ids:

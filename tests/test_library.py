@@ -99,6 +99,13 @@ class LibraryTest(unittest.TestCase):
         self.assertIn("S1 references unknown fact F3", errors)
         self.assertIn("fallback_story S9 does not exist", errors)
 
+    def test_non_string_fact_refs_are_schema_errors(self):
+        stories = self.root / "me" / "stories.md"
+        stories.write_text(stories.read_text().replace("facts: [F1, F2, F3]", "facts: [F1, {F2: x}]"))
+        with self.assertRaises(library.LibraryError) as ctx:
+            library.load_me(self.root)
+        self.assertTrue(any("stories.md" in e for e in ctx.exception.errors))
+
     def test_check_library_cli_exit_codes(self):
         self.assertEqual(cli.main(["check-library", str(self.lib)]), 0)
         (self.lib / "personas.yaml").unlink()
