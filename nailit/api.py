@@ -215,6 +215,9 @@ class MockAnswerRequest(BaseModel):
     pre_answer_silence_s: float | None = Field(default=None, ge=0)
 
 
+_mock_lock = threading.Lock()
+
+
 def _library():
     try:
         return library.load_library()
@@ -252,14 +255,15 @@ def interview_start(req: MockStartRequest):
 
 @app.post("/interview/answer")
 def interview_answer(req: MockAnswerRequest):
-    state = load_mock(req.mock_id)
-    if not state:
-        raise HTTPException(status_code=404, detail="Mock not found")
-    try:
-        turn = interviewer.answer(state, req.text, req.seconds, req.pre_answer_silence_s, lib=_library())
-    except ValueError as error:
-        raise HTTPException(status_code=409, detail=str(error)) from error
-    save_mock(state)
+    with _mock_lock:
+        state = load_mock(req.mock_id)
+        if not state:
+            raise HTTPException(status_code=404, detail="Mock not found")
+        try:
+            turn = interviewer.answer(state, req.text, req.seconds, req.pre_answer_silence_s, lib=_library())
+        except ValueError as error:
+            raise HTTPException(status_code=409, detail=str(error)) from error
+        save_mock(state)
     return {"mock_id": state["id"], "turn": turn, "done": state["phase"] == "done"}
 
 
