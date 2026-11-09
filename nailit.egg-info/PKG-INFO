@@ -1,0 +1,13 @@
+Metadata-Version: 2.4
+Name: nailit
+Version: 0.1.0
+Summary: Personal interview prep and practice tool (local only)
+Requires-Python: >=3.11
+Requires-Dist: fastapi<0.120,>=0.115
+Requires-Dist: uvicorn<0.35,>=0.30
+Requires-Dist: openai<2,>=1.50
+Requires-Dist: pydantic<3,>=2.8
+Requires-Dist: python-dotenv<2,>=1.0
+Provides-Extra: dev
+Requires-Dist: pytest<9,>=8; extra == "dev"
+Requires-Dist: httpx<0.29,>=0.27; extra == "dev"

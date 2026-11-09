@@ -1,261 +1,43 @@
-import json
+import os
 import threading
 import uuid
 from datetime import datetime
-import os
-from pathlib import Path
-from lua_session_store import save_turn, load_session, transcript_text
 
-_redis_url = os.getenv("REDIS_URL", "")
-
-
-def dispatch_job(func, *args, **kwargs):
-    """
-    Dispatches a job to RQ if REDIS_URL is set,
-    otherwise falls back to a daemon thread — identical behaviour to before.
-    """
-    if _redis_url:
-        from redis import Redis
-        from rq import Queue
-        q = Queue(connection=Redis.from_url(_redis_url))
-        return q.enqueue(func, *args, **kwargs)
-    else:
-        t = threading.Thread(target=func, args=args, kwargs=kwargs, daemon=True)
-        t.start()
-        return None
-
-from fastapi import Depends, FastAPI, Header, HTTPException, Request
+from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
+from agent_v2 import run_session_module
 from answer_generator import generate_answer_options
-from agent_v2 import run_pipeline, run_session_module
 from job_store import (
-    add_credits, create_job, create_session, deduct_credits, delete_old_jobs,
-    delete_old_sessions, delete_user_data, find_running_module_job,
-    get_or_create_job, get_job,
-    fail_stale_jobs, get_credits, get_session, get_sessions_for_followup,
-    get_user_data_export, mark_followup_sent, update_job,
+    create_session, fail_stale_jobs, get_job, get_or_create_job, get_session, update_job,
 )
-from lua_brief_builder import build_session_lua_brief
-from lua_coach import build_lua_coach_response, adapt_lua_response
-from lua_benchmark_coach import build_benchmark_question, build_selected_answer_training_card, build_benchmark_practice_feedback
-from lua_benchmark_store import save_benchmark_event, load_benchmark_session
-from lua_mastery_store import update_mastery, get_mastery, question_key
-from lua_drill_engine import build_retry_drill
-from lua_escalation_engine import build_escalation_challenge
-from lua_state_engine import build_interview_state
-from lua_pressure_engine import build_pressure_response
-from lua_pressure_repair_engine import build_pressure_repair_feedback
-from lua_memory_engine import add_coach_memory, get_coach_memory, get_relevant_coach_memory
+from lua_coach import adapt_lua_response, build_lua_coach_response, build_session_lua_brief
 
-
-APP_API_KEY = os.getenv("APP_API_KEY")
-FRONTEND_ORIGIN = os.getenv("FRONTEND_ORIGIN", "")
-EMAIL_PROVIDER = os.getenv("EMAIL_PROVIDER", "")
-CREDITS_ENFORCED = os.getenv("CREDITS_ENFORCED", "").strip().lower() in {"1", "true", "yes"}
-
-allowed_origins = []
-if FRONTEND_ORIGIN:
-    allowed_origins.append(FRONTEND_ORIGIN)
-
-allowed_origins.append("http://localhost:3000")
-
-import stripe as _stripe
-_stripe.api_key = os.getenv("STRIPE_SECRET_KEY", "")
-STRIPE_WEBHOOK_SECRET = os.getenv("STRIPE_WEBHOOK_SECRET", "")
-
-PRODUCT_CREDITS = {
-    "free_tier":       10,
-    "starter_pack":    30,
-    "monthly_plan":    50,
-    "premium_pack":   100,
-    "credit_topup_20": 20,
-}
-
-MODULE_COSTS = {
-    "full_session":      10,
-    "answer_generation":  3,
-    "mock_interview":     5,
-}
-
-app = FastAPI()
-
-from fastapi.responses import JSONResponse
-
-
-def require_app_key(x_app_key: str = Header(default="")):
-    if not APP_API_KEY:
-        raise HTTPException(status_code=500, detail="Server key is not configured")
-    if x_app_key != APP_API_KEY:
-        raise HTTPException(status_code=401, detail="Unauthorized")
-
-
-def current_user_id(x_user_id: str = Header(default="")) -> str:
-    """User id asserted by the trusted frontend proxy (which holds APP_API_KEY).
-
-    An empty value means an operator/server-side call with the app key and no end user.
-    """
-    return x_user_id.strip()[:160]
-
-
-def require_user_id(x_user_id: str = Header(default="")) -> str:
-    """End-user routes must always carry the proxy-asserted user id."""
-    user_id = x_user_id.strip()[:160]
-    if not user_id:
-        raise HTTPException(status_code=400, detail="X-User-Id header is required")
-    return user_id
-
-
-def owned_session(session_id: str, user_id: str, include_raw: bool = False):
-    session = get_session(session_id, include_raw=include_raw)
-    if not session:
-        raise HTTPException(status_code=404, detail="Session not found")
-    if user_id and session.get("user_id") != user_id:
-        raise HTTPException(status_code=403, detail="This session belongs to another user")
-    return session
-
-@app.exception_handler(HTTPException)
-async def http_exception_handler(request, exc):
-    return JSONResponse(
-        status_code=exc.status_code,
-        content={"error": exc.detail, "status_code": exc.status_code},
-    )
-
-@app.on_event("startup")
-async def startup_cleanup():
-    # Thread jobs die with the process, so any active job is dead after a restart; RQ jobs survive.
-    fail_stale_jobs(minutes=30 if _redis_url else 0)
-    delete_old_jobs(days=7)          # purge job artifacts after 7 days (disk space)
-    delete_old_sessions(days=90)     # purge session records after 90 days (GDPR)
-
-
-import logging as _api_logging
-_followup_logger = _api_logging.getLogger("nailit.followup")
-
-def send_email(to_address: str, subject: str, body: str) -> None:
-    """Send follow-up email only when a provider integration is configured."""
-    if not EMAIL_PROVIDER:
-        _followup_logger.warning(
-            "Follow-up email provider is not configured; blocked email to %s",
-            to_address,
-        )
-        raise HTTPException(
-            status_code=501,
-            detail={
-                "error": "email_provider_not_configured",
-                "message": "Follow-up email delivery is not configured.",
-            },
-        )
-    raise HTTPException(
-        status_code=501,
-        detail={
-            "error": "email_provider_not_implemented",
-            "message": "Email provider integration must be implemented before sending follow-ups.",
-        },
-    )
-
-
-@app.post("/internal/send-followups", dependencies=[Depends(require_app_key)])
-async def send_followups():
-    """Called by a daily cron job.
-    Sends 30-day offer-rate email to eligible sessions."""
-    sessions = get_sessions_for_followup(days_ago=30)
-    sent = 0
-    for session in sessions:
-        subject = "Did you get the job?"
-        body = f"""Hi,
-
-30 days ago you prepared for your {session['company_name']} interview with NAILIT.
-
-One quick question: did you get the offer?
-
-Yes → [link]
-No → [link]
-Still in process → [link]
-
-Your answer helps us improve NAILIT for every candidate after you.
-
-— NAILIT"""
-        send_email(session["user_email"], subject, body)
-        mark_followup_sent(session["session_id"])
-        sent += 1
-    return {"sent": sent}
-
-
-@app.post("/webhooks/stripe")
-async def stripe_webhook(request: Request):
-    """Receives Stripe webhook events and credits the matching user."""
-    payload = await request.body()
-    sig = request.headers.get("stripe-signature", "")
-    try:
-        event = _stripe.Webhook.construct_event(
-            payload, sig, STRIPE_WEBHOOK_SECRET
-        )
-    except Exception:
-        raise HTTPException(status_code=400, detail="Invalid webhook signature")
-
-    if event["type"] == "checkout.session.completed":
-        session_obj = event["data"]["object"]
-        user_id = session_obj.get("client_reference_id", "")
-        product = session_obj.get("metadata", {}).get("product", "")
-        credits = PRODUCT_CREDITS.get(product, 0)
-        if user_id and credits:
-            add_credits(user_id, credits, f"Purchase: {product}")
-
-    return {"received": True}
-
-
-def check_and_deduct(user_id: str, action: str) -> int:
-    """
-    Call before any paid action.
-    Raises HTTPException 402 if the user has insufficient credits.
-    Only enforced when CREDITS_ENFORCED is set and the request carries a user id.
-    """
-    cost = MODULE_COSTS.get(action, 0)
-    if cost == 0 or not CREDITS_ENFORCED or not user_id:
-        return 0
-    try:
-        deduct_credits(user_id, cost, action)
-    except ValueError as e:
-        raise HTTPException(
-            status_code=402,
-            detail={
-                "error": "insufficient_credits",
-                "message": str(e),
-                "top_up_url": "/pricing",
-            },
-        )
-    return cost
-
-
-@app.delete("/user/{user_id}/data", dependencies=[Depends(require_app_key)])
-async def delete_user_account(user_id: str, request: Request):
-    """GDPR Article 17 — Right to erasure. Permanently deletes all user data."""
-    return delete_user_data(user_id)
-
-
-@app.get("/user/{user_id}/data-export", dependencies=[Depends(require_app_key)])
-async def export_user_data(user_id: str):
-    """GDPR Article 15 — Right of access. Returns all data held for this user."""
-    return get_user_data_export(user_id)
-
+app = FastAPI(title="NailIt")
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=allowed_origins,
-    allow_credentials=False,
-    allow_methods=["GET", "POST", "OPTIONS"],
-    allow_headers=["Content-Type", "X-App-Key", "X-User-Id"],
+    allow_origins=["http://127.0.0.1:3000", "http://localhost:3000"],
+    allow_methods=["GET", "POST"],
+    allow_headers=["Content-Type"],
 )
 
 
-class PrepRequest(BaseModel):
-    company_name: str = Field(min_length=1, max_length=120)
-    role_name: str = Field(min_length=1, max_length=120)
-    job_description: str = Field(min_length=1, max_length=120000)
-    cv: str = Field(min_length=1, max_length=120000)
-    extra: str = Field(default="", max_length=900000)
+@app.exception_handler(HTTPException)
+async def http_exception_handler(request, exc):
+    return JSONResponse(status_code=exc.status_code, content={"error": exc.detail, "status_code": exc.status_code})
+
+
+@app.on_event("startup")
+async def startup_cleanup():
+    # Jobs run as in-process threads, so any job still marked active is dead after a restart.
+    fail_stale_jobs(minutes=0)
+
+
+def dispatch_job(func, *args):
+    threading.Thread(target=func, args=args, daemon=True).start()
 
 
 class SessionCreateRequest(BaseModel):
@@ -266,8 +48,6 @@ class SessionCreateRequest(BaseModel):
     answer_bank: str = Field(default="", max_length=240000)
     company_description: str = Field(default="", max_length=120000)
     youtube_transcripts: str = Field(default="", max_length=900000)
-    user_email: str = Field(default="", max_length=320)
-    user_id: str = Field(default="", max_length=160)
 
 
 class ModuleRunRequest(BaseModel):
@@ -285,197 +65,29 @@ class AnswerGenerateRequest(BaseModel):
     role_name: str = Field(default="", max_length=120)
 
 
-class CheckoutCreateRequest(BaseModel):
-    user_id: str = Field(min_length=1, max_length=160)
-    product: str = Field(min_length=1, max_length=80)
+REQUIRES_ARTIFACTS = {
+    "candidate_profile": ["company_intelligence", "role_intelligence"],
+    "gap_map": ["company_intelligence", "role_intelligence", "candidate_profile"],
+    "interview_strategy": ["company_intelligence", "role_intelligence", "candidate_profile", "gap_map"],
+    "prep_pack": ["company_intelligence", "role_intelligence", "candidate_profile", "gap_map", "interview_strategy"],
+}
 
 
-class ContributionOutcomeRequest(BaseModel):
-    session_id: str = Field(default="", max_length=160)
-    user_id: str = Field(default="", max_length=160)
-    outcome: str = Field(default="", max_length=120)
-    feedback: str = Field(default="", max_length=4000)
+def _require_session(session_id, include_raw=False):
+    session = get_session(session_id, include_raw=include_raw)
+    if not session:
+        raise HTTPException(status_code=404, detail="Session not found")
+    return session
 
 
 @app.get("/")
 def home():
-    return {"status": "running", "message": "Interview Intel API is live"}
+    return {"status": "running", "app": "nailit"}
 
 
-@app.post("/checkout/create", dependencies=[Depends(require_app_key)])
-def checkout_create(req: CheckoutCreateRequest):
-    raise HTTPException(
-        status_code=501,
-        detail={
-            "error": "payment_checkout_not_ready",
-            "message": "Checkout creation is intentionally blocked until product, price, and validation decisions are made.",
-        },
-    )
-
-
-@app.get("/credits/balance", dependencies=[Depends(require_app_key)])
-def credits_balance(user_id: str = Depends(current_user_id)):
-    if not user_id:
-        raise HTTPException(status_code=400, detail="X-User-Id header is required")
-    return {"user_id": user_id, "balance": get_credits(user_id), "enforced": CREDITS_ENFORCED}
-
-
-@app.post("/contribution/outcome", dependencies=[Depends(require_app_key)])
-def contribution_outcome(req: ContributionOutcomeRequest):
-    raise HTTPException(
-        status_code=501,
-        detail={
-            "error": "contribution_capture_not_ready",
-            "message": "Outcome and contribution capture are intentionally blocked until the validation loop defines the evidence contract.",
-        },
-    )
-
-
-def _product_json_path(output_path):
-    legacy_path = Path(str(output_path).replace("interview_prep_", "product_brief_"))
-    workspace_path = output_path.parent / "product_brief.json"
-
-    if legacy_path != output_path and legacy_path.exists():
-        return legacy_path
-    if workspace_path.exists():
-        return workspace_path
-    return None
-
-
-@app.post("/prepare", dependencies=[Depends(require_app_key)])
-def prepare(req: PrepRequest):
-    output_file = run_pipeline(
-        job_description=req.job_description,
-        cv=req.cv,
-        extra=req.extra,
-        company_name=req.company_name,
-        role_name=req.role_name,
-    )
-
-    output_path = Path(output_file)
-    markdown_file = output_path.with_suffix(".md")
-    product_json_file = _product_json_path(output_path)
-    lua_brief_file = output_path.parent / "lua_brief.json"
-
-    markdown = markdown_file.read_text() if markdown_file.exists() else ""
-    product_json = None
-    lua_mock_interview_brief = None
-
-    if product_json_file:
-        product_json = json.loads(product_json_file.read_text())
-
-    if lua_brief_file.exists():
-        lua_mock_interview_brief = json.loads(lua_brief_file.read_text())
-
-    return {
-        "status": "done",
-        "output_file": output_file,
-        "markdown": markdown,
-        "product_json": product_json,
-        "lua_brief_file": str(lua_brief_file) if lua_brief_file.exists() else None,
-        "lua_mock_interview_brief": lua_mock_interview_brief,
-    }
-
-
-def _payload_from_request(req: PrepRequest):
-    if hasattr(req, "model_dump"):
-        return req.model_dump()
-    return req.dict()
-
-
-def _read_pipeline_files(output_file):
-    output_path = Path(output_file)
-    markdown_file = output_path.with_suffix(".md")
-    product_json_file = _product_json_path(output_path)
-    source_manifest_file = output_path.parent / "source_manifest.txt"
-
-    markdown = markdown_file.read_text() if markdown_file.exists() else ""
-    product_json = None
-    source_manifest = source_manifest_file.read_text() if source_manifest_file.exists() else ""
-
-    if product_json_file:
-        product_json = json.loads(product_json_file.read_text())
-
-    return markdown, product_json, source_manifest
-
-
-def _run_prepare_job(job_id, payload):
-    try:
-        update_job(job_id, status="running", stage="Job created", progress=1)
-
-        def progress_callback(stage, progress):
-            update_job(
-                job_id,
-                status="running",
-                stage=stage,
-                progress=progress,
-            )
-
-        output_file = run_pipeline(
-            job_description=payload.get("job_description", ""),
-            cv=payload.get("cv", ""),
-            extra=payload.get("extra", ""),
-            company_name=payload.get("company_name", ""),
-            role_name=payload.get("role_name", ""),
-            progress_callback=progress_callback,
-            job_id=job_id,
-        )
-
-        markdown, product_json, source_manifest = _read_pipeline_files(output_file)
-        update_job(
-            job_id,
-            status="done",
-            stage="Final prep pack complete",
-            progress=100,
-            markdown_output=markdown,
-            product_json=product_json or {},
-            source_manifest=source_manifest,
-            output_file=output_file,
-            error="",
-        )
-    except Exception as error:
-        update_job(
-            job_id,
-            status="failed",
-            stage="Failed",
-            error=str(error),
-        )
-
-
-@app.post("/session/create", dependencies=[Depends(require_app_key)])
-def session_create(req: SessionCreateRequest, user_id: str = Depends(current_user_id)):
-    # Payload size guard — reject before touching the DB
-    _PAYLOAD_LIMIT = 25_000
-    field_lengths = {
-        "company_name":       len(req.company_name),
-        "role_name":          len(req.role_name),
-        "job_description":    len(req.job_description),
-        "cv":                 len(req.cv),
-        "answer_bank":        len(req.answer_bank),
-        "company_description": len(req.company_description),
-        "youtube_transcripts": len(req.youtube_transcripts),
-    }
-    total = sum(field_lengths.values())
-    if total > _PAYLOAD_LIMIT:
-        oversized = sorted(
-            ((k, v) for k, v in field_lengths.items() if v > 500),
-            key=lambda x: x[1],
-            reverse=True,
-        )
-        detail_lines = ", ".join(f"{k} ({v} chars)" for k, v in oversized[:4])
-        raise HTTPException(
-            status_code=400,
-            detail=(
-                f"Payload too large: {total} characters total (limit {_PAYLOAD_LIMIT}). "
-                f"Shorten these fields: {detail_lines}. "
-                "Recommended limits: job_description 8000, cv 8000, answer_bank 4000, "
-                "company_description 2000, youtube_transcripts 4000."
-            ),
-        )
-    payload = req.model_dump() if hasattr(req, "model_dump") else req.dict()
-    if user_id:
-        payload["user_id"] = user_id
-    check_and_deduct(payload.get("user_id", ""), "full_session")
+@app.post("/session/create")
+def session_create(req: SessionCreateRequest):
+    payload = req.model_dump()
     session_id = "sess_" + datetime.now().strftime("%Y%m%d_%H%M%S_") + uuid.uuid4().hex[:8]
     session = create_session(session_id, payload)
     return {
@@ -486,113 +98,50 @@ def session_create(req: SessionCreateRequest, user_id: str = Depends(current_use
     }
 
 
-@app.get("/session/get", dependencies=[Depends(require_app_key)])
-def session_get(session_id: str, user_id: str = Depends(require_user_id)):
-    return owned_session(session_id, user_id)
+@app.get("/session/get")
+def session_get(session_id: str):
+    return _require_session(session_id)
 
 
 def _run_module_job(job_id, session_id, module_name):
     try:
         update_job(job_id, status="running", stage="Module queued", progress=1)
-        session = get_session(session_id, include_raw=True)
-        if not session:
-            raise ValueError("Session not found")
+        session = _require_session(session_id, include_raw=True)
 
         def progress_callback(stage, progress):
-            update_job(
-                job_id,
-                status="running",
-                stage=stage,
-                progress=progress,
-            )
+            update_job(job_id, status="running", stage=stage, progress=progress)
 
-        result = run_session_module(
-            session=session,
-            module_name=module_name,
-            progress_callback=progress_callback,
-        )
-        markdown = result.get("markdown", "") if isinstance(result, dict) else ""
-        product_json = result.get("product_json", {}) if isinstance(result, dict) else {}
+        result = run_session_module(session=session, module_name=module_name, progress_callback=progress_callback)
         update_job(
             job_id,
             status="done",
-            stage=result.get("stage", "Module complete") if isinstance(result, dict) else "Module complete",
+            stage=result.get("stage", "Module complete"),
             progress=100,
-            markdown_output=markdown,
-            product_json=product_json,
-            output_file=result.get("output_file", "") if isinstance(result, dict) else "",
+            markdown_output=result.get("markdown", ""),
+            product_json=result.get("product_json", {}),
+            output_file=result.get("output_file", ""),
             error="",
         )
     except Exception as error:
-        update_job(
-            job_id,
-            status="failed",
-            stage="Failed",
-            progress=100,
-            error=str(error),
-        )
+        update_job(job_id, status="failed", stage="Failed", progress=100, error=str(error))
 
 
-@app.post("/module/run", dependencies=[Depends(require_app_key)])
-def module_run(req: ModuleRunRequest, user_id: str = Depends(require_user_id)):
-    owned_session(req.session_id, user_id)
+@app.post("/module/run")
+def module_run(req: ModuleRunRequest):
+    _require_session(req.session_id)
+    jobs_base = os.path.join("jobs", req.session_id)
+    missing = [
+        name for name in REQUIRES_ARTIFACTS.get(req.module_name, [])
+        if not os.path.exists(os.path.join(jobs_base, name, f"{name}.json"))
+    ]
+    if missing:
+        raise HTTPException(status_code=400, detail=f"Required modules not complete: {', '.join(missing)}. Run them first.")
 
-    # Synchronous dependency check — fail fast at the HTTP layer, not inside the job thread
-    REQUIRES_ARTIFACTS = {
-        "interview_strategy": [
-            "company_intelligence",
-            "role_intelligence",
-            "candidate_profile",
-            "gap_map",
-        ],
-        "prep_pack": [
-            "company_intelligence",
-            "role_intelligence",
-            "candidate_profile",
-            "gap_map",
-            "interview_strategy",
-        ],
-        "gap_map": [
-            "company_intelligence",
-            "role_intelligence",
-            "candidate_profile",
-        ],
-        "candidate_profile": [
-            "company_intelligence",
-            "role_intelligence",
-        ],
-    }
-    required = REQUIRES_ARTIFACTS.get(req.module_name, [])
-    if required:
-        jobs_base = os.path.join("jobs", req.session_id)
-        missing = [
-            r for r in required
-            if not os.path.exists(os.path.join(jobs_base, r, f"{r}.json"))
-        ]
-        if missing:
-            raise HTTPException(
-                status_code=400,
-                detail=(
-                    f"Required modules not complete: {', '.join(missing)}. "
-                    f"Run them first."
-                ),
-            )
-
-    # Atomically get-or-create: prevents duplicate jobs under concurrent requests
     new_job_id = "mod_" + datetime.now().strftime("%Y%m%d_%H%M%S_") + uuid.uuid4().hex[:8]
     job_id, created = get_or_create_job(req.session_id, req.module_name, new_job_id)
-    if not created:
-        existing = get_job(job_id)
-        return {
-            "job_id": job_id,
-            "session_id": req.session_id,
-            "module_name": req.module_name,
-            "status": existing["status"],
-            "stage": existing["stage"],
-            "progress": existing["progress"],
-        }
+    if created:
+        dispatch_job(_run_module_job, job_id, req.session_id, req.module_name)
     job = get_job(job_id)
-    dispatch_job(_run_module_job, job_id, req.session_id, req.module_name)
     return {
         "job_id": job_id,
         "session_id": req.session_id,
@@ -603,421 +152,36 @@ def module_run(req: ModuleRunRequest, user_id: str = Depends(require_user_id)):
     }
 
 
-@app.get("/module/status", dependencies=[Depends(require_app_key)])
-def module_status(job_id: str, user_id: str = Depends(require_user_id)):
+@app.get("/module/status")
+def module_status(job_id: str):
     job = get_job(job_id)
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")
-    session_id = (job.get("input_payload") or {}).get("session_id", "")
-    if not session_id:
-        raise HTTPException(status_code=404, detail="Job not found")
-    owned_session(session_id, user_id)
     job.pop("input_payload", None)
     return job
 
 
-@app.post("/prepare/start", dependencies=[Depends(require_app_key)])
-def prepare_start(req: PrepRequest):
-    payload = _payload_from_request(req)
-    job_id = "prep_" + datetime.now().strftime("%Y%m%d_%H%M%S_") + uuid.uuid4().hex[:8]
-    job = create_job(job_id, payload)
-
-    dispatch_job(_run_prepare_job, job_id, payload)
-
-    return {
-        "job_id": job_id,
-        "status": job["status"],
-        "stage": job["stage"],
-        "progress": job["progress"],
-    }
-
-
-@app.get("/prepare/status/{job_id}", dependencies=[Depends(require_app_key)])
-def prepare_status(job_id: str):
-    job = get_job(job_id)
-    if not job:
-        raise HTTPException(status_code=404, detail="Job not found")
-    return job
-
-
-@app.post("/answers/generate", dependencies=[Depends(require_app_key)])
-def answers_generate(req: AnswerGenerateRequest, user_id: str = Depends(require_user_id)):
-    payload = req.model_dump() if hasattr(req, "model_dump") else req.dict()
-    session = owned_session(req.session_id, user_id, include_raw=True)
-    charged = check_and_deduct(user_id, "answer_generation")
+@app.post("/answers/generate")
+def answers_generate(req: AnswerGenerateRequest):
+    session = _require_session(req.session_id, include_raw=True)
     try:
-        return generate_answer_options(session, payload)
+        return generate_answer_options(session, req.model_dump())
     except Exception as error:
-        if charged:
-            add_credits(user_id, charged, "Refund: answer_generation failed")
         status = 400 if isinstance(error, FileNotFoundError) else 500
         raise HTTPException(status_code=status, detail=str(error)) from error
 
 
-@app.post("/lua-coach", dependencies=[Depends(require_app_key)])
-async def lua_coach(payload: dict, user_id: str = Depends(require_user_id)):
-    lua_brief = payload.get("lua_brief") or {}
+@app.post("/lua-coach")
+async def lua_coach(payload: dict):
     session_id = payload.get("session_id") or ""
     if not session_id:
         raise HTTPException(status_code=400, detail="session_id is required")
-    owned_session(session_id, user_id)
-    if not lua_brief:
-        lua_brief = build_session_lua_brief(session_id)
+    _require_session(session_id)
     response = build_lua_coach_response(
         company=payload.get("company", ""),
         role=payload.get("role", ""),
         question=payload.get("question", ""),
         candidate_answer=payload.get("candidate_answer", ""),
-        lua_brief=lua_brief,
+        lua_brief=payload.get("lua_brief") or build_session_lua_brief(session_id),
     )
     return adapt_lua_response(response)
-
-
-
-
-@app.post("/lua-session/save", dependencies=[Depends(require_app_key)])
-async def lua_session_save(payload: dict):
-    session_id = payload.get("session_id") or "default"
-    role = payload.get("role") or "user"
-    text_value = payload.get("text") or ""
-    if text_value.strip():
-        save_turn(session_id, role, text_value)
-    return {
-        "status": "saved",
-        "session_id": session_id,
-        "conversation": load_session(session_id),
-    }
-
-
-@app.get("/lua-session/{session_id}", dependencies=[Depends(require_app_key)])
-async def lua_session_get(session_id: str):
-    return {
-        "status": "found",
-        "session_id": session_id,
-        "conversation": load_session(session_id),
-    }
-
-
-@app.post("/lua-coach-resume", dependencies=[Depends(require_app_key)])
-async def lua_coach_resume(payload: dict):
-    session_id = payload.get("session_id") or "default"
-    question = payload.get("question") or ""
-    answer = payload.get("candidate_answer") or ""
-    is_final = bool(payload.get("is_final", False))
-
-    if answer.strip():
-        save_turn(session_id, "user", answer)
-
-    if not is_final:
-        return {
-            "status": "listening",
-            "should_respond": False,
-            "message": "Saved. Waiting for final answer signal.",
-            "session_id": session_id,
-            "conversation": load_session(session_id),
-        }
-
-    response = build_lua_coach_response(
-        company=payload.get("company", ""),
-        role=payload.get("role", ""),
-        question=question,
-        candidate_answer=answer,
-        lua_brief=payload.get("lua_brief", {}),
-    )
-
-    save_turn(session_id, "coach", json.dumps(response, ensure_ascii=False))
-    adapted = adapt_lua_response(response)
-    adapted["session_id"] = session_id
-    adapted["conversation"] = load_session(session_id)
-    return adapted
-
-
-
-@app.post("/lua-call-turn", dependencies=[Depends(require_app_key)])
-async def lua_call_turn(payload: dict):
-    session_id = payload.get("session_id") or "default"
-    role = payload.get("role") or "user"
-    text_value = payload.get("text") or ""
-    is_final = bool(payload.get("is_final", False))
-
-    if text_value.strip():
-        save_turn(
-            session_id=session_id,
-            role=role,
-            text=text_value,
-            meta={
-                "is_final": is_final,
-                "company": payload.get("company", ""),
-                "role_name": payload.get("role_name", ""),
-                "question": payload.get("question", ""),
-            },
-        )
-
-    if not is_final:
-        return {
-            "status": "saved_listening",
-            "should_respond": False,
-            "session_id": session_id,
-            "message": "Saved. Still listening.",
-            "conversation": load_session(session_id),
-        }
-
-    history = transcript_text(session_id)
-    answer_with_context = f"""
-Conversation so far:
-{history}
-
-Latest final answer:
-{text_value}
-"""
-
-    coach = build_lua_coach_response(
-        company=payload.get("company", ""),
-        role=payload.get("role_name", payload.get("role", "")),
-        question=payload.get("question", ""),
-        candidate_answer=answer_with_context,
-        lua_brief=payload.get("lua_brief", {}),
-    )
-
-    save_turn(
-        session_id=session_id,
-        role="coach",
-        text=json.dumps(coach, ensure_ascii=False),
-        meta={"type": "coach_feedback"},
-    )
-
-    adapted_coach = adapt_lua_response(coach)
-    adapted_coach["session_id"] = session_id
-    adapted_coach["conversation"] = load_session(session_id)
-    return adapted_coach
-
-
-@app.get("/lua-call-session/{session_id}", dependencies=[Depends(require_app_key)])
-async def lua_call_session(session_id: str):
-    return {
-        "status": "found",
-        "session_id": session_id,
-        "conversation": load_session(session_id),
-        "transcript": transcript_text(session_id),
-    }
-
-
-@app.post("/lua-benchmark-question", dependencies=[Depends(require_app_key)])
-async def lua_benchmark_question(payload: dict):
-    result = build_benchmark_question(
-        session_id=payload.get("session_id", "default"),
-        company=payload.get("company", ""),
-        role=payload.get("role", payload.get("role_name", "")),
-        question_number=int(payload.get("question_number", 1)),
-        nailit_pack=payload.get("nailit_pack", ""),
-        uploaded_memory=payload.get("uploaded_memory", ""),
-        focus_area=payload.get("focus_area", ""),
-    )
-    save_benchmark_event(payload.get("session_id", "default"), "benchmark_question", result)
-    return result
-
-
-@app.post("/lua-select-benchmark-answer", dependencies=[Depends(require_app_key)])
-async def lua_select_benchmark_answer(payload: dict):
-    result = build_selected_answer_training_card(
-        session_id=payload.get("session_id", "default"),
-        selected_answer=payload.get("selected_answer", {}),
-        user_choice=payload.get("user_choice", ""),
-    )
-    save_benchmark_event(payload.get("session_id", "default"), "selected_answer", {
-        "user_choice": payload.get("user_choice", ""),
-        "selected_answer": payload.get("selected_answer", {}),
-        "training_card": result,
-    })
-    return result
-
-
-@app.post("/lua-practice-benchmark-turn", dependencies=[Depends(require_app_key)])
-async def lua_practice_benchmark_turn(payload: dict):
-    session_id = payload.get("session_id", "default")
-    selected_answer = payload.get("selected_answer", {})
-    spoken_attempt = payload.get("spoken_attempt", payload.get("text", ""))
-
-    result = build_benchmark_practice_feedback(
-        session_id=session_id,
-        selected_answer=selected_answer,
-        spoken_attempt=spoken_attempt,
-        chunk_name=payload.get("chunk_name", "full_answer"),
-        is_final=bool(payload.get("is_final", True)),
-    )
-
-    if result.get("status") != "saved_listening":
-        q_key = payload.get("question_key") or question_key(
-            company=payload.get("company", ""),
-            role=payload.get("role", ""),
-            question=selected_answer.get("question", payload.get("question", "")),
-            focus_area=payload.get("focus_area", ""),
-        )
-
-        score = result.get("score_out_of_10", 0) or 0
-
-        if score <= 4:
-            result["pressure_followup"] = build_pressure_response(
-                company=payload.get("company", ""),
-                role=payload.get("role", ""),
-                focus_area=payload.get("focus_area", ""),
-                spoken_attempt=spoken_attempt,
-                score=score,
-            )
-
-        mastery_result = update_mastery(session_id, q_key, result)
-        result["mastery"] = (
-            mastery_result.get("mastery", [None])[0]
-            if mastery_result.get("mastery")
-            else None
-        )
-
-        save_benchmark_event(
-            session_id,
-            "practice_turn",
-            {
-                "selected_answer": selected_answer,
-                "spoken_attempt": spoken_attempt,
-                "feedback": result,
-                "mastery": result.get("mastery"),
-            },
-        )
-
-    return result
-
-@app.get("/lua-benchmark-session/{session_id}", dependencies=[Depends(require_app_key)])
-async def lua_benchmark_session(session_id: str):
-    return {
-        "status": "found",
-        "session_id": session_id,
-        "events": load_benchmark_session(session_id),
-    }
-
-
-@app.post("/lua-memory-add", dependencies=[Depends(require_app_key)])
-async def lua_memory_add(payload: dict):
-    return add_coach_memory(
-        session_id=payload.get("session_id", "default"),
-        title=payload.get("title", "Untitled memory"),
-        content=payload.get("content", ""),
-        scope=payload.get("scope", "session"),
-        source_type=payload.get("source_type", "pasted_text"),
-    )
-
-
-@app.get("/lua-memory/{session_id}", dependencies=[Depends(require_app_key)])
-async def lua_memory(session_id: str):
-    return get_coach_memory(session_id)
-
-
-@app.post("/lua-memory-upload-text", dependencies=[Depends(require_app_key)])
-async def lua_memory_upload_text(payload: dict):
-    filename = payload.get("filename", "uploaded_document.txt")
-    content = payload.get("content", "")
-    title = payload.get("title") or filename
-
-    return add_coach_memory(
-        session_id=payload.get("session_id", "default"),
-        title=title,
-        content=content,
-        scope=payload.get("scope", "session"),
-        source_type=payload.get("source_type", "uploaded_text_file"),
-    )
-
-
-@app.post("/lua-memory-relevant", dependencies=[Depends(require_app_key)])
-async def lua_memory_relevant(payload: dict):
-    return get_relevant_coach_memory(
-        session_id=payload.get("session_id", "default"),
-        query=payload.get("query", ""),
-        limit=int(payload.get("limit", 8)),
-    )
-
-
-@app.get("/lua-mastery/{session_id}", dependencies=[Depends(require_app_key)])
-async def lua_mastery(session_id: str):
-    return get_mastery(session_id)
-
-
-@app.post("/lua-retry-drill", dependencies=[Depends(require_app_key)])
-async def lua_retry_drill(payload: dict):
-    return build_retry_drill(
-        session_id=payload.get("session_id", "default"),
-        question_key=payload.get("question_key"),
-    )
-
-
-@app.post("/lua-escalation-challenge", dependencies=[Depends(require_app_key)])
-async def lua_escalation_challenge(payload: dict):
-    return build_escalation_challenge(
-        company=payload.get("company", ""),
-        role=payload.get("role", ""),
-        focus_area=payload.get("focus_area", ""),
-        previous_answer=payload.get("previous_answer", ""),
-        score=float(payload.get("score", 0)),
-    )
-
-
-@app.get("/lua-health", dependencies=[Depends(require_app_key)])
-async def lua_health():
-    return {
-        "status": "ok",
-        "service": "lua-interview-coach",
-        "features": {
-            "benchmark": True,
-            "memory": True,
-            "memory_relevance": True,
-            "practice_feedback": True,
-            "mastery": True,
-            "retry_drill": True,
-            "escalation": True
-        }
-    }
-
-
-@app.get("/lua-state/{session_id}", dependencies=[Depends(require_app_key)])
-async def lua_state(session_id: str):
-    session = load_benchmark_session(session_id)
-
-    if isinstance(session, dict):
-        events = session.get("events", [])
-    else:
-        events = session
-
-    return build_interview_state(events)
-
-
-@app.post("/lua-pressure-response", dependencies=[Depends(require_app_key)])
-async def lua_pressure_response(payload: dict):
-    return build_pressure_response(
-        company=payload.get("company", ""),
-        role=payload.get("role", ""),
-        focus_area=payload.get("focus_area", ""),
-        spoken_attempt=payload.get("spoken_attempt", payload.get("text", "")),
-        score=payload.get("score", 0),
-    )
-
-
-@app.post("/lua-pressure-repair", dependencies=[Depends(require_app_key)])
-async def lua_pressure_repair(payload: dict):
-    result = build_pressure_repair_feedback(
-        company=payload.get("company", ""),
-        role=payload.get("role", ""),
-        focus_area=payload.get("focus_area", ""),
-        original_answer=payload.get("original_answer", ""),
-        pressure_question=payload.get("pressure_question", ""),
-        repair_answer=payload.get("repair_answer", ""),
-    )
-
-    save_benchmark_event(
-        payload.get("session_id", "default"),
-        "pressure_repair",
-        {
-            "original_answer": payload.get("original_answer", ""),
-            "pressure_question": payload.get("pressure_question", ""),
-            "repair_answer": payload.get("repair_answer", ""),
-            "feedback": result,
-        },
-    )
-
-    return result

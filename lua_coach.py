@@ -1,8 +1,8 @@
 import json
+from pathlib import Path
 import re
 from openai import OpenAI
 from agent_v2 import ask_llm, trim_text
-from doctrine_runtime import build_lua_doctrine_brief
 
 
 CONTINUATION_PHRASES = {
@@ -103,21 +103,11 @@ def build_lua_coach_response(
 
     question_type = classify_question(question, candidate_answer)
 
-    doctrine_query = f"""
-    company {company}
-    role {role}
-    question type {question_type}
-    question {question}
-    answer {candidate_answer}
-    result first ownership tradeoff result squared specificity evidence integrity voice tone follow up
-    """
-
-    doctrine = build_lua_doctrine_brief(doctrine_query)
 
     prompt = f"""
 You are Lua Live Coach v2, an elite interview coach.
 
-You must coach the candidate using the Nailit doctrine and the Lua brief.
+You must coach the candidate using the Lua brief, which holds the candidate's own facts.
 
 Company:
 {company}
@@ -140,19 +130,17 @@ Voice notes:
 Lua brief:
 {trim_text(json.dumps(lua_brief, ensure_ascii=False), 14000)}
 
-Doctrine:
-{trim_text(json.dumps(doctrine, ensure_ascii=False), 16000)}
 
 Conversation history:
 {trim_text(json.dumps(conversation_history, ensure_ascii=False), 7000)}
 
 Your job:
 1. Score the answer strictly.
-2. Identify which doctrine rules were followed or broken.
+2. Identify which interview best practices were followed or broken.
 3. Explain what made the answer weak or strong.
 4. Give a better structure.
 5. Give three top 1 percent answer versions that are CV-plausible, role-realistic, company-targeted, and as strong as possible.
-6. You may invent realistic metrics, timelines, stakes, and process details when they fit the candidate's actual career lane, role history, seniority, and plausible responsibilities.
+6. Use only facts, numbers, timelines and stakes that appear in the candidate's answer or the Lua brief. Never add any that do not; if a number is missing, say so instead.
 7. Never invent employers, job titles, industries, credentials, domains, tools, authority level, or career history that the candidate could not credibly claim.
 8. Never move the candidate into finance, engineering, cloud, sales, legal, or another domain unless the CV, answer, memory, or Lua brief supports it.
 9. Give voice and tone coaching.
@@ -171,8 +159,8 @@ Return only valid JSON with this exact schema:
   "verdict": "",
   "what_worked": [],
   "what_was_weak": [],
-  "doctrine_rules_followed": [],
-  "doctrine_rules_broken": [],
+  "practices_followed": [],
+  "practices_broken": [],
   "missing_evidence": [],
   "plausibility_boundary": [],
   "better_structure": [],
@@ -224,6 +212,33 @@ Return only valid JSON with this exact schema:
         }
 
 
+SESSION_BRIEF_MODULES = [
+    "company_intelligence",
+    "role_intelligence",
+    "candidate_profile",
+    "gap_map",
+    "interview_strategy",
+]
+
+
+def build_session_lua_brief(session_id, jobs_root="jobs", max_chars_per_module=6000):
+    """Collect the session's completed module artifacts so Lua coaches with real candidate context."""
+    from agent_v2 import safe_path_part
+
+    base = Path(jobs_root) / safe_path_part(session_id, "session")
+    brief = {"brief_type": "nailit_session_lua_brief", "session_id": session_id, "modules": {}}
+    for module_name in SESSION_BRIEF_MODULES:
+        path = base / module_name / f"{module_name}.json"
+        if not path.exists():
+            continue
+        try:
+            data = json.loads(path.read_text(encoding="utf8"))
+        except (OSError, json.JSONDecodeError):
+            continue
+        brief["modules"][module_name] = trim_text(json.dumps(data, ensure_ascii=False), max_chars_per_module)
+    return brief
+
+
 def adapt_lua_response(raw):
     """Map internal lua_coach keys to the frontend contract shape."""
     return {
@@ -240,19 +255,4 @@ def adapt_lua_response(raw):
         "score_out_of_10": raw.get("score_out_of_10", 5),
         "voice_and_delivery_coaching": raw.get("voice_and_delivery_coaching", {}),
     }
-
-
-if __name__ == "__main__":
-    demo = build_lua_coach_response(
-        company="Google",
-        role="Program Manager",
-        question="Tell me about a time you failed.",
-        candidate_answer="I missed a deadline because the team was busy, but we fixed it later.",
-        lua_brief={},
-    )
-    print(json.dumps(demo, indent=2, ensure_ascii=False)[:5000])
-
-
-
-
 

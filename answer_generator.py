@@ -128,7 +128,7 @@ Assigned story id: {payload.get("assigned_story_id") or ""}
 Assigned story title: {payload.get("assigned_story_title") or ""}
 
 Answer rule:
-You may invent realistic story detail, process, and metrics within the candidate's real career lane.
+Use only facts, numbers and details present in the candidate profile and source documents. Never add a metric, timeline, stake or detail that is not there.
 Never invent employers, industries, titles, credentials, degrees, direct domain ownership, or impossible seniority.
 Do not claim direct construction, contractor, trade school, electrical, piping, data center, finance, healthcare, or other domain experience unless candidate_profile proves it.
 If stretching, stretch the operating scenario and process, not the candidate's background.

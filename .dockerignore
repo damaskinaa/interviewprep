@@ -1,9 +1,0 @@
-frontend/
-.git/
-.github/
-jobs/
-data/
-*.db
-.env
-.env.*
-__pycache__/

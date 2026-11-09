@@ -1,22 +1,23 @@
-# NailIt interview prep
+# NailIt
+
+Personal interview prep and practice tool. It runs only on my Mac and binds to 127.0.0.1.
 
 | Path | What |
 |---|---|
-| `/` (root) | FastAPI backend (`api.py`, pipeline in `agent_v2.py`, Lua coach `lua_*.py`) |
+| `/` (root) | FastAPI backend (`api.py`, prep pipeline in `agent_v2.py`, practice coach in `lua_coach.py`) |
+| `nailit/` | CLI (`uv run nailit`) and config (Keychain secrets) |
 | `frontend/` | Next.js UI; server routes proxy to the backend via `frontend/lib/backend.ts` |
 
-## Backend
+## Keys
+Stored in the macOS Keychain under service `nailit`; `.env` is a fallback (see `.env.example`).
 ```bash
-cp .env.example .env   # fill in keys
-docker compose up      # api on :8000 + rq worker + redis
-# or: pip install -r dev-requirements.txt && uvicorn api:app --reload
-python -m pytest tests -q
+security add-generic-password -s nailit -a OPENAI_API_KEY -w <key>
+security add-generic-password -s nailit -a TAVILY_API_KEY -w <key>
 ```
 
-## Frontend
+## Run
 ```bash
-cd frontend
-cp .env.example .env.local   # APP_API_KEY, BACKEND_URL=http://localhost:8000
-npm ci && npm run dev
+uv run nailit                 # backend on http://127.0.0.1:8000
+cd frontend && npm ci && npm run dev   # UI on http://127.0.0.1:3000
+uv run --extra dev pytest tests -q
 ```
-On Vercel, set the project's **Root Directory** to `frontend`.
