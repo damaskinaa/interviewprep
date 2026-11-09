@@ -18,7 +18,7 @@ from nailit import library
 logger = logging.getLogger("nailit.voice")
 
 SAMPLE_RATE = 16000
-WHISPER_MODEL = "mlx-community/whisper-large-v3-turbo"
+WHISPER_MODEL = "mlx-community/whisper-small.en-mlx"  # ~10x real time on an M4 with word timestamps; set NAILIT_WHISPER_MODEL for large-v3-turbo
 # Whisper drops disfluencies unless the prompt shows them; this prompt makes it transcribe them verbatim.
 FILLER_PROMPT = "Um, so, uh, I mean, like, we, um, we kind of, uh, started with the, like, the first step."
 FILLED_PAUSES = {"um", "umm", "uh", "uhh", "er", "erm", "ah", "hmm", "mm"}
@@ -70,23 +70,95 @@ def words_result(result, duration_s):
     }
 
 
-def transcribe(path, model=None):
+def _load(path):
     try:
-        import mlx_whisper
         from mlx_whisper.audio import load_audio
     except ImportError as error:
         raise VoiceUnavailable("mlx-whisper is not installed (Apple silicon only): uv sync --extra voice") from error
     if not shutil.which("ffmpeg"):
         raise VoiceUnavailable("ffmpeg is needed to decode audio: brew install ffmpeg")
-    audio = load_audio(str(path))
-    result = mlx_whisper.transcribe(
-        audio,
-        path_or_hf_repo=model or os.getenv("NAILIT_WHISPER_MODEL") or WHISPER_MODEL,
-        word_timestamps=True,
-        initial_prompt=FILLER_PROMPT,
-        condition_on_previous_text=False,
-    )
-    return words_result(result, len(audio) / SAMPLE_RATE)
+    return load_audio(str(path))
+
+
+def _looks_broken(words, seconds):
+    """Whisper failure modes seen in testing: a repetition loop ("I, I, I, …") or most of the speech dropped."""
+    tokens = [re.sub(r"[^a-z']", "", w["word"].lower()) for w in words]
+    run = longest = 1
+    for a, b in zip(tokens, tokens[1:]):
+        run = run + 1 if a and a == b else 1
+        longest = max(longest, run)
+    too_sparse = seconds > 8 and len(words) / seconds < 0.9  # normal speech is about 2-3 words a second
+    return longest >= 6 or too_sparse
+
+
+def _words(audio, offset_s=0.0, model=None):
+    import mlx_whisper
+    if len(audio) < SAMPLE_RATE * 0.3:
+        return []
+    seconds = len(audio) / SAMPLE_RATE
+    attempts = [{"initial_prompt": FILLER_PROMPT}, {"initial_prompt": None, "temperature": (0.0, 0.2, 0.4)}]
+    best = None
+    for options in attempts:
+        result = mlx_whisper.transcribe(
+            audio, path_or_hf_repo=model or os.getenv("NAILIT_WHISPER_MODEL") or WHISPER_MODEL,
+            word_timestamps=True, condition_on_previous_text=False, **options)
+        words = [{"word": w["word"].strip(), "start": round(float(w["start"]) + offset_s, 2),
+                  "end": round(float(w["end"]) + offset_s, 2)}
+                 for segment in result.get("segments") or [] for w in segment.get("words") or [] if w.get("word", "").strip()]
+        if not _looks_broken(words, seconds):
+            return words
+        logger.info("transcript looked broken (%d words in %.1fs); retrying without the filler prompt", len(words), seconds)
+        best = best if best and len(best) >= len(words) else words
+    return best or []
+
+
+def _quiet_cut(audio, lo_s, hi_s):
+    """The quietest 50 ms point between lo_s and hi_s, so a chunk boundary never splits a word."""
+    import numpy as np
+    lo, hi, frame = int(lo_s * SAMPLE_RATE), int(hi_s * SAMPLE_RATE), int(0.05 * SAMPLE_RATE)
+    if hi - lo < frame * 2:
+        return hi_s
+    window = np.asarray(audio[lo:hi], dtype="float32")
+    energies = [float((window[i:i + frame] ** 2).mean()) for i in range(0, len(window) - frame, frame)]
+    return lo_s + energies.index(min(energies)) * 0.05 + 0.025
+
+
+# Incremental transcription while the candidate is still speaking: each take keeps the words already
+# transcribed up to a quiet point, so when the answer ends only the last few seconds are left to do.
+LIVE = {}
+CHUNK_S, TAIL_KEEP_S = 8.0, 2.0
+
+
+def live_update(mock_id, take, path):
+    """Called by the live caption. Commits finished chunks; returns committed text plus a rough tail."""
+    state = LIVE.get(mock_id)
+    if not state or state["take"] != take:
+        state = LIVE[mock_id] = {"take": take, "words": [], "committed_s": 0.0}
+    audio = _load(path)
+    duration = len(audio) / SAMPLE_RATE
+    while duration - state["committed_s"] >= CHUNK_S + TAIL_KEEP_S:
+        cut = _quiet_cut(audio, state["committed_s"] + CHUNK_S - 2.0, state["committed_s"] + CHUNK_S + 1.0)
+        start = state["committed_s"]
+        state["words"] += _words(audio[int(start * SAMPLE_RATE):int(cut * SAMPLE_RATE)], start)
+        state["committed_s"] = cut
+    tail = _words(audio[int(state["committed_s"] * SAMPLE_RATE):], state["committed_s"]) if duration - state["committed_s"] > 1.0 else []
+    return " ".join(w["word"] for w in state["words"] + tail)
+
+
+def transcribe(path, model=None, mock_id=None, take=None):
+    """Whole-answer transcript with word timings. Reuses the chunks already done live for this take."""
+    audio = _load(path)
+    duration = len(audio) / SAMPLE_RATE
+    state = LIVE.pop(mock_id, None) if mock_id else None
+    if state and take and state["take"] == take and state["committed_s"] <= duration:
+        start = state["committed_s"]
+        words = state["words"] + _words(audio[int(start * SAMPLE_RATE):], start, model)
+    else:
+        words = _words(audio, 0.0, model)
+    return words_result({"segments": [{"words": [{"word": w["word"], "start": w["start"], "end": w["end"]} for w in words]}]},
+                        duration)
+
+
 
 
 def _openai_tts(text, path):
