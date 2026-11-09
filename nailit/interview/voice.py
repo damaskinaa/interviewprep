@@ -1,8 +1,6 @@
-"""Voice loop: local mlx-whisper transcription (word timestamps, fillers kept) and interviewer TTS.
-
-Endpointing happens in the browser page (push-to-talk, or hands-free with Silero VAD). The page uploads one
-recording per answer; this module saves it under ~/NailIt/recordings/<mock_id>/, transcribes it locally,
-and turns the interviewer's reply into audio with OpenAI TTS or the free macOS `say`.
+"""Local voice helpers for the Pipecat loop (nailit/interview/pipeline.py): recordings under
+~/NailIt/recordings/<mock_id>/, mlx-whisper transcription (word timestamps, fillers kept), Kokoro-82M via mlx-audio,
+and macOS `say` as the fallback TTS.
 """
 import logging
 import os
