@@ -7,6 +7,8 @@ import pytest
 
 BACKEND_ROOT = Path(__file__).resolve().parents[1]
 def _default_frontend_root():
+    if (BACKEND_ROOT / "frontend" / "package.json").exists():
+        return BACKEND_ROOT / "frontend"
     for name in ("interviewprep-frontend", "interview-frontend"):
         candidate = BACKEND_ROOT.parent / name
         if candidate.exists():

@@ -1,0 +1,13 @@
+frontend/
+docs/
+Next-Move-Theory-Canon/
+.agents/
+.claude/
+.git/
+.github/
+jobs/
+data/
+*.db
+.env
+.env.*
+__pycache__/
