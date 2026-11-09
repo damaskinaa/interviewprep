@@ -1,0 +1,126 @@
+import re
+
+from nailit.prep.common import as_list, count_words, normalize_text
+
+ANSWER_BANNED_OPENINGS = [
+    "while my manager was away",
+    "in my previous role",
+    "in my role as",
+    "recognizing the need",
+    "i identified that",
+    "i faced a situation",
+]
+
+
+WHY_COMPANY_GENERIC_PHRASES = [
+    "leader in innovation",
+    "google is a leader in innovation",
+    "i admire google's culture",
+    "i admire google’s culture",
+    "dynamic environment",
+    "culture of innovation",
+    "commitment to innovation",
+    "innovation and excellence",
+    "innovative practices",
+    "collaboration across various teams",
+    "enhancing employee experience",
+]
+
+
+def first_sentence(text):
+    text = normalize_text(text)
+    match = re.search(r"(.+?[.!?])(\s|$)", text)
+    return match.group(1).strip() if match else text.split("\n", 1)[0].strip()
+
+
+def starts_with_banned_opening(answer):
+    opening = first_sentence(answer).lower()
+    return any(opening.startswith(phrase) for phrase in ANSWER_BANNED_OPENINGS)
+
+
+def why_company_is_generic(text):
+    lowered = normalize_text(text).lower()
+    if not lowered:
+        return True
+    return any(phrase in lowered for phrase in WHY_COMPANY_GENERIC_PHRASES)
+
+
+def extract_source_numbers(raw_cv, raw_answer_bank):
+    """Return the set of digit strings that appear literally in the candidate's own documents."""
+    combined = (raw_cv or "") + " " + (raw_answer_bank or "")
+    # Match standalone numbers possibly followed by % or units
+    return set(re.findall(r"\b\d+(?:\.\d+)?\b", combined))
+
+
+def strip_hallucinated_metrics(answer, raw_cv, raw_answer_bank):
+    """
+    Scan answer for number+unit patterns.  Replace any that don't appear in
+    the candidate's source text with qualitative language.
+    Returns (cleaned_answer, list_of_stripped_metrics).
+    """
+    source_numbers = extract_source_numbers(raw_cv, raw_answer_bank)
+    stripped = []
+
+    def _replace(match):
+        full = match.group(0)
+        digits = re.search(r"\d+(?:\.\d+)?", full)
+        if not digits:
+            return full
+        num = digits.group(0)
+        if num in source_numbers:
+            return full
+        # Qualitative replacements by suffix
+        low = full.lower()
+        stripped.append(full)
+        if "%" in full or "percent" in low:
+            return "significantly"
+        if any(u in low for u in ("hour", "minute", "day", "week", "month")):
+            return "meaningfully faster"
+        if any(u in low for u in ("$", "dollar", "usd", "gbp", "€")):
+            return "meaningfully"
+        return "significantly"
+
+    # Pattern: number optionally followed by %, unit words, or currency symbols.
+    # Use lookahead/lookbehind instead of \b so the unit suffix is captured in the match.
+    pattern = re.compile(
+        r"(?<!\d)\$?\d+(?:\.\d+)?(?:\s*(?:%|percent|hours?|minutes?|days?|weeks?|months?))?(?!\d)",
+        re.IGNORECASE,
+    )
+    cleaned = pattern.sub(_replace, answer)
+    return cleaned, stripped
+
+
+def answer_word_failures_from_strategy(strategy):
+    failures = []
+    for round_item in as_list(strategy.get("questions_by_round")):
+        for item in as_list(round_item.get("questions") if isinstance(round_item, dict) else []):
+            answer = item.get("complete_written_answer", "") if isinstance(item, dict) else ""
+            words = count_words(answer)
+            if words and words < 180:
+                failures.append(item.get("question", "answer")[:120])
+    return failures
+
+
+NUMBER_PATTERN = re.compile(r"(?<![\w.])\$?\d+(?:[.,]\d+)*(?:\s*(?:%|percent|k|m|bn))?(?![\w])", re.IGNORECASE)
+
+
+def _canonical_number(raw):
+    digits = re.search(r"\d+(?:[.,]\d+)*", raw).group(0).replace(",", "")
+    return digits.rstrip("0").rstrip(".") if "." in digits else digits
+
+
+def numbers_in(text):
+    """Canonical numeric values mentioned in a text ("1,200" and "1200" are the same number)."""
+    return {_canonical_number(m.group(0)) for m in NUMBER_PATTERN.finditer(text or "")}
+
+
+def invented_numbers(text, *allowed_sources):
+    """Numbers in `text` that appear in none of the allowed source texts, in order of first mention."""
+    allowed = set().union(*(numbers_in(source) for source in allowed_sources)) if allowed_sources else set()
+    seen, invented = set(), []
+    for match in NUMBER_PATTERN.finditer(text or ""):
+        value = _canonical_number(match.group(0))
+        if value not in allowed and value not in seen:
+            seen.add(value)
+            invented.append(match.group(0).strip())
+    return invented
