@@ -47,9 +47,7 @@ def why_company_is_generic(text):
 
 def extract_source_numbers(raw_cv, raw_answer_bank):
     """Return the set of digit strings that appear literally in the candidate's own documents."""
-    combined = (raw_cv or "") + " " + (raw_answer_bank or "")
-    # Match standalone numbers possibly followed by % or units
-    return set(re.findall(r"\b\d+(?:\.\d+)?\b", combined))
+    return numbers_in((raw_cv or "") + " " + (raw_answer_bank or ""))
 
 
 def strip_hallucinated_metrics(answer, raw_cv, raw_answer_bank):
@@ -63,11 +61,9 @@ def strip_hallucinated_metrics(answer, raw_cv, raw_answer_bank):
 
     def _replace(match):
         full = match.group(0)
-        digits = re.search(r"\d+(?:\.\d+)?", full)
-        if not digits:
+        if not re.search(r"\d", full):
             return full
-        num = digits.group(0)
-        if num in source_numbers:
+        if _canonical_number(full) in source_numbers:
             return full
         # Qualitative replacements by suffix
         low = full.lower()

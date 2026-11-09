@@ -14,6 +14,7 @@ jobs:
           python-version: "3.11"
       - run: uv lock --check
       - run: uv sync --extra dev
+      - run: uvx ruff check --select F nailit tests
       - run: uv run pytest tests -q
 
   frontend:

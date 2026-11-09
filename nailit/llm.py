@@ -39,7 +39,8 @@ def client():
 
 
 def call_cost(model, prompt_tokens, completion_tokens):
-    prices = SETTINGS["prices"].get(model) or SETTINGS["prices"].get("default") or (0.0, 0.0)
+    role = "strong" if model == MODEL_STRONG and model != MODEL_FAST else "fast"
+    prices = SETTINGS["prices"][role]
     return round((prompt_tokens * prices[0] + completion_tokens * prices[1]) / 1_000_000, 6)
 
 

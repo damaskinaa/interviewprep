@@ -205,7 +205,7 @@ def tavily_with_retry(query):
                     "query": query,
                 })
             return rows
-        except urllib.error.HTTPError:
+        except urllib.error.HTTPError as e:
             if e.code == 429:
                 if attempt < len(wait_schedule):
                     continue  # will sleep on next iteration

@@ -17,6 +17,28 @@ class GuardsTest(unittest.TestCase):
         self.assertEqual(self.guards.invented_numbers("We served 1,200 users", "1200 users"), [])
         self.assertEqual(self.guards.invented_numbers("No numbers here.", ""), [])
 
+    def test_strip_keeps_metrics_written_with_separators_in_source(self):
+        cleaned, stripped = self.guards.strip_hallucinated_metrics("We onboarded 1200 users in 30 days.", "Onboarded 1,200 users", "")
+        self.assertIn("1200 users", cleaned)
+        self.assertEqual(stripped, ["30 days"])
+
+
+class ResearchRetryTest(unittest.TestCase):
+    def test_http_errors_never_crash_tavily_retry(self):
+        import urllib.error
+
+        research = importlib.import_module("nailit.prep.research")
+
+        def rate_limited(*args, **kwargs):
+            raise urllib.error.HTTPError("https://api.tavily.com", 500, "boom", {}, None)
+
+        old_urlopen, old_key = research.urllib.request.urlopen, research.TAVILY_API_KEY
+        research.urllib.request.urlopen, research.TAVILY_API_KEY = rate_limited, "test-key"
+        try:
+            self.assertEqual(research.tavily_with_retry("synthetic query"), [])
+        finally:
+            research.urllib.request.urlopen, research.TAVILY_API_KEY = old_urlopen, old_key
+
 
 class LLMClientTest(unittest.TestCase):
     def setUp(self):
@@ -47,7 +69,7 @@ class LLMClientTest(unittest.TestCase):
         records = self.llm.start_cost_log()
         self.assertEqual(self.llm.ask_json("q", model=self.llm.MODEL_FAST), {"a": 1})
         self.assertEqual(len(records), 1)
-        prices = self.llm.SETTINGS["prices"][self.llm.MODEL_FAST]
+        prices = self.llm.SETTINGS["prices"]["fast"]
         self.assertAlmostEqual(records[0]["cost_usd"], prices[0] + prices[1] / 2, places=4)
 
     def test_provider_failure_raises(self):

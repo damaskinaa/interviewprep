@@ -49,7 +49,7 @@ def llm_settings() -> dict:
         "model_fast": fast,
         "model_strong": strong,
         "prices": {
-            fast: _price_pair(os.getenv("NAILIT_PRICE_FAST", "0.15,0.60")),
-            strong: _price_pair(os.getenv("NAILIT_PRICE_STRONG", "2.50,10.00")),
+            "fast": _price_pair(os.getenv("NAILIT_PRICE_FAST", "0.15,0.60")),
+            "strong": _price_pair(os.getenv("NAILIT_PRICE_STRONG", "2.50,10.00")),
         },
     }
