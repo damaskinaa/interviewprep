@@ -6,24 +6,12 @@ import sqlite3
 from datetime import datetime, timedelta
 from pathlib import Path
 
+from data_paths import data_path, lua_data_path
+
 logger = logging.getLogger(__name__)
 
-DATABASE_URL = os.getenv("DATABASE_URL", "")
 LUA_DB_BASE_DIR_ENV = "LUA_DB_BASE_DIR"
 
-
-def get_db():
-    """Returns a connection.
-    Uses Postgres (psycopg2) if DATABASE_URL starts with 'postgresql',
-    otherwise falls back to SQLite via _connect() — the default for local dev.
-    """
-    if DATABASE_URL.startswith("postgresql"):
-        import psycopg2
-        import psycopg2.extras
-        conn = psycopg2.connect(DATABASE_URL)
-        conn.autocommit = False
-        return conn
-    return _connect()
 
 _SESSION_LIMITS = {
     "company_name":          200,
@@ -53,18 +41,12 @@ def _truncate_session_fields(**fields):
     return result
 
 
-DB_PATH = Path("nailit_jobs.db")
+DB_PATH = data_path("nailit_jobs.db")
 
 
 def _lua_db_path(db_name: str) -> Path:
-    """
-    Resolve Lua sidecar DBs inside an explicit base directory when configured.
-    Default remains the current working directory to preserve existing local behavior.
-    """
-    base_dir = os.getenv(LUA_DB_BASE_DIR_ENV, "")
-    if base_dir:
-        return Path(base_dir).expanduser() / db_name
-    return Path(db_name)
+    """Lua sidecar DBs resolve through the same helper the Lua stores use."""
+    return lua_data_path(db_name)
 
 
 def _now():
@@ -359,6 +341,7 @@ def get_session(session_id, include_raw=False):
         "session_id": row["session_id"],
         "company_name": row["company_name"],
         "role_name": row["role_name"],
+        "user_id": row["user_id"],
         "created_at": row["created_at"],
         "updated_at": row["updated_at"],
         "has_job_description": bool(row["raw_jd"]),
@@ -437,61 +420,92 @@ import uuid as _uuid
 
 def get_credits(user_id: str) -> int:
     """Return current credit balance for user_id, or 0 if no record."""
-    conn = get_db()
-    row = conn.execute(
-        "SELECT balance FROM credits WHERE user_id = ?",
-        (user_id,),
-    ).fetchone()
+    con = _connect()
+    try:
+        row = con.execute(
+            "SELECT balance FROM credits WHERE user_id = ?",
+            (user_id,),
+        ).fetchone()
+    finally:
+        con.close()
     return row[0] if row else 0
 
 
 def add_credits(user_id: str, amount: int, description: str = "") -> None:
     """Add credits to a user's balance and record the transaction."""
-    conn = get_db()
     now = datetime.utcnow().isoformat()
-    conn.execute(
-        """
-        INSERT INTO credits (user_id, balance, updated_at)
-        VALUES (?, ?, ?)
-        ON CONFLICT(user_id) DO UPDATE SET
-            balance = balance + excluded.balance,
-            updated_at = excluded.updated_at
-        """,
-        (user_id, amount, now),
-    )
-    conn.execute(
-        """
-        INSERT INTO credit_transactions
-            (tx_id, user_id, amount, type, description, created_at)
-        VALUES (?, ?, ?, 'purchase', ?, ?)
-        """,
-        (str(_uuid.uuid4()), user_id, amount, description, now),
-    )
-    conn.commit()
+    con = _connect()
+    try:
+        con.execute(
+            """
+            INSERT INTO credits (user_id, balance, updated_at)
+            VALUES (?, ?, ?)
+            ON CONFLICT(user_id) DO UPDATE SET
+                balance = balance + excluded.balance,
+                updated_at = excluded.updated_at
+            """,
+            (user_id, amount, now),
+        )
+        con.execute(
+            """
+            INSERT INTO credit_transactions
+                (tx_id, user_id, amount, type, description, created_at)
+            VALUES (?, ?, ?, 'purchase', ?, ?)
+            """,
+            (str(_uuid.uuid4()), user_id, amount, description, now),
+        )
+        con.commit()
+    finally:
+        con.close()
 
 
 def deduct_credits(user_id: str, amount: int, description: str = "") -> None:
-    """Deduct credits from a user's balance. Raises ValueError if insufficient."""
-    conn = get_db()
-    balance = get_credits(user_id)
-    if balance < amount:
-        raise ValueError(
-            f"Insufficient credits: {balance} available, {amount} required"
-        )
+    """Atomically deduct credits. Raises ValueError if the balance is insufficient."""
     now = datetime.utcnow().isoformat()
-    conn.execute(
-        "UPDATE credits SET balance = balance - ?, updated_at = ? WHERE user_id = ?",
-        (amount, now, user_id),
-    )
-    conn.execute(
-        """
-        INSERT INTO credit_transactions
-            (tx_id, user_id, amount, type, description, created_at)
-        VALUES (?, ?, ?, 'deduction', ?, ?)
-        """,
-        (str(_uuid.uuid4()), user_id, amount, description, now),
-    )
-    conn.commit()
+    con = _connect()
+    try:
+        con.execute("BEGIN IMMEDIATE")
+        cursor = con.execute(
+            "UPDATE credits SET balance = balance - ?, updated_at = ? "
+            "WHERE user_id = ? AND balance >= ?",
+            (amount, now, user_id, amount),
+        )
+        if cursor.rowcount != 1:
+            row = con.execute("SELECT balance FROM credits WHERE user_id = ?", (user_id,)).fetchone()
+            con.execute("ROLLBACK")
+            balance = row[0] if row else 0
+            raise ValueError(
+                f"Insufficient credits: {balance} available, {amount} required"
+            )
+        con.execute(
+            """
+            INSERT INTO credit_transactions
+                (tx_id, user_id, amount, type, description, created_at)
+            VALUES (?, ?, ?, 'deduction', ?, ?)
+            """,
+            (str(_uuid.uuid4()), user_id, amount, description, now),
+        )
+        con.commit()
+    finally:
+        con.close()
+
+
+def fail_stale_jobs(minutes: int = 30) -> int:
+    """Mark queued/running jobs with no progress update for `minutes` as failed.
+
+    Thread-dispatched jobs die with the process, so after a restart they would
+    otherwise stay "running" forever and block reruns of the same module.
+    """
+    cutoff = (datetime.now() - timedelta(minutes=minutes)).isoformat()
+    with _connect() as con:
+        cursor = con.execute(
+            "UPDATE jobs SET status = 'failed', stage = 'Failed', "
+            "error = 'Job was interrupted (no progress update). Please run it again.', updated_at = ? "
+            "WHERE status IN ('queued', 'running') AND updated_at < ?",
+            (_now(), cutoff),
+        )
+        con.commit()
+        return cursor.rowcount or 0
 
 
 def delete_old_sessions(days=90):

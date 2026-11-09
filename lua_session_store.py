@@ -3,7 +3,9 @@ import sqlite3
 from datetime import datetime
 from pathlib import Path
 
-DB_PATH = Path("lua_sessions.db")
+from data_paths import lua_data_path
+
+DB_PATH = lua_data_path("lua_sessions.db")
 
 
 def init_db():

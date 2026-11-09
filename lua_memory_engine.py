@@ -1,5 +1,5 @@
 import json
-from agent_v2 import ask_llm, trim_text
+from agent_v2 import LLMError, ask_llm, trim_text
 from lua_memory_store import save_memory, load_memory, memory_text
 
 def safe_json(text):
@@ -36,7 +36,10 @@ Return only valid JSON:
   "coach_instruction_update": ""
 }}
 """
-    raw = ask_llm(prompt, max_tokens=1800, retries=3)
+    try:
+        raw = ask_llm(prompt, max_tokens=1800, retries=3)
+    except LLMError:
+        raw = "{}"
     parsed = safe_json(raw)
     save_memory(session_id, scope, source_type, title, content, parsed.get("summary", ""), parsed.get("tags", []))
     parsed["session_id"] = session_id
@@ -98,7 +101,10 @@ Schema:
   "relevance_notes": []
 }}
 """
-    raw = ask_llm(prompt, max_tokens=1200, retries=3)
+    try:
+        raw = ask_llm(prompt, max_tokens=1200, retries=3)
+    except LLMError:
+        raw = "{}"
     parsed = safe_json(raw)
 
     selected_ids = parsed.get("selected_ids", [])

@@ -1,5 +1,4 @@
 import json
-import sqlite3
 import threading
 import uuid
 from datetime import datetime
@@ -27,7 +26,6 @@ def dispatch_job(func, *args, **kwargs):
 
 from fastapi import Depends, FastAPI, Header, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 
 from answer_generator import generate_answer_options
@@ -36,9 +34,10 @@ from job_store import (
     add_credits, create_job, create_session, deduct_credits, delete_old_jobs,
     delete_old_sessions, delete_user_data, find_running_module_job,
     get_or_create_job, get_job,
-    get_session, get_sessions_for_followup, get_user_data_export,
-    mark_followup_sent, update_job,
+    fail_stale_jobs, get_credits, get_session, get_sessions_for_followup,
+    get_user_data_export, mark_followup_sent, update_job,
 )
+from lua_brief_builder import build_session_lua_brief
 from lua_coach import build_lua_coach_response, adapt_lua_response
 from lua_benchmark_coach import build_benchmark_question, build_selected_answer_training_card, build_benchmark_practice_feedback
 from lua_benchmark_store import save_benchmark_event, load_benchmark_session
@@ -54,6 +53,7 @@ from lua_memory_engine import add_coach_memory, get_coach_memory, get_relevant_c
 APP_API_KEY = os.getenv("APP_API_KEY")
 FRONTEND_ORIGIN = os.getenv("FRONTEND_ORIGIN", "")
 EMAIL_PROVIDER = os.getenv("EMAIL_PROVIDER", "")
+CREDITS_ENFORCED = os.getenv("CREDITS_ENFORCED", "").strip().lower() in {"1", "true", "yes"}
 
 allowed_origins = []
 if FRONTEND_ORIGIN:
@@ -90,6 +90,23 @@ def require_app_key(x_app_key: str = Header(default="")):
     if x_app_key != APP_API_KEY:
         raise HTTPException(status_code=401, detail="Unauthorized")
 
+
+def current_user_id(x_user_id: str = Header(default="")) -> str:
+    """User id asserted by the trusted frontend proxy (which holds APP_API_KEY).
+
+    An empty value means an operator/server-side call with the app key and no end user.
+    """
+    return x_user_id.strip()[:160]
+
+
+def owned_session(session_id: str, user_id: str, include_raw: bool = False):
+    session = get_session(session_id, include_raw=include_raw)
+    if not session:
+        raise HTTPException(status_code=404, detail="Session not found")
+    if user_id and session.get("user_id") != user_id:
+        raise HTTPException(status_code=403, detail="This session belongs to another user")
+    return session
+
 @app.exception_handler(HTTPException)
 async def http_exception_handler(request, exc):
     return JSONResponse(
@@ -99,6 +116,7 @@ async def http_exception_handler(request, exc):
 
 @app.on_event("startup")
 async def startup_cleanup():
+    fail_stale_jobs(minutes=30)      # thread jobs die with the process; unblock reruns
     delete_old_jobs(days=7)          # purge job artifacts after 7 days (disk space)
     delete_old_sessions(days=90)     # purge session records after 90 days (GDPR)
 
@@ -183,10 +201,10 @@ def check_and_deduct(user_id: str, action: str) -> None:
     """
     Call before any paid action.
     Raises HTTPException 402 if the user has insufficient credits.
-    Not wired into endpoints yet — pending auth integration.
+    Only enforced when CREDITS_ENFORCED is set and the request carries a user id.
     """
     cost = MODULE_COSTS.get(action, 0)
-    if cost == 0:
+    if cost == 0 or not CREDITS_ENFORCED or not user_id:
         return
     try:
         deduct_credits(user_id, cost, action)
@@ -213,46 +231,12 @@ async def export_user_data(user_id: str):
     return get_user_data_export(user_id)
 
 
-DB_PATH = Path("lua_sessions.db")
-
-def init_lua_db():
-    with sqlite3.connect(DB_PATH) as con:
-        con.execute("""
-            CREATE TABLE IF NOT EXISTS lua_turns (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                session_id TEXT NOT NULL,
-                role TEXT NOT NULL,
-                text TEXT NOT NULL,
-                created_at TEXT NOT NULL
-            )
-        """)
-        con.commit()
-
-def save_lua_turn(session_id, role, text):
-    init_lua_db()
-    with sqlite3.connect(DB_PATH) as con:
-        con.execute(
-            "INSERT INTO lua_turns (session_id, role, text, created_at) VALUES (?, ?, ?, ?)",
-            (session_id, role, text, datetime.now().isoformat()),
-        )
-        con.commit()
-
-def load_lua_session(session_id):
-    init_lua_db()
-    with sqlite3.connect(DB_PATH) as con:
-        rows = con.execute(
-            "SELECT role, text, created_at FROM lua_turns WHERE session_id = ? ORDER BY id ASC",
-            (session_id,),
-        ).fetchall()
-    return [{"role": r, "text": t, "created_at": c} for r, t, c in rows]
-
-
 app.add_middleware(
     CORSMiddleware,
     allow_origins=allowed_origins,
     allow_credentials=False,
     allow_methods=["GET", "POST", "OPTIONS"],
-    allow_headers=["Content-Type", "X-App-Key"],
+    allow_headers=["Content-Type", "X-App-Key", "X-User-Id"],
 )
 
 
@@ -317,6 +301,13 @@ def checkout_create(req: CheckoutCreateRequest):
             "message": "Checkout creation is intentionally blocked until product, price, and validation decisions are made.",
         },
     )
+
+
+@app.get("/credits/balance", dependencies=[Depends(require_app_key)])
+def credits_balance(user_id: str = Depends(current_user_id)):
+    if not user_id:
+        raise HTTPException(status_code=400, detail="X-User-Id header is required")
+    return {"user_id": user_id, "balance": get_credits(user_id), "enforced": CREDITS_ENFORCED}
 
 
 @app.post("/contribution/outcome", dependencies=[Depends(require_app_key)])
@@ -442,7 +433,7 @@ def _run_prepare_job(job_id, payload):
 
 
 @app.post("/session/create", dependencies=[Depends(require_app_key)])
-def session_create(req: SessionCreateRequest):
+def session_create(req: SessionCreateRequest, user_id: str = Depends(current_user_id)):
     # Payload size guard — reject before touching the DB
     _PAYLOAD_LIMIT = 25_000
     field_lengths = {
@@ -472,6 +463,9 @@ def session_create(req: SessionCreateRequest):
             ),
         )
     payload = req.model_dump() if hasattr(req, "model_dump") else req.dict()
+    if user_id:
+        payload["user_id"] = user_id
+    check_and_deduct(payload.get("user_id", ""), "full_session")
     session_id = "sess_" + datetime.now().strftime("%Y%m%d_%H%M%S_") + uuid.uuid4().hex[:8]
     session = create_session(session_id, payload)
     return {
@@ -483,11 +477,8 @@ def session_create(req: SessionCreateRequest):
 
 
 @app.get("/session/get", dependencies=[Depends(require_app_key)])
-def session_get(session_id: str):
-    session = get_session(session_id, include_raw=False)
-    if not session:
-        raise HTTPException(status_code=404, detail="Session not found")
-    return session
+def session_get(session_id: str, user_id: str = Depends(current_user_id)):
+    return owned_session(session_id, user_id)
 
 
 def _run_module_job(job_id, session_id, module_name):
@@ -533,10 +524,8 @@ def _run_module_job(job_id, session_id, module_name):
 
 
 @app.post("/module/run", dependencies=[Depends(require_app_key)])
-def module_run(req: ModuleRunRequest):
-    session = get_session(req.session_id, include_raw=False)
-    if not session:
-        raise HTTPException(status_code=404, detail="Session not found")
+def module_run(req: ModuleRunRequest, user_id: str = Depends(current_user_id)):
+    owned_session(req.session_id, user_id)
 
     # Synchronous dependency check — fail fast at the HTTP layer, not inside the job thread
     REQUIRES_ARTIFACTS = {
@@ -605,10 +594,16 @@ def module_run(req: ModuleRunRequest):
 
 
 @app.get("/module/status", dependencies=[Depends(require_app_key)])
-def module_status(job_id: str):
+def module_status(job_id: str, user_id: str = Depends(current_user_id)):
     job = get_job(job_id)
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")
+    session_id = (job.get("input_payload") or {}).get("session_id", "")
+    if user_id:
+        if not session_id:
+            raise HTTPException(status_code=404, detail="Job not found")
+        owned_session(session_id, user_id)
+    job.pop("input_payload", None)
     return job
 
 
@@ -637,11 +632,10 @@ def prepare_status(job_id: str):
 
 
 @app.post("/answers/generate", dependencies=[Depends(require_app_key)])
-def answers_generate(req: AnswerGenerateRequest):
+def answers_generate(req: AnswerGenerateRequest, user_id: str = Depends(current_user_id)):
     payload = req.model_dump() if hasattr(req, "model_dump") else req.dict()
-    session = get_session(req.session_id, include_raw=True)
-    if not session:
-        raise HTTPException(status_code=404, detail="Session not found")
+    session = owned_session(req.session_id, user_id, include_raw=True)
+    check_and_deduct(user_id, "answer_generation")
     try:
         return generate_answer_options(session, payload)
     except FileNotFoundError as error:
@@ -651,13 +645,21 @@ def answers_generate(req: AnswerGenerateRequest):
 
 
 @app.post("/lua-coach", dependencies=[Depends(require_app_key)])
-async def lua_coach(payload: dict):
+async def lua_coach(payload: dict, user_id: str = Depends(current_user_id)):
+    lua_brief = payload.get("lua_brief") or {}
+    session_id = payload.get("session_id") or ""
+    if session_id:
+        owned_session(session_id, user_id)
+        if not lua_brief:
+            lua_brief = build_session_lua_brief(session_id)
+    elif user_id:
+        raise HTTPException(status_code=400, detail="session_id is required")
     response = build_lua_coach_response(
         company=payload.get("company", ""),
         role=payload.get("role", ""),
         question=payload.get("question", ""),
         candidate_answer=payload.get("candidate_answer", ""),
-        lua_brief=payload.get("lua_brief", {}),
+        lua_brief=lua_brief,
     )
     return adapt_lua_response(response)
 
@@ -670,11 +672,11 @@ async def lua_session_save(payload: dict):
     role = payload.get("role") or "user"
     text_value = payload.get("text") or ""
     if text_value.strip():
-        save_lua_turn(session_id, role, text_value)
+        save_turn(session_id, role, text_value)
     return {
         "status": "saved",
         "session_id": session_id,
-        "conversation": load_lua_session(session_id),
+        "conversation": load_session(session_id),
     }
 
 
@@ -683,7 +685,7 @@ async def lua_session_get(session_id: str):
     return {
         "status": "found",
         "session_id": session_id,
-        "conversation": load_lua_session(session_id),
+        "conversation": load_session(session_id),
     }
 
 
@@ -695,7 +697,7 @@ async def lua_coach_resume(payload: dict):
     is_final = bool(payload.get("is_final", False))
 
     if answer.strip():
-        save_lua_turn(session_id, "user", answer)
+        save_turn(session_id, "user", answer)
 
     if not is_final:
         return {
@@ -703,7 +705,7 @@ async def lua_coach_resume(payload: dict):
             "should_respond": False,
             "message": "Saved. Waiting for final answer signal.",
             "session_id": session_id,
-            "conversation": load_lua_session(session_id),
+            "conversation": load_session(session_id),
         }
 
     response = build_lua_coach_response(
@@ -714,10 +716,10 @@ async def lua_coach_resume(payload: dict):
         lua_brief=payload.get("lua_brief", {}),
     )
 
-    save_lua_turn(session_id, "coach", json.dumps(response, ensure_ascii=False))
+    save_turn(session_id, "coach", json.dumps(response, ensure_ascii=False))
     adapted = adapt_lua_response(response)
     adapted["session_id"] = session_id
-    adapted["conversation"] = load_lua_session(session_id)
+    adapted["conversation"] = load_session(session_id)
     return adapted
 
 
@@ -1010,8 +1012,3 @@ async def lua_pressure_repair(payload: dict):
     )
 
     return result
-
-
-@app.get("/lua-ui", dependencies=[Depends(require_app_key)])
-async def lua_ui():
-    return FileResponse("lua_frontend.html")

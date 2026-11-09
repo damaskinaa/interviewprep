@@ -1,19 +1,29 @@
 version: "3.9"
+
+x-backend: &backend
+  build: .
+  env_file:
+    - .env
+  environment:
+    REDIS_URL: redis://redis:6379/0
+    DATA_DIR: /app/data
+  volumes:
+    - ./jobs:/app/jobs
+    - ./data:/app/data
+  restart: unless-stopped
+  depends_on:
+    - redis
+
 services:
   api:
-    build: .
+    <<: *backend
     ports:
       - "8000:8000"
-    env_file:
-      - .env
-    restart: unless-stopped
-    volumes:
-      - ./jobs:/app/jobs
-    depends_on:
-      - redis
+
+  worker:
+    <<: *backend
+    command: ["rq", "worker", "--url", "redis://redis:6379/0"]
 
   redis:
     image: redis:7-alpine
-    ports:
-      - "6379:6379"
     restart: unless-stopped

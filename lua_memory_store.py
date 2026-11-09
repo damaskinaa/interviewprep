@@ -1,9 +1,11 @@
 import json
 import sqlite3
 from pathlib import Path
+
+from data_paths import lua_data_path
 from datetime import datetime
 
-DB_PATH = Path("lua_memory.db")
+DB_PATH = lua_data_path("lua_memory.db")
 
 def connect():
     conn = sqlite3.connect(DB_PATH)
