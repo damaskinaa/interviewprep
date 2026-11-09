@@ -5,6 +5,7 @@ import logging as _logging
 import time
 import urllib.request
 import urllib.error
+import contextvars
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime
 from contextvars import ContextVar
@@ -64,6 +65,11 @@ def set_result(key, value):
 
 def get_result(key):
     return _active_results().get(key, "")
+
+
+def submit_with_context(executor, fn, *args):
+    """Submit to a thread pool while keeping this job's ContextVar state (results/progress log)."""
+    return executor.submit(contextvars.copy_context().run, fn, *args)
 
 
 def safe_path_part(value, fallback="item"):
@@ -4952,7 +4958,7 @@ def collect_company_research(company_name, role_name):
     ]
     discovered = []
     with ThreadPoolExecutor(max_workers=20) as executor:
-        future_map = {executor.submit(tavily_search, query): query for query in queries}
+        future_map = {submit_with_context(executor, tavily_search, query): query for query in queries}
         for future in as_completed(future_map, timeout=45):
             try:
                 discovered.extend(future.result(timeout=2))
@@ -5185,7 +5191,7 @@ def collect_per_round_research(company_name, role_name, round_name, round_type, 
 
     discovered = []
     with ThreadPoolExecutor(max_workers=min(len(queries), 20)) as executor:
-        future_map = {executor.submit(tavily_with_retry, q): q for q in queries}
+        future_map = {submit_with_context(executor, tavily_with_retry, q): q for q in queries}
         for future in as_completed(future_map, timeout=50):
             try:
                 rows = future.result(timeout=2)
@@ -5243,7 +5249,8 @@ def run_all_rounds_research(company_name, role_name, rounds):
     results = []
     with ThreadPoolExecutor(max_workers=min(len(rounds), 6)) as executor:
         future_map = {
-            executor.submit(
+            submit_with_context(
+                executor,
                 collect_per_round_research,
                 company_name, role_name,
                 r["round_name"], r["round_type"], r["what_it_tests"],
