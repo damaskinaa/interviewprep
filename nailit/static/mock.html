@@ -50,7 +50,7 @@
 <script>
 const $ = (id) => document.getElementById(id);
 let mockId = null, done = false, micStream = null, recorder = null, chunks = [], recordStart = 0, recordStop = 0;
-let playbackEnded = 0, myvad = null, answerTimer = null, turnLimit = null, camRecorder = null, camUploads = Promise.resolve();
+let playbackEnded = 0, myvad = null, answerTimer = null, turnLimit = null, camRecorder = null, camUploads = Promise.resolve(), camLost = 0;
 
 async function api(path, body, form) {
   const res = await fetch(path, form ? {method: "POST", body} : body ? {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify(body)} : {});
@@ -155,7 +155,9 @@ async function finish() {
   status("Mock finished.");
   $("talk").hidden = true; $("textForm").hidden = true;
   if (camRecorder) {
-    camRecorder.onstop = () => camUploads.then(() => status("Mock finished. Webcam video saved locally."));
+    camRecorder.onstop = () => camUploads.then(() => status(camLost
+      ? `Mock finished. Webcam video is INCOMPLETE: ${camLost} chunk(s) of 10 s could not be saved.`
+      : "Mock finished. Webcam video saved locally."));
     camRecorder.stop();
   }
   const summary = await api(`/interview/get?mock_id=${mockId}`);
@@ -172,12 +174,15 @@ $("start").onclick = async () => {
       camRecorder = new MediaRecorder(cam, {mimeType: "video/webm"});
       // Each 10 s chunk is appended to the file on disk in order, so a long loop never sits in browser memory.
       camRecorder.ondataavailable = (e) => {
-        camUploads = camUploads.then(() => {
+        camUploads = camUploads.then(async () => {
           if (!mockId || !e.data.size) return;
-          const form = new FormData();
-          form.append("mock_id", mockId);
-          form.append("video", e.data, "webcam.webm");
-          return api("/voice/video", form, true).catch(() => {});
+          for (let attempt = 1; attempt <= 3; attempt++) {
+            const form = new FormData();
+            form.append("mock_id", mockId);
+            form.append("video", e.data, "webcam.webm");
+            try { return await api("/voice/video", form, true); } catch { await sleep(attempt); }
+          }
+          camLost += 1;
         });
       };
     }
