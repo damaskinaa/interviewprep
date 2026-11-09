@@ -1,4 +1,5 @@
 import argparse
+import logging
 
 HOST = "127.0.0.1"
 
@@ -12,6 +13,8 @@ def main(argv=None):
     from nailit.config import load_secrets
 
     load_secrets()
+    logging.basicConfig(level=logging.WARNING, format="%(asctime)s %(name)s %(message)s")
+    logging.getLogger("nailit").setLevel(logging.INFO)
 
     import uvicorn
 

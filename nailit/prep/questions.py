@@ -8,7 +8,7 @@ from nailit.guards import (
     strip_hallucinated_metrics,
     why_company_is_generic,
 )
-from nailit.llm import MODEL_FAST, MODEL_STRONG, ask_json, ask_llm, json_dumps
+from nailit.llm import MODEL_FAST, MODEL_STRONG, ask_json, ask_llm, json_dumps, log_cost_total, start_cost_log
 from nailit.prep.common import (
     SESSION_MODULES,
     STAGE_QUALITY_INSTRUCTION,
@@ -741,6 +741,7 @@ def run_session_module(session, module_name, progress_callback=None):
     local_progress_log = []
     results_token = _current_results.set(local_results)
     progress_token = _current_progress_log.set(local_progress_log)
+    cost_records = start_cost_log()
     try:
         report_progress(progress_callback, f"{module_name} started", 1)
         if module_name == "company_intelligence":
@@ -769,5 +770,6 @@ def run_session_module(session, module_name, progress_callback=None):
             "output_file": str(artifact),
         }
     finally:
+        log_cost_total(cost_records, f"{session['session_id']}/{module_name}")
         _current_progress_log.reset(progress_token)
         _current_results.reset(results_token)

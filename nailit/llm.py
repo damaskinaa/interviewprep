@@ -68,6 +68,12 @@ def record_call(model, usage, seconds):
     return record
 
 
+def log_cost_total(records, label):
+    total = round(sum(r["cost_usd"] for r in records), 6)
+    logger.info("llm cost %s: %d calls, $%s", label, len(records), total)
+    return total
+
+
 def ask_llm(prompt, model=None, max_tokens=2400, retries=3, temperature=0.25):
     model = model or MODEL_FAST
     if not os.getenv("OPENAI_API_KEY"):
