@@ -101,11 +101,16 @@ function startRecorder() {
   recorder.ondataavailable = (e) => chunks.push(e.data);
   recorder.start();
   recordStart = performance.now();
+  if ($("input").value !== "vad") startTurnLimit();
+}
+function startTurnLimit() {
+  clearTimeout(answerTimer);
   if (turnLimit) answerTimer = setTimeout(() => stopRecorder("cut"), turnLimit * 1000);
 }
 function stopRecorder(reason) {
   if (!recorder || recorder.state !== "recording") return;
   clearTimeout(answerTimer);
+  answerTimer = null;
   recordStop = performance.now();
   recorder.onstop = () => sendAnswer(new Blob(chunks, {type: "audio/webm"}));
   recorder.stop();
@@ -141,7 +146,7 @@ async function setupVad() {
   myvad = await vad.MicVAD.new({
     stream: micStream,
     redemptionFrames: frames,
-    onSpeechStart: () => status("Recording…"),
+    onSpeechStart: () => { if (recorder && recorder.state === "recording" && !answerTimer) startTurnLimit(); status("Recording…"); },
     onSpeechEnd: () => { myvad.pause(); stopRecorder(); },
   });
 }
