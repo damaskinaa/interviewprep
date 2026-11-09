@@ -7,17 +7,15 @@ from datetime import datetime
 
 from nailit.prep.questions import run_session_module
 from nailit.prep.answers import generate_answer_options
-from fastapi import FastAPI, File, Form, HTTPException, UploadFile
+from fastapi import FastAPI, File, Form, HTTPException, UploadFile, WebSocket
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
+from fastapi.responses import HTMLResponse, JSONResponse
 from pathlib import Path
 from nailit import library
 from nailit.interview import interviewer, voice
 from nailit.store import (
     create_session,
     load_mock,
-    log_voice,
-    set_voice_latency,
     voice_latencies,
     mode_c_progress,
     save_mock,
@@ -290,90 +288,21 @@ def interview_get(mock_id: str):
 STATIC = Path(__file__).resolve().parent / "static"
 
 
-class VoiceSayRequest(BaseModel):
-    mock_id: str = Field(min_length=1, max_length=80)
-    engine: str = Field(default="", max_length=10)
-
-
-class VoiceLatencyRequest(BaseModel):
-    mock_id: str = Field(min_length=1, max_length=80)
-    turn: int = Field(ge=0)
-    latency_s: float = Field(ge=0, le=600)
-
-
-def _speak_last_turn(state, engine, timer=None):
-    index = len(state["turns"]) - 1
-    try:
-        path, used = voice.speak(state["turns"][index]["say"], state["id"], f"interviewer_{index:03d}", engine or None)
-    except ValueError as error:
-        raise HTTPException(status_code=400, detail=str(error)) from error
-    if timer:
-        timer.mark("tts_s")
-    audio_url = f"/voice/audio/{state['id']}/{path.name}" if path else None
-    return {"turn_index": index, "audio_url": audio_url, "tts_engine": used}
-
-
 @app.get("/mock", response_class=HTMLResponse)
 def mock_page():
     return (STATIC / "mock.html").read_text(encoding="utf8")
 
 
-@app.post("/voice/say")
-def voice_say(req: VoiceSayRequest):
-    """Audio for the interviewer's latest line (the first question, or a reply to a typed answer)."""
-    with _mock_lock(req.mock_id):
-        state = load_mock(req.mock_id)
-        if not state:
-            raise HTTPException(status_code=404, detail="Mock not found")
-        timer = voice.Timer()
-        spoken = _speak_last_turn(state, req.engine, timer)
-        log_voice(state["id"], spoken["turn_index"], tts_s=timer.marks["tts_s"], engine=spoken["tts_engine"])
-    return {**spoken, "turn": state["turns"][-1], "done": state["phase"] == "done"}
-
-
-@app.post("/voice/answer")
-def voice_answer(mock_id: str = Form(...), audio: UploadFile = File(...), engine: str = Form(""),
-                 gap_before_record_s: float = Form(0.0)):
-    """One spoken answer: save, transcribe locally (fillers kept), run the interviewer, speak the reply."""
-    if engine and engine not in voice.TTS_ENGINES:
-        raise HTTPException(status_code=400, detail=f"unknown TTS engine {engine}")
-    with _mock_lock(mock_id):
-        state = load_mock(mock_id)
-        if not state:
-            raise HTTPException(status_code=404, detail="Mock not found")
-        timer = voice.Timer()
-        suffix = Path(audio.filename or "").suffix.lstrip(".").lower()
-        name = f"answer_{len(state['turns']):03d}.{suffix if suffix in ('webm', 'wav', 'ogg', 'mp4', 'm4a') else 'webm'}"
-        try:
-            path = voice.save_upload(mock_id, name, audio.file.read())
-            transcript = voice.transcribe(path)
-        except voice.VoiceUnavailable as error:
-            raise HTTPException(status_code=503, detail=str(error)) from error
-        except ValueError as error:
-            raise HTTPException(status_code=400, detail=str(error)) from error
-        timer.mark("stt_s")
-        if not transcript["text"]:
-            raise HTTPException(status_code=422, detail="No speech found in the recording")
-        silence = None if transcript["first_word_s"] is None else round(gap_before_record_s + transcript["first_word_s"], 2)
-        try:
-            turn = interviewer.answer(state, transcript["text"], transcript["speech_s"], silence, lib=_library())
-        except ValueError as error:
-            raise HTTPException(status_code=409, detail=str(error)) from error
-        candidate_turn = next(t for t in reversed(state["turns"]) if t.get("role") == "candidate")
-        candidate_turn.update(audio=name, words=transcript["words"], filled_pauses=transcript["filled_pauses"])
-        timer.mark("llm_s")
-        save_mock(state)
-    spoken = _speak_last_turn(state, engine, timer)
-    log_voice(mock_id, spoken["turn_index"], stt_s=timer.marks["stt_s"], llm_s=timer.marks["llm_s"],
-              tts_s=timer.marks["tts_s"], engine=spoken["tts_engine"])
-    return {**spoken, "turn": turn, "done": state["phase"] == "done", "transcript": transcript,
-            "timings": timer.marks}
-
-
-@app.post("/voice/latency")
-def voice_latency(req: VoiceLatencyRequest):
-    set_voice_latency(req.mock_id, req.turn, req.latency_s)
-    return {"ok": True}
+@app.websocket("/voice/ws/{mock_id}")
+async def voice_ws(websocket: WebSocket, mock_id: str, input: str = "ptt"):
+    """Pipecat voice session for one mock (see nailit/interview/pipeline.py)."""
+    state = load_mock(mock_id)
+    await websocket.accept()
+    if not state:
+        await websocket.close(code=4404, reason="Mock not found")
+        return
+    from nailit.interview import pipeline
+    await pipeline.run(websocket, state, _library(), input_mode=input if input in ("ptt", "vad", "text") else None)
 
 
 @app.get("/voice/latency")
@@ -391,13 +320,3 @@ def voice_video(mock_id: str = Form(...), video: UploadFile = File(...)):
     with path.open("ab") as out:
         shutil.copyfileobj(video.file, out)
     return {"saved": str(path)}
-
-
-@app.get("/voice/audio/{mock_id}/{name}")
-def voice_audio(mock_id: str, name: str):
-    if not (voice.SAFE_NAME.match(mock_id) and voice.SAFE_NAME.match(name)) or ".." in name:
-        raise HTTPException(status_code=400, detail="bad path")
-    path = voice.recordings_dir(mock_id) / name
-    if not path.is_file():
-        raise HTTPException(status_code=404, detail="Audio not found")
-    return FileResponse(path)

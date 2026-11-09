@@ -10,7 +10,8 @@ import re
 import shutil
 import subprocess
 import sys
-import time
+import tempfile
+import wave
 from pathlib import Path
 
 from nailit import library
@@ -22,13 +23,14 @@ WHISPER_MODEL = "mlx-community/whisper-large-v3-turbo"
 # Whisper drops disfluencies unless the prompt shows them; this prompt makes it transcribe them verbatim.
 FILLER_PROMPT = "Um, so, uh, I mean, like, we, um, we kind of, uh, started with the, like, the first step."
 FILLED_PAUSES = {"um", "umm", "uh", "uhh", "er", "erm", "ah", "hmm", "mm"}
-TTS_ENGINES = ("openai", "say", "none")
-OPENAI_TTS_MODEL = "gpt-4o-mini-tts"
+TTS_ENGINES = ("kokoro", "say")
+KOKORO_MODEL = "prince-canuma/Kokoro-82M"
+_KOKORO = None
 SAFE_NAME = re.compile(r"^[A-Za-z0-9_][A-Za-z0-9_.-]*$")
 
 
 class VoiceUnavailable(RuntimeError):
-    """Raised when a voice dependency (mlx-whisper, ffmpeg, say, a TTS key) is missing."""
+    """Raised when a voice dependency (mlx-whisper, mlx-audio, ffmpeg, say) is missing."""
 
 
 def recordings_dir(mock_id):
@@ -89,52 +91,38 @@ def transcribe(path, model=None):
     return words_result(result, len(audio) / SAMPLE_RATE)
 
 
-def _openai_tts(text, path):
-    key = os.getenv("OPENAI_TTS_API_KEY") or os.getenv("OPENAI_API_KEY")
-    if not key:
-        raise VoiceUnavailable("no OpenAI key for TTS (OPENAI_TTS_API_KEY or OPENAI_API_KEY)")
-    from openai import OpenAI
-
-    client = OpenAI(api_key=key, base_url=os.getenv("OPENAI_TTS_BASE_URL") or None)
-    with client.audio.speech.with_streaming_response.create(
-        model=os.getenv("NAILIT_TTS_MODEL") or OPENAI_TTS_MODEL,
-        voice=os.getenv("NAILIT_TTS_VOICE") or "alloy",
-        input=text,
-        response_format="mp3",
-    ) as response:
-        response.stream_to_file(path)
-
-
-def _say_tts(text, path):
+def say_pcm(text, sample_rate=24000):
+    """macOS `say` as 16-bit mono PCM at sample_rate (the free, offline TTS fallback)."""
     if sys.platform != "darwin" or not shutil.which("say"):
         raise VoiceUnavailable("macOS `say` is not available")
-    command = ["say", "-o", str(path), "--file-format=WAVE", "--data-format=LEI16@22050"]
-    if os.getenv("NAILIT_SAY_VOICE"):
-        command += ["-v", os.environ["NAILIT_SAY_VOICE"]]
-    subprocess.run(command + ["--", text], check=True, timeout=60, capture_output=True)
+    with tempfile.TemporaryDirectory() as tmp:
+        path = Path(tmp) / "say.wav"
+        command = ["say", "-o", str(path), "--file-format=WAVE", f"--data-format=LEI16@{sample_rate}"]
+        if os.getenv("NAILIT_SAY_VOICE"):
+            command += ["-v", os.environ["NAILIT_SAY_VOICE"]]
+        subprocess.run(command + ["--", text], check=True, timeout=60, capture_output=True)
+        with wave.open(str(path)) as wav:
+            return wav.readframes(wav.getnframes())
 
 
-def speak(text, mock_id, name, engine=None):
-    """Write the interviewer's line as audio. Returns (path or None, engine used); None means text only."""
-    engine = engine or os.getenv("NAILIT_TTS") or "openai"
-    if engine not in TTS_ENGINES:
-        raise ValueError(f"unknown TTS engine {engine}")
-    order = {"openai": ["openai", "say"], "say": ["say"], "none": []}[engine]
-    for choice in order:
-        path = recordings_dir(mock_id) / f"{name}.{'mp3' if choice == 'openai' else 'wav'}"
+def kokoro_model():
+    """Kokoro-82M through mlx-audio (Apple silicon), loaded once."""
+    global _KOKORO
+    if _KOKORO is None:
         try:
-            (_openai_tts if choice == "openai" else _say_tts)(text, path)
-            return path, choice
-        except Exception as error:  # noqa: BLE001 - any TTS failure falls back to the next engine, then text
-            logger.warning("TTS %s failed: %s", choice, error)
-    return None, "none"
+            from mlx_audio.tts.utils import load_model
+        except ImportError as error:
+            raise VoiceUnavailable("mlx-audio is not installed (Apple silicon only): uv sync --extra voice") from error
+        _KOKORO = load_model(os.getenv("NAILIT_KOKORO_MODEL") or KOKORO_MODEL)
+    return _KOKORO
 
 
-class Timer:
-    def __init__(self):
-        self.marks, self._t = {}, time.perf_counter()
-
-    def mark(self, label):
-        now = time.perf_counter()
-        self.marks[label] = round(now - self._t, 3)
-        self._t = now
+def kokoro_pcm(text):
+    """Yield (16-bit PCM bytes, sample_rate) per sentence chunk, so playback starts before the whole line is done."""
+    import numpy as np
+    model = kokoro_model()
+    for result in model.generate(text=text, voice=os.getenv("NAILIT_KOKORO_VOICE") or "af_heart",
+                                 speed=float(os.getenv("NAILIT_KOKORO_SPEED") or 1.0), lang_code="a",
+                                 split_pattern=r"(?<=[.!?])\s+"):
+        audio = np.clip(np.asarray(result.audio, dtype=np.float32), -1, 1)
+        yield (audio * 32767).astype(np.int16).tobytes(), result.sample_rate

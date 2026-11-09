@@ -13,7 +13,7 @@ jobs:
         with:
           python-version: "3.11"
       - run: uv lock --check
-      - run: uv sync --extra dev
+      - run: uv sync --extra dev --extra voice
       - run: uvx ruff check --select F nailit tests
       - run: uv run pytest tests -q
 
