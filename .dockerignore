@@ -1,8 +1,4 @@
 frontend/
-docs/
-Next-Move-Theory-Canon/
-.agents/
-.claude/
 .git/
 .github/
 jobs/

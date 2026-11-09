@@ -4,7 +4,6 @@
 |---|---|
 | `/` (root) | FastAPI backend (`api.py`, pipeline in `agent_v2.py`, Lua coach `lua_*.py`) |
 | `frontend/` | Next.js UI; server routes proxy to the backend via `frontend/lib/backend.ts` |
-| `docs/nmt/` | Next Move Theory research workbench (not shipped in the Docker image) |
 
 ## Backend
 ```bash
