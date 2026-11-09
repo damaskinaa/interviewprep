@@ -24,7 +24,7 @@
         "type": "object",
         "required": ["id", "facts", "trigger", "stages", "compressed"],
         "properties": {
-          "id": {"type": "string", "pattern": "^S[0-9A-Za-z_]+$"},
+          "id": {"type": "string", "pattern": "^S[0-9][0-9A-Za-z_]*$"},
           "title": {"type": "string"},
           "facts": {"type": "array", "items": {"type": "string", "pattern": "^F[0-9]+$"}, "minItems": 1},
           "trigger": {"type": "string"},
