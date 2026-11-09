@@ -108,7 +108,7 @@ class TurnGate(FrameProcessor):
 
     async def _cut(self, segment, limit_s):
         await asyncio.sleep(limit_s)
-        if segment == self.turn.segment and self.turn.user_stopped_at < self.turn.user_started_at:
+        if segment == self.turn.segment and self._speaking():
             self._timer = None
             await self._stop("cut")
 
@@ -181,6 +181,11 @@ class KokoroTTS(TTSService):
 
     async def run_tts(self, text, context_id):
         """Kokoro sentence chunks are yielded as each is ready, so playback starts after the first sentence."""
+        async for frame in self._synthesise(text, context_id):
+            yield frame
+        yield message({"type": "tts_done"})
+
+    async def _synthesise(self, text, context_id):
         if self.engine == "kokoro":
             chunks, sent = voice.kokoro_pcm(text), 0
             try:
@@ -192,11 +197,12 @@ class KokoroTTS(TTSService):
                 logger.warning("Kokoro failed, using say: %s", error)
                 self.engine = "say"
                 if sent:
+                    yield message({"type": "error", "error": f"Kokoro stopped mid-line ({error}); the rest is shown as text"})
                     return
         try:
             yield await self._frame(await asyncio.to_thread(voice.say_pcm, text, OUT_RATE), OUT_RATE, context_id)
         except Exception as error:
-            yield ErrorFrame(error=f"no TTS available ({error}); the line is shown as text")
+            yield message({"type": "error", "error": f"no TTS available ({error}); the line is shown as text"})
 
 
 class InterviewerProcessor(FrameProcessor):

@@ -42,7 +42,7 @@
 <script>
 const $ = (id) => document.getElementById(id);
 const IN_RATE = 16000, OUT_RATE = 24000;
-let ws = null, mockId = null, ctx = null, playAt = 0, sources = [], held = false, mode = "ptt";
+let ws = null, mockId = null, ctx = null, playAt = 0, sources = [], held = false, mode = "ptt", lineDone = true;
 let camRecorder = null, camUploads = Promise.resolve(), camLost = 0;
 
 async function api(path, body, form) {
@@ -111,10 +111,13 @@ function play(buffer) {
   src.onended = () => {
     sources = sources.filter((s) => s !== src);
     // The server sends audio faster than real time, so only the page knows when the interviewer stopped talking.
-    if (!sources.length && ws && ws.readyState === 1) ws.send(JSON.stringify({type: "played"}));
+    if (!sources.length) played();
   };
 }
-function clearPlayback() { sources.forEach((s) => s.stop()); sources = []; playAt = 0; }
+// Only "played" once the server has sent the whole line (tts_done) and the queue has drained, so a pause between
+// Kokoro sentences doesn't count as the end.
+function played() { if (lineDone && !sources.length && ws && ws.readyState === 1) ws.send(JSON.stringify({type: "played"})); }
+function clearPlayback() { sources.forEach((s) => (s.onended = null, s.stop())); sources = []; playAt = 0; lineDone = true; played(); }
 
 function ready() {
   if (mode === "text") { status("Type your answer."); $("textForm").hidden = false; }
@@ -123,7 +126,9 @@ function ready() {
 }
 
 function onEvent(e) {
-  if (e.type === "question" || e.type === "turn") {
+  if (e.type === "tts_done") { lineDone = true; played(); }
+  else if (e.type === "question" || e.type === "turn") {
+    lineDone = false;
     if (e.candidate) say("candidate", e.candidate, e.filled_pauses != null ? `${e.filled_pauses} filled pauses` : "");
     say("interviewer", e.interviewer, e.event ? `event: ${e.event}` : "");
     if (!e.done) ready();
