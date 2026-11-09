@@ -74,7 +74,7 @@ class VoiceUnitTest(unittest.TestCase):
             self.assertEqual(voice.speak("Hello.", "m1", "interviewer_001", "openai"), (None, "none"))
 
     def test_unsafe_names_are_rejected(self):
-        for bad in ("../x", "a/b", ""):
+        for bad in ("../x", "a/b", "", "..", ".hidden"):
             with self.assertRaises(ValueError):
                 voice.recordings_dir(bad)
         with self.assertRaises(ValueError):
