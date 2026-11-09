@@ -80,7 +80,7 @@ def strip_hallucinated_metrics(answer, raw_cv, raw_answer_bank):
     # Pattern: number optionally followed by %, unit words, or currency symbols.
     # Use lookahead/lookbehind instead of \b so the unit suffix is captured in the match.
     pattern = re.compile(
-        r"(?<![\d.,])\$?\d+(?:[.,]\d+)*(?:\s*(?:%|percent|k|m|bn|hours?|minutes?|days?|weeks?|months?))?(?![\d\w])",
+        r"(?<![\d.,])\$?\d+(?:[.,]\d+)*(?:\s*(?:%|percent|thousand|million|billion|k|m|bn|hours?|minutes?|days?|weeks?|months?))?(?![\d\w])",
         re.IGNORECASE,
     )
     cleaned = pattern.sub(_replace, answer)
@@ -98,17 +98,23 @@ def answer_word_failures_from_strategy(strategy):
     return failures
 
 
-NUMBER_PATTERN = re.compile(r"(?<![\w.])\$?\d+(?:[.,]\d+)*(?:\s*(?:%|percent|k|m|bn))?(?![\w])", re.IGNORECASE)
+NUMBER_PATTERN = re.compile(
+    r"(?<![\w.])\$?\d+(?:[.,]\d+)*(?:\s*(?:%|percent|thousand|million|billion|k|m|bn))?(?![\w])", re.IGNORECASE
+)
 
 
-NUMBER_SCALES = {"k": Decimal(1_000), "m": Decimal(1_000_000), "bn": Decimal(1_000_000_000)}
+NUMBER_SCALES = {
+    "k": Decimal(1_000), "thousand": Decimal(1_000),
+    "m": Decimal(1_000_000), "million": Decimal(1_000_000),
+    "bn": Decimal(1_000_000_000), "billion": Decimal(1_000_000_000),
+}
 
 
 def _canonical_number(raw):
     """Scaled value as text, with a trailing % for percentages: "$250k" -> "250000", "40 percent" -> "40%"."""
     low = raw.lower().strip()
     value = Decimal(re.search(r"\d+(?:[.,]\d+)*", low).group(0).replace(",", ""))
-    scale = re.search(r"\d\s*(k|m|bn)$", low)
+    scale = re.search(r"\d\s*(thousand|million|billion|k|m|bn)$", low)
     if scale:
         value *= NUMBER_SCALES[scale.group(1)]
     text = format(value.normalize(), "f")
