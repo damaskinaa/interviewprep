@@ -161,7 +161,7 @@ def transcribe(path, model=None, mock_id=None, take=None):
 
 
 
-def _openai_tts(text, path):
+def _openai_tts(text, path, voice_name=None, instructions=None):
     key = os.getenv("OPENAI_TTS_API_KEY") or os.getenv("OPENAI_API_KEY")
     if not key:
         raise VoiceUnavailable("no OpenAI key for TTS (OPENAI_TTS_API_KEY or OPENAI_API_KEY)")
@@ -170,14 +170,15 @@ def _openai_tts(text, path):
     client = OpenAI(api_key=key, base_url=os.getenv("OPENAI_TTS_BASE_URL") or None)
     with client.audio.speech.with_streaming_response.create(
         model=os.getenv("NAILIT_TTS_MODEL") or OPENAI_TTS_MODEL,
-        voice=os.getenv("NAILIT_TTS_VOICE") or "alloy",
+        voice=voice_name or os.getenv("NAILIT_TTS_VOICE") or "alloy",
         input=text,
+        **({"instructions": instructions} if instructions else {}),
         response_format="mp3",
     ) as response:
         response.stream_to_file(path)
 
 
-def _say_tts(text, path):
+def _say_tts(text, path, voice_name=None, instructions=None):
     if sys.platform != "darwin" or not shutil.which("say"):
         raise VoiceUnavailable("macOS `say` is not available")
     command = ["say", "-o", str(path), "--file-format=WAVE", "--data-format=LEI16@22050"]
@@ -186,7 +187,7 @@ def _say_tts(text, path):
     subprocess.run(command + ["--", text], check=True, timeout=60, capture_output=True)
 
 
-def speak(text, mock_id, name, engine=None):
+def speak(text, mock_id, name, engine=None, voice_name=None, instructions=None):
     """Write the interviewer's line as audio. Returns (path or None, engine used); None means text only."""
     engine = engine or os.getenv("NAILIT_TTS") or "openai"
     if engine not in TTS_ENGINES:
@@ -195,7 +196,7 @@ def speak(text, mock_id, name, engine=None):
     for choice in order:
         path = recordings_dir(mock_id) / f"{name}.{'mp3' if choice == 'openai' else 'wav'}"
         try:
-            (_openai_tts if choice == "openai" else _say_tts)(text, path)
+            (_openai_tts if choice == "openai" else _say_tts)(text, path, voice_name, instructions)
             return path, choice
         except Exception as error:  # noqa: BLE001 - any TTS failure falls back to the next engine, then text
             logger.warning("TTS %s failed: %s", choice, error)

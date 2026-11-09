@@ -90,7 +90,7 @@ class VoiceApiTest(unittest.TestCase):
             mock.patch.object(self.store, "DB_PATH", self.tmp / "t.db"),
             mock.patch.object(api.interviewer, "ask_llm", return_value="Tell me more."),
             mock.patch.object(api.voice, "transcribe", return_value=voice.words_result(WHISPER, 4.0)),
-            mock.patch.object(api.voice, "_openai_tts", side_effect=lambda text, path: Path(path).write_bytes(b"mp3")),
+            mock.patch.object(api.voice, "_openai_tts", side_effect=lambda text, path, *rest: Path(path).write_bytes(b"mp3")),
             mock.patch.dict(os.environ, {"NAILIT_HOME": str(EXAMPLE), "NAILIT_RECORDINGS": str(self.tmp / "rec")}),
         ]
         for p in self.patches:

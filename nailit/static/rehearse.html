@@ -1,0 +1,422 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>NailIt · Rehearse</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,650&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #f5f2ea; --paper: #fffdf8; --ink: #191917; --soft: #5f5d57; --faint: #8f8c84; --line: #e7e2d6;
+    --indigo: #2b3fd6; --indigo-soft: #eceffe; --coral: #e2533d; --coral-soft: #fdebe7;
+    --green: #17804b; --green-soft: #e3f4ea; --amber: #a3630c; --amber-soft: #fdf1dc;
+    --shadow: 0 1px 2px rgba(25,25,23,.04), 0 8px 28px rgba(25,25,23,.06);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg: #121211; --paper: #1b1b19; --ink: #f3f1ea; --soft: #b6b3aa; --faint: #8c8980; --line: #2e2d29;
+      --indigo: #8c9bff; --indigo-soft: #222849; --coral: #ff8069; --coral-soft: #3a201b;
+      --green: #5fd197; --green-soft: #15301f; --amber: #f4b75e; --amber-soft: #36280f; --shadow: none; }
+  }
+  * { box-sizing: border-box; }
+  html { font-size: 18px; }
+  body { margin: 0; background: var(--bg); color: var(--ink); font: 1rem/1.6 Inter, -apple-system, system-ui, sans-serif; -webkit-font-smoothing: antialiased; }
+  .wrap { max-width: 980px; margin: 0 auto; padding: 26px 24px 90px; }
+  header { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 30px; }
+  .brand { font: 650 1.3rem/1 Fraunces, Georgia, serif; letter-spacing: -.01em; }
+  .brand em { font-style: normal; color: var(--indigo); }
+  .stats { display: flex; gap: 10px; flex-wrap: wrap; }
+  .stat { background: var(--paper); border: 1px solid var(--line); border-radius: 999px; padding: 6px 14px; font-size: .8rem; color: var(--soft); }
+  .stat b { color: var(--ink); font-weight: 650; }
+  h1 { font: 650 2.6rem/1.1 Fraunces, Georgia, serif; letter-spacing: -.02em; margin: 0 0 12px; }
+  .sub { color: var(--soft); font-size: 1.08rem; max-width: 640px; margin: 0 0 30px; }
+  .panel { background: var(--paper); border: 1px solid var(--line); border-radius: 22px; padding: 28px; box-shadow: var(--shadow); }
+  .label { font-size: .75rem; letter-spacing: .09em; text-transform: uppercase; color: var(--faint); font-weight: 600; margin: 0 0 10px; }
+  .chips { display: flex; flex-wrap: wrap; gap: 8px; }
+  .chip { font: inherit; font-size: .88rem; border: 1px solid var(--line); background: var(--paper); color: var(--ink); padding: 8px 14px; border-radius: 999px; cursor: pointer; }
+  .chip[aria-pressed="true"] { background: var(--ink); color: var(--paper); border-color: var(--ink); }
+  .row { display: flex; gap: 22px; flex-wrap: wrap; margin-top: 22px; }
+  .row > div { flex: 1; min-width: 230px; }
+  .btn { font: inherit; font-weight: 600; border: 0; border-radius: 14px; padding: 15px 26px; cursor: pointer; background: var(--indigo); color: #fff; font-size: 1rem; }
+  .btn.ghost { background: transparent; color: var(--ink); border: 1px solid var(--line); font-weight: 500; }
+  .btn.quiet { background: transparent; color: var(--soft); padding: 10px 12px; }
+  .btn:disabled { opacity: .45; cursor: not-allowed; }
+  kbd { font: 500 .75rem Inter, sans-serif; border: 1px solid var(--line); border-bottom-width: 2px; border-radius: 6px; padding: 1px 6px; color: var(--soft); background: var(--paper); }
+  .note { color: var(--faint); font-size: .85rem; margin-top: 16px; }
+
+  /* session */
+  #session { display: none; }
+  .topbar { display: flex; align-items: center; gap: 16px; margin-bottom: 18px; }
+  .dots { display: flex; gap: 6px; flex: 1; }
+  .dots i { height: 6px; flex: 1; border-radius: 99px; background: var(--line); }
+  .dots i.done { background: var(--green); }
+  .dots i.now { background: var(--indigo); }
+  .steps { display: flex; gap: 8px; margin-bottom: 22px; flex-wrap: wrap; }
+  .step { font-size: .8rem; padding: 6px 12px; border-radius: 999px; background: transparent; color: var(--faint); border: 1px solid var(--line); }
+  .step.on { background: var(--indigo-soft); color: var(--indigo); border-color: transparent; font-weight: 600; }
+  .step.done { color: var(--green); border-color: transparent; background: var(--green-soft); }
+  .q-meta { display: flex; gap: 10px; align-items: center; color: var(--faint); font-size: .85rem; margin-bottom: 10px; }
+  .badge { background: var(--amber-soft); color: var(--amber); border-radius: 999px; padding: 3px 10px; font-weight: 600; font-size: .75rem; }
+  .question { font: 600 2.05rem/1.25 Fraunces, Georgia, serif; letter-spacing: -.015em; margin: 0 0 6px; }
+  .speaker { display: flex; align-items: center; gap: 10px; color: var(--soft); font-size: .9rem; margin: 18px 0 10px; }
+  .orb { width: 34px; height: 34px; border-radius: 50%; display: grid; place-items: center; font-weight: 700; font-size: .8rem; }
+  .orb.i { background: var(--indigo-soft); color: var(--indigo); }
+  .orb.m { background: var(--coral-soft); color: var(--coral); }
+  .talking .orb { animation: glow 1.2s infinite; }
+  @keyframes glow { 50% { box-shadow: 0 0 0 9px transparent; } 0% { box-shadow: 0 0 0 0 rgba(43,63,214,.35); } }
+  .model { font: 400 1.22rem/1.75 Fraunces, Georgia, serif; color: var(--faint); transition: color .2s; }
+  .model span.lit { color: var(--ink); }
+  .model.hidden { filter: blur(7px); user-select: none; }
+  .moves { margin-top: 18px; display: flex; flex-wrap: wrap; gap: 8px; }
+  .move { font-size: .85rem; border-radius: 10px; padding: 7px 11px; background: var(--indigo-soft); color: var(--indigo); }
+  .move.hit { background: var(--green-soft); color: var(--green); }
+  .move.miss { background: var(--amber-soft); color: var(--amber); }
+  .bar { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-top: 20px; }
+
+  .mic-zone { display: none; flex-direction: column; align-items: center; gap: 14px; padding: 26px 0 6px; }
+  #mic { width: 132px; height: 132px; border-radius: 50%; border: 0; background: var(--indigo); color: #fff; cursor: pointer; font: 600 1rem Inter, sans-serif; display: grid; place-items: center; }
+  #mic.rec { background: var(--coral); animation: ring 1.4s infinite; }
+  @keyframes ring { 0% { box-shadow: 0 0 0 0 rgba(226,83,61,.45); } 100% { box-shadow: 0 0 0 26px rgba(226,83,61,0); } }
+  #mic svg { width: 40px; height: 40px; display: block; margin: 0 auto 4px; }
+  #micState { font-weight: 600; font-size: 1.05rem; }
+  .timeline { width: 100%; max-width: 460px; }
+  .timeline .track { height: 8px; border-radius: 99px; background: var(--line); overflow: hidden; }
+  .timeline .track i { display: block; height: 100%; width: 0; background: var(--green); }
+  .timeline .track i.over { background: var(--coral); }
+  .timeline .lbl { display: flex; justify-content: space-between; color: var(--faint); font-size: .8rem; margin-top: 4px; }
+  #caption { width: 100%; min-height: 3.5em; font-size: 1.02rem; color: var(--soft); background: var(--bg); border-radius: 14px; padding: 12px 16px; }
+  #caption:empty::before { content: "Your words appear here as you speak."; color: var(--faint); }
+
+  .result { display: none; }
+  .score-top { display: flex; gap: 26px; align-items: center; flex-wrap: wrap; }
+  .ring { width: 132px; height: 132px; position: relative; }
+  .ring svg { transform: rotate(-90deg); }
+  .ring b { position: absolute; inset: 0; display: grid; place-items: center; font: 650 2.2rem Fraunces, serif; }
+  .ring small { position: absolute; bottom: 26px; width: 100%; text-align: center; color: var(--faint); font-size: .75rem; }
+  .verdict { font: 650 1.4rem Fraunces, serif; margin: 0 0 4px; }
+  .fix { background: var(--amber-soft); color: var(--amber); border-radius: 14px; padding: 14px 16px; margin-top: 18px; }
+  .fix b { display: block; font-size: .75rem; text-transform: uppercase; letter-spacing: .08em; margin-bottom: 2px; }
+  .best { border-left: 3px solid var(--green); padding: 4px 0 4px 14px; margin-top: 16px; color: var(--soft); font-style: italic; }
+  .compare { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-top: 20px; }
+  @media (max-width: 760px) { .compare { grid-template-columns: 1fr; } h1 { font-size: 2rem; } .question { font-size: 1.6rem; } }
+  .compare div { background: var(--bg); border-radius: 14px; padding: 14px 16px; font-size: .92rem; color: var(--soft); max-height: 260px; overflow: auto; }
+  .delivery { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 16px; }
+  .err { display: none; background: var(--coral-soft); color: var(--coral); border-radius: 14px; padding: 12px 16px; margin-bottom: 16px; }
+
+  #summary { display: none; }
+  .sumrow { display: flex; justify-content: space-between; align-items: center; gap: 16px; padding: 14px 0; border-bottom: 1px solid var(--line); }
+  .sumrow:last-child { border: 0; }
+  .pill-score { font: 650 1.1rem Fraunces, serif; padding: 4px 12px; border-radius: 999px; background: var(--indigo-soft); color: var(--indigo); }
+  .pill-score.good { background: var(--green-soft); color: var(--green); }
+  .pill-score.low { background: var(--amber-soft); color: var(--amber); }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div class="brand">Nail<em>It</em> · Rehearse</div>
+    <div class="stats"><span id="stats" class="stats"></span><a class="stat" href="/mock" style="text-decoration:none;color:var(--indigo)">Mock interview →</a></div>
+  </header>
+
+  <!-- START -->
+  <section id="start">
+    <h1>Rehearse the best answers, out loud.</h1>
+    <p class="sub">For each question you hear the interviewer, then the strongest answer we found and ranked. Then it's your turn: say it in your own words and get a score. Practise until it feels like yours.</p>
+    <div class="err" id="startErr"></div>
+    <div class="panel">
+      <p class="label">What to practise</p>
+      <div class="chips" id="types"></div>
+      <div class="row">
+        <div>
+          <p class="label">Session length</p>
+          <div class="chips" id="lengths"></div>
+        </div>
+        <div>
+          <p class="label">Order</p>
+          <div class="chips" id="orders"></div>
+        </div>
+        <div>
+          <p class="label">Style</p>
+          <div class="chips" id="styles"></div>
+        </div>
+      </div>
+      <div class="bar" style="margin-top:26px">
+        <button class="btn" id="go">Start rehearsing</button>
+        <span class="note" id="deckInfo"></span>
+      </div>
+      <p class="note">Practice answers belong to a model candidate. Use them to build fluency and structure; your real stories come next. Shortcuts: <kbd>Space</kbd> record / stop · <kbd>R</kbd> replay · <kbd>Enter</kbd> next.</p>
+    </div>
+  </section>
+
+  <!-- SESSION -->
+  <section id="session">
+    <div class="topbar"><div class="dots" id="dots"></div><button class="btn quiet" id="quit">End session</button></div>
+    <div class="err" id="err"></div>
+    <div class="steps"><span class="step" id="s1">1 · Question</span><span class="step" id="s2">2 · Best answer</span><span class="step" id="s3">3 · Your turn</span><span class="step" id="s4">4 · Score</span></div>
+    <div class="panel">
+      <div class="q-meta"><span class="badge" id="qType">question</span><span id="qFreq"></span></div>
+      <p class="question" id="question">…</p>
+
+      <div id="modelBlock">
+        <div class="speaker" id="spk"><div class="orb m">MC</div><span id="spkText">Model candidate</span></div>
+        <div class="model" id="model"></div>
+        <div class="moves" id="moves"></div>
+      </div>
+
+      <div class="bar" id="listenBar">
+        <button class="btn ghost" id="replayQ">Replay question</button>
+        <button class="btn ghost" id="replayA">Replay answer</button>
+        <button class="btn ghost" id="slower">Slower</button>
+        <button class="btn" id="myTurn">My turn</button>
+      </div>
+
+      <div class="mic-zone" id="micZone">
+        <div id="micState">Your turn: say it in your own words.</div>
+        <button id="mic" aria-label="Start recording"><span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/></svg><span id="micLabel">Record</span></span></button>
+        <div class="timeline"><div class="track"><i id="tbar"></i></div><div class="lbl"><span id="tnow">0:00</span><span>aim for 1:15 – 1:30</span></div></div>
+        <div id="caption"></div>
+        <div class="bar"><button class="btn quiet" id="peek">Peek at the answer</button><button class="btn quiet" id="typeIt">Type instead</button></div>
+        <textarea id="typed" style="display:none;width:100%;min-height:140px;font:inherit;padding:14px;border-radius:14px;border:1px solid var(--line);background:var(--paper);color:var(--ink)" placeholder="Type your version…"></textarea>
+        <button class="btn" id="sendTyped" style="display:none">Score it</button>
+      </div>
+
+      <div class="result" id="result">
+        <div class="score-top">
+          <div class="ring"><svg width="132" height="132"><circle cx="66" cy="66" r="56" stroke="var(--line)" stroke-width="12" fill="none"/><circle id="arc" cx="66" cy="66" r="56" stroke="var(--indigo)" stroke-width="12" fill="none" stroke-linecap="round" stroke-dasharray="352" stroke-dashoffset="352" style="transition:stroke-dashoffset .8s"/></svg><b id="scoreNum">–</b><small>out of 10</small></div>
+          <div><p class="verdict" id="verdict"></p><div class="delivery" id="delivery"></div></div>
+        </div>
+        <div class="fix" id="fix"><b>Next time</b><span></span></div>
+        <div class="best" id="best"></div>
+        <div class="moves" id="resMoves"></div>
+        <div class="compare"><div><p class="label">What you said</p><span id="yours"></span></div><div><p class="label">Best answer</p><span id="theirs"></span></div></div>
+        <div class="bar"><button class="btn ghost" id="again">Try again</button><button class="btn" id="next">Next question</button></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- SUMMARY -->
+  <section id="summary">
+    <h1 id="sumTitle">Session complete</h1>
+    <p class="sub" id="sumSub"></p>
+    <div class="panel" id="sumList"></div>
+    <div class="bar" style="margin-top:22px"><button class="btn" id="newSession">New session</button><a class="btn ghost" href="/mock" style="text-decoration:none">Go to the mock interview</a></div>
+  </section>
+</div>
+
+<script>
+const $ = (id) => document.getElementById(id);
+const S = { deck: [], cards: [], i: 0, results: [], type: "", len: 10, order: "frequent", style: "hear",
+  stream: null, rec: null, chunks: [], take: "", timer: null, preview: null, busy: false, audio: null, rate: 1, phase: "" };
+
+async function api(path, body, form) {
+  const init = form ? { method: "POST", body } : body ? { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) } : {};
+  const r = await fetch(path, init); let d = {}; try { d = await r.json(); } catch {}
+  if (!r.ok) { const e = new Error(d.detail || d.error || r.statusText); e.status = r.status; throw e; }
+  return d;
+}
+const fmt = (s) => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, "0")}`;
+const sleep = (s) => new Promise((r) => setTimeout(r, s * 1000));
+function err(id, msg) { $(id).textContent = msg || ""; $(id).style.display = msg ? "block" : "none"; }
+function chips(el, items, get, set) {
+  el.innerHTML = "";
+  for (const [value, label] of items) {
+    const b = document.createElement("button"); b.className = "chip"; b.textContent = label; b.type = "button";
+    b.setAttribute("aria-pressed", String(get() === value));
+    b.onclick = () => { set(value); for (const x of el.children) x.setAttribute("aria-pressed", "false"); b.setAttribute("aria-pressed", "true"); };
+    el.appendChild(b);
+  }
+}
+const TYPE_NAMES = { "": "Everything", behavioural: "Behavioural stories", motivation: "Why you / why us", opening: "Tell me about yourself",
+  failure: "Failure", weakness: "Weakness", strength: "Strengths", situational: "Situations", planning: "First 90 days",
+  hard_skills: "Hard skills", closing: "Closing", negotiation: "Negotiation", self_assessment: "Self-assessment", presentation: "Presentation" };
+
+async function loadStats() {
+  try {
+    const p = await api("/rehearse/progress");
+    $("stats").innerHTML = `<span class="stat">Streak <b>${p.streak} day${p.streak === 1 ? "" : "s"}</b></span><span class="stat">Today <b>${p.today}</b></span><span class="stat">Mastered <b>${p.mastered}</b></span>${p.average !== null ? `<span class="stat">Average <b>${p.average}</b></span>` : ""}`;
+  } catch {}
+}
+async function init() {
+  try {
+    const d = await api("/rehearse/deck");
+    S.deck = d.cards;
+    $("deckInfo").textContent = `${d.total} ranked answers in the deck${d.built ? " · updated " + d.built : ""}`;
+    chips($("types"), [["", "Everything"], ...d.types.map((t) => [t, TYPE_NAMES[t] || t])], () => S.type, (v) => (S.type = v));
+  } catch (e) { err("startErr", e.message); $("go").disabled = true; }
+  chips($("lengths"), [[5, "5 questions"], [10, "10"], [20, "20"]], () => S.len, (v) => (S.len = v));
+  chips($("orders"), [["frequent", "Most asked first"], ["weak", "My weakest first"], ["random", "Shuffle"]], () => S.order, (v) => (S.order = v));
+  chips($("styles"), [["hear", "Hear it, then say it"], ["recall", "Try first, then hear it"]], () => S.style, (v) => (S.style = v));
+  loadStats();
+}
+
+$("go").onclick = async () => {
+  let pool = S.deck.filter((c) => !S.type || c.type === S.type);
+  if (S.order === "frequent") pool.sort((a, b) => (b.frequency || 0) - (a.frequency || 0));
+  if (S.order === "weak") pool.sort((a, b) => (a.best_score ?? -1) - (b.best_score ?? -1));
+  if (S.order === "random") pool.sort(() => Math.random() - 0.5);
+  S.cards = pool.slice(0, S.len); S.i = 0; S.results = [];
+  if (!S.cards.length) return err("startErr", "No cards of that type yet.");
+  $("start").style.display = "none"; $("session").style.display = "block";
+  $("dots").innerHTML = S.cards.map(() => "<i></i>").join("");
+  showCard();
+};
+
+function steps(n) { [1, 2, 3, 4].forEach((k) => { $("s" + k).className = "step" + (k === n ? " on" : k < n ? " done" : ""); }); }
+function dots() { [...$("dots").children].forEach((d, k) => (d.className = k < S.i ? "done" : k === S.i ? "now" : "")); }
+
+function renderModel(text) {
+  const parts = text.match(/[^.!?]+[.!?]+["']?\s*|[^.!?]+$/g) || [text];
+  $("model").innerHTML = ""; parts.forEach((p) => { const s = document.createElement("span"); s.textContent = p; $("model").appendChild(s); });
+  return parts;
+}
+async function play(url, onTime) {
+  if (S.audio) S.audio.pause();
+  S.audio = new Audio(url); S.audio.playbackRate = S.rate;
+  if (onTime) S.audio.ontimeupdate = () => onTime(S.audio.currentTime / (S.audio.duration || 1));
+  try { await S.audio.play(); await new Promise((r) => { S.audio.onended = r; S.audio.onerror = r; }); } catch {}
+}
+async function voiceFor(card, part) { try { return (await api("/rehearse/speak", { card_id: card.id, part })).audio_url; } catch { return null; } }
+
+async function showCard() {
+  const c = S.cards[S.i];
+  err("err"); dots(); steps(1); S.phase = "question";
+  $("result").style.display = "none"; $("micZone").style.display = "none"; $("listenBar").style.display = "flex";
+  $("modelBlock").style.display = "block";
+  $("typed").style.display = "none"; $("sendTyped").style.display = "none";
+  $("question").textContent = c.question;
+  $("qType").textContent = TYPE_NAMES[c.type] || c.type || "question";
+  $("qFreq").textContent = c.frequency > 1 ? `asked in ${c.frequency} sources` : "";
+  const parts = renderModel(c.answer);
+  $("moves").innerHTML = (c.moves || []).map((m) => `<span class="move"></span>`).join("");
+  [...$("moves").children].forEach((el, k) => (el.textContent = c.moves[k]));
+  $("model").classList.add("hidden"); $("moves").style.visibility = "hidden";
+  $("spk").classList.remove("talking"); $("spkText").textContent = "Interviewer asks…"; $("spk").querySelector(".orb").className = "orb i"; $("spk").querySelector(".orb").textContent = "IN";
+  const qUrl = await voiceFor(c, "question");
+  $("spk").classList.add("talking");
+  if (qUrl) await play(qUrl); else await sleep(1.2);
+  $("spk").classList.remove("talking");
+  if (S.style === "recall") return myTurn();
+  await hearAnswer(parts);
+}
+async function hearAnswer(parts) {
+  const c = S.cards[S.i]; steps(2); S.phase = "answer";
+  parts = parts || [...$("model").children].map((s) => s.textContent);
+  $("model").classList.remove("hidden"); $("moves").style.visibility = "visible";
+  $("spk").querySelector(".orb").className = "orb m"; $("spk").querySelector(".orb").textContent = "MC";
+  $("spkText").textContent = "Best answer · practice only";
+  const total = parts.reduce((a, p) => a + p.length, 0);
+  const spans = [...$("model").children]; spans.forEach((s) => s.classList.remove("lit"));
+  const light = (frac) => { let acc = 0; spans.forEach((s, k) => { if (acc / total <= frac) s.classList.add("lit"); acc += parts[k].length; }); };
+  $("spk").classList.add("talking");
+  const aUrl = await voiceFor(c, "answer");
+  if (aUrl) await play(aUrl, light); else spans.forEach((s) => s.classList.add("lit"));
+  spans.forEach((s) => s.classList.add("lit"));
+  $("spk").classList.remove("talking");
+}
+$("replayQ").onclick = async () => { const u = await voiceFor(S.cards[S.i], "question"); if (u) play(u); };
+$("replayA").onclick = () => hearAnswer();
+$("slower").onclick = () => { S.rate = S.rate === 1 ? 0.85 : 1; $("slower").textContent = S.rate === 1 ? "Slower" : "Normal speed"; if (S.audio) S.audio.playbackRate = S.rate; };
+$("myTurn").onclick = () => myTurn();
+
+function myTurn() {
+  if (S.audio) S.audio.pause();
+  steps(3); S.phase = "turn";
+  $("listenBar").style.display = "none"; $("micZone").style.display = "flex";
+  $("model").classList.add("hidden"); $("moves").style.visibility = "hidden";
+  $("caption").textContent = ""; $("tbar").style.width = "0"; $("tnow").textContent = "0:00";
+  $("micState").textContent = S.style === "recall" ? "Try it first: answer from memory." : "Your turn: say it in your own words.";
+  $("mic").classList.remove("rec"); $("micLabel").textContent = "Record";
+}
+$("peek").onclick = () => { $("model").classList.toggle("hidden"); $("moves").style.visibility = $("model").classList.contains("hidden") ? "hidden" : "visible"; };
+$("typeIt").onclick = () => { $("typed").style.display = "block"; $("sendTyped").style.display = "inline-block"; $("typed").focus(); };
+
+/* recording */
+async function getMic() {
+  if (!S.stream) S.stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true } });
+  return S.stream;
+}
+function mime() { for (const m of ["audio/webm;codecs=opus", "audio/webm", "audio/mp4"]) if (MediaRecorder.isTypeSupported(m)) return m; return ""; }
+async function startRec() {
+  try { await getMic(); } catch { return err("err", "Microphone blocked. Allow it in Chrome's address bar (camera/mic icon), then try again."); }
+  S.chunks = []; S.take = Math.random().toString(36).slice(2);
+  const m = mime(); S.rec = new MediaRecorder(S.stream, m ? { mimeType: m } : undefined);
+  S.rec.ondataavailable = (e) => e.data.size && S.chunks.push(e.data);
+  S.rec.start(1000);
+  $("mic").classList.add("rec"); $("micLabel").textContent = "Stop"; $("micState").textContent = "Recording… click Stop when you're done.";
+  const t0 = performance.now();
+  S.timer = setInterval(() => { const s = (performance.now() - t0) / 1000; $("tnow").textContent = fmt(s); $("tbar").style.width = Math.min(100, s / 120 * 100) + "%"; $("tbar").classList.toggle("over", s > 95); }, 250);
+  S.preview = setInterval(async () => {
+    if (S.busy || !S.chunks.length) return; S.busy = true;
+    try { const f = new FormData(); f.append("mock_id", "rehearse"); f.append("take", S.take); f.append("audio", new Blob(S.chunks, { type: S.rec.mimeType }), "p.webm");
+      const r = await api("/voice/preview", f, true); if (r.text && S.rec.state === "recording") $("caption").textContent = r.text; } catch {} finally { S.busy = false; }
+  }, 2500);
+}
+function stopRec() {
+  if (!S.rec || S.rec.state !== "recording") return;
+  clearInterval(S.timer); clearInterval(S.preview);
+  const rec = S.rec;
+  rec.onstop = async () => {
+    const f = new FormData(); f.append("card_id", S.cards[S.i].id); f.append("take", S.take);
+    f.append("audio", new Blob(S.chunks, { type: rec.mimeType }), rec.mimeType.includes("mp4") ? "a.mp4" : "a.webm");
+    try { showResult(await api("/rehearse/attempt", f, true)); }
+    catch (e) { $("micState").textContent = e.status === 422 ? "I didn't hear anything. Check your mic and try again." : "Couldn't score that: " + e.message; $("micLabel").textContent = "Record"; $("mic").classList.remove("rec"); }
+  };
+  rec.stop();
+  $("mic").classList.remove("rec"); $("micLabel").textContent = "…"; $("micState").textContent = "Scoring your answer…";
+}
+$("mic").onclick = () => (S.rec && S.rec.state === "recording" ? stopRec() : startRec());
+$("sendTyped").onclick = async () => {
+  const text = $("typed").value.trim(); if (!text) return;
+  $("micState").textContent = "Scoring your answer…";
+  try { showResult(await api("/rehearse/attempt_text", { card_id: S.cards[S.i].id, text })); } catch (e) { err("err", e.message); }
+};
+
+function showResult(r) {
+  steps(4); S.phase = "score";
+  $("micZone").style.display = "none"; $("result").style.display = "block";
+  $("modelBlock").style.display = "none";
+  $("question").scrollIntoView({ behavior: "smooth", block: "start" });
+  $("scoreNum").textContent = r.score;
+  const col = r.score >= 8 ? "var(--green)" : r.score >= 6 ? "var(--indigo)" : "var(--amber)";
+  $("arc").style.stroke = col; requestAnimationFrame(() => ($("arc").style.strokeDashoffset = String(352 - 352 * r.score / 10)));
+  $("verdict").textContent = r.score >= 8 ? "Interview-ready on this one." : r.score >= 6 ? "Good, close to strong." : r.score >= 4 ? "The gist is there; tighten it." : "Let's go again.";
+  const d = r.delivery || {};
+  $("delivery").innerHTML = [d.seconds ? `${fmt(d.seconds)} long` : null, d.wpm ? `${d.wpm} words/min` : null, `${d.fillers} fillers`, `“I” ×${d.i} · “we” ×${d.we}`, r.verdict ? `Committee: ${r.verdict}` : null]
+    .filter(Boolean).map((x) => `<span class="stat">${x}</span>`).join("");
+  $("fix").querySelector("span").textContent = r.one_fix || "";
+  $("fix").style.display = r.one_fix ? "block" : "none";
+  const bl = (r.best_line || "").replace(/^["“'\s]+|["”'\s]+$/g, "");
+  $("best").textContent = bl ? "Your strongest line: “" + bl + "”" : ""; $("best").style.display = bl ? "block" : "none";
+  $("resMoves").innerHTML = "";
+  for (const m of r.moves) { const s = document.createElement("span"); s.className = "move " + ((r.moves_hit || []).includes(m) ? "hit" : "miss"); s.textContent = ((r.moves_hit || []).includes(m) ? "✓ " : "○ ") + m; $("resMoves").appendChild(s); }
+  $("yours").textContent = r.transcript; $("theirs").textContent = r.model_answer;
+  S.results[S.i] = { q: S.cards[S.i].question, score: r.score };
+  loadStats();
+}
+$("again").onclick = () => { $("modelBlock").style.display = "block"; $("result").style.display = "none"; myTurn(); };
+$("next").onclick = () => { S.i += 1; if (S.i >= S.cards.length) return summary(); showCard(); };
+$("quit").onclick = () => summary();
+
+function summary() {
+  if (S.audio) S.audio.pause();
+  $("session").style.display = "none"; $("summary").style.display = "block";
+  const done = S.results.filter(Boolean);
+  const avg = done.length ? (done.reduce((a, r) => a + r.score, 0) / done.length).toFixed(1) : "–";
+  $("sumTitle").textContent = done.length ? `Average ${avg} / 10` : "Session ended";
+  $("sumSub").textContent = done.length ? `${done.length} question${done.length > 1 ? "s" : ""} rehearsed. Anything under 8 comes back first next time if you choose "My weakest first".` : "No questions scored this time.";
+  $("sumList").innerHTML = "";
+  for (const r of done) { const row = document.createElement("div"); row.className = "sumrow"; const q = document.createElement("span"); q.textContent = r.q;
+    const p = document.createElement("span"); p.className = "pill-score " + (r.score >= 8 ? "good" : r.score < 6 ? "low" : ""); p.textContent = r.score; row.append(q, p); $("sumList").appendChild(row); }
+}
+$("newSession").onclick = () => location.reload();
+
+document.addEventListener("keydown", (e) => {
+  if (["TEXTAREA", "INPUT"].includes(e.target.tagName) || $("session").style.display !== "block") return;
+  if (e.code === "Space") { e.preventDefault(); if (e.repeat) return; if (S.phase === "turn") $("mic").click(); else if (S.phase === "answer" || S.phase === "question") myTurn(); }
+  if (e.key === "Enter" && S.phase === "score") $("next").click();
+  if (e.key.toLowerCase() === "r") $("replayA").click();
+});
+init();
+</script>
+</body>
+</html>

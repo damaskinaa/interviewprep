@@ -130,6 +130,45 @@ def run_one(round_id, persona, mode="A", tts="none", max_turns=40, http=None):
             "turns": turns, "scores": summary.get("scores"), "problems": problems}
 
 
+def run_rehearse(cards=5, http=None):
+    """Rehearsal mode: hear the question and the model answer (TTS), say a paraphrase by voice, check the score.
+    A faithful paraphrase should score >= 7; an off-topic answer should score <= 4."""
+    http = http or httpx.Client(base_url=BASE, timeout=300)
+    problems, rows = [], []
+    deck = http.get("/rehearse/deck").json()["cards"][:cards]
+    with tempfile.TemporaryDirectory() as folder:
+        for index, c in enumerate(deck):
+            for part in ("question", "answer"):
+                r = http.post("/rehearse/speak", json={"card_id": c["id"], "part": part})
+                if r.status_code != 200 or not r.json().get("audio_url"):
+                    problems.append(f"card {c['id']}: no {part} audio ({r.status_code})")
+                elif http.get(r.json()["audio_url"]).status_code != 200:
+                    problems.append(f"card {c['id']}: {part} audio not served")
+            good = ask_llm("Paraphrase this interview answer as if rehearsing it from memory: keep its structure, "
+                           f"key numbers and trade-off, change the wording, about 80% of the length.\n\n{c['answer']}",
+                           max_tokens=500, retries=2, temperature=0.6)
+            bad = "I like working with people and I am very hard-working. I think I would be good at this job."
+            for label, text, ok in (("paraphrase", good, lambda s: s >= 7), ("off-topic", bad, lambda s: s <= 4)):
+                audio = speak_to_file(text, folder, index * 2 + (label == "off-topic"))
+                started = time.monotonic()
+                with open(audio, "rb") as handle:
+                    r = http.post("/rehearse/attempt", data={"card_id": c["id"]}, files={"audio": ("a.aiff", handle, "audio/aiff")})
+                wall = round(time.monotonic() - started, 1)
+                if r.status_code != 200:
+                    problems.append(f"card {c['id']} {label}: /rehearse/attempt {r.status_code} {r.text[:120]}")
+                    continue
+                score = r.json()["score"]
+                rows.append({"card": c["question"][:60], "attempt": label, "score": score, "wall_s": wall})
+                if not ok(score):
+                    problems.append(f"card {c['id']} {label}: score {score} is outside the expected range")
+                if wall > 15:
+                    problems.append(f"card {c['id']} {label}: scoring took {wall}s")
+    return {"round": "rehearse", "persona": "paraphrase+off-topic", "mode": "-", "mock_id": "-", "minutes": 0,
+            "turns": [{"index": i, "wall_s": r["wall_s"], "wer": 0, "kind": r["attempt"], "interviewer": r["card"],
+                       "answer_words": 0, "timings": {"score": r["score"]}} for i, r in enumerate(rows)],
+            "scores": [{"score": r["score"]} for r in rows], "problems": problems}
+
+
 def check_end_early(http):
     r = http.post("/interview/start", json={"round_id": "recruiter", "mode": "A"})
     mock_id = r.json()["mock_id"]
@@ -172,6 +211,7 @@ def main():
     parser.add_argument("--mode", default="A")
     parser.add_argument("--tts", default="none", choices=["none", "say", "openai"])
     parser.add_argument("--all", action="store_true", help="recruiter with all personas + one TTS run + end-early check")
+    parser.add_argument("--rehearse", type=int, default=0, help="also test rehearsal mode on N cards")
     args = parser.parse_args()
     http = httpx.Client(base_url=BASE, timeout=300)
     if args.all:
@@ -179,7 +219,9 @@ def main():
                 ("hiring_manager", "minimal", "B", "none")]
     else:
         runs = [(args.round, args.persona, args.mode, args.tts)]
-    results = [run_one(r, p, m, t, http=http) for r, p, m, t in runs]
+    results = [run_one(r, p, m, t, http=http) for r, p, m, t in runs] if not (args.rehearse and not args.all and args.round == "none") else []
+    if args.rehearse:
+        results.append(run_rehearse(args.rehearse, http=http))
     text, path = report(results, check_end_early(http))
     print(text)
     print(f"\nSaved: {path}")

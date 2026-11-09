@@ -37,6 +37,8 @@ from nailit.coach import (
 from pydantic import BaseModel, Field
 
 app = FastAPI(title="NailIt")
+from nailit import rehearse  # noqa: E402
+app.include_router(rehearse.router)
 
 app.add_middleware(
     CORSMiddleware,
