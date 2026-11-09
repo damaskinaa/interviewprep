@@ -1,0 +1,37 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "programme",
+  "type": "object",
+  "required": ["name", "days", "schedule"],
+  "properties": {
+    "name": {"type": "string"},
+    "days": {"type": "integer", "minimum": 1},
+    "gates": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["after_day", "rule"],
+        "properties": {"after_day": {"type": "integer", "minimum": 0}, "rule": {"type": "string"}, "on_fail": {"type": "string"}},
+        "additionalProperties": true
+      }
+    },
+    "schedule": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["day", "drills"],
+        "properties": {
+          "day": {"type": "integer", "minimum": 0},
+          "phase": {"type": "string"},
+          "objective": {"type": "string"},
+          "minutes": {"type": "number", "minimum": 0},
+          "drills": {"type": "array", "items": {"type": "string", "pattern": "^[a-z0-9_]+$"}},
+          "questions": {"type": "array", "items": {"type": "string"}},
+          "checklist": {"type": "array", "items": {"type": "string"}}
+        },
+        "additionalProperties": true
+      }
+    }
+  },
+  "additionalProperties": true
+}

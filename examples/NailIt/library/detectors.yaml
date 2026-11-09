@@ -1,0 +1,61 @@
+phrase_detectors:
+  - id: hedge_words
+    label: Hedging
+    kind: phrase
+    patterns: [kind of, sort of, i guess]
+    scope: all
+    threshold: {per_answer: 2}
+    severity: warn
+    fix: State the claim plainly.
+    src: [D01]
+  - id: we_without_i
+    label: "\"We\" with no \"I\""
+    kind: regex
+    patterns: ["\\bwe (did|built|decided)\\b"]
+    except_context: ["\\bI\\b"]
+    scope: result_sentences
+    severity: warn
+    fix: Say what you personally did.
+    replacement: I decided ...
+    src: [D02]
+  - id: named_colleague
+    label: Colleague named
+    kind: names_from_profile
+    scope: all
+    severity: fail
+    fix: Use the role, not the name.
+    src: [D03]
+measured_detectors:
+  - id: too_fast
+    label: Pace above calm baseline
+    metric: wpm_vs_baseline
+    rule: "> baseline * 1.2"
+    severity: warn
+    fix: Slow down after each number.
+    src: [D04]
+  - id: long_answer
+    label: Answer too long
+    metric: answer_seconds_behavioural
+    rule: "> 120"
+    severity: warn
+    fix: Cut to the 90-second version.
+    src: [D04]
+structure_checks:
+  - id: result_first
+    label: Result first
+    rubric_rule: R1.1
+    applies_to: [all]
+    severity: fail
+    src: [D01]
+  - id: trade_off_named
+    label: Trade-off named
+    rubric_rule: R2.1
+    applies_to: [behavioural, failure]
+    severity: warn
+    src: [D02]
+consistency_checks:
+  - id: claim_in_stories
+    label: Claim not in stories.md
+    rule: Every number said must match a fact; unconfirmed facts warn, new numbers fail.
+    severity: fail
+    src: [D03]

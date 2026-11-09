@@ -1,0 +1,35 @@
+questions:
+  - id: tell_me_about_yourself
+    text: Tell me about yourself.
+    type: opening
+    area: opening
+    measures: Can you frame your career around this role in under two minutes?
+    tests_for: [link to role, one clear thread]
+    hard: false
+    structure: free
+    rounds: [recruiter, hiring_manager]
+    src: [D06]
+  - id: disagree_with_manager
+    text: Tell me about a time you disagreed with your manager.
+    variants: [Describe a time you pushed back on a decision.]
+    type: behavioural
+    area: conflict
+    measures: Backbone with respect.
+    tests_for: [own position stated, data used, outcome]
+    hard: true
+    structure: hero
+    lp: [have_backbone]
+    rounds: [behavioural, bar_raiser]
+    src: [D06]
+  - id: biggest_failure
+    text: What is your biggest professional failure?
+    type: failure
+    area: failure
+    measures: Ownership and learning.
+    tests_for: [own share named, what changed after]
+    hard: true
+    structure: failure
+    rounds: [behavioural, bar_raiser]
+    src: [D06]
+candidate_questions:
+  - {id: success_in_90_days, text: "What would success look like in the first 90 days?", src: [D06]}

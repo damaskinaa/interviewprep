@@ -1,0 +1,128 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "detectors",
+  "type": "object",
+  "required": ["phrase_detectors", "measured_detectors", "structure_checks", "consistency_checks"],
+  "properties": {
+    "phrase_detectors": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "label", "kind", "severity", "fix"],
+        "properties": {
+          "id": {"type": "string", "pattern": "^[a-z0-9_]+$"},
+          "src": {"type": "array", "items": {"type": "string", "pattern": "^D[0-9]+$"}},
+          "lang": {"enum": ["en", "ru", "any"]},
+          "label": {"type": "string"},
+          "kind": {"enum": ["phrase", "regex", "names_from_profile"]},
+          "patterns": {"type": "array", "items": {"type": "string"}},
+          "except_context": {"type": "array", "items": {"type": "string"}},
+          "scope": {"enum": ["all", "result_sentences", "answer_start", "answer_end", "failure_answers"]},
+          "threshold": {
+            "type": "object",
+            "required": ["per_answer"],
+            "properties": {"per_answer": {"type": "integer", "minimum": 1}},
+            "additionalProperties": true
+          },
+          "severity": {"enum": ["info", "warn", "fail"]},
+          "fix": {"type": "string"},
+          "replacement": {"type": "string"}
+        },
+        "additionalProperties": true,
+        "if": {"properties": {"kind": {"enum": ["phrase", "regex"]}}},
+        "then": {"required": ["patterns"], "properties": {"patterns": {"minItems": 1}}}
+      }
+    },
+    "measured_detectors": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "label", "metric", "rule", "severity"],
+        "properties": {
+          "id": {"type": "string", "pattern": "^[a-z0-9_]+$"},
+          "src": {"type": "array", "items": {"type": "string", "pattern": "^D[0-9]+$"}},
+          "lang": {"enum": ["en", "ru", "any"]},
+          "label": {"type": "string"},
+          "metric": {
+            "enum": [
+              "wpm_vs_baseline",
+              "wpm_stddev_by_10s",
+              "final_pitch_slope_result_sentences",
+              "pitch_range_and_loudness_var_vs_baseline",
+              "pause_after_number_sentence_s",
+              "longest_stretch_without_pause_gt_0_5s",
+              "pre_answer_silence_s",
+              "seconds_to_first_answering_sentence",
+              "answer_seconds",
+              "answer_seconds_tmay",
+              "answer_seconds_behavioural",
+              "overlap_user_over_tts_s",
+              "gap_after_interviewer_silence_s",
+              "freeze_recovery_s",
+              "trigger_recall_s",
+              "distinct_facts_per_minute"
+            ]
+          },
+          "rule": {"type": "string", "minLength": 1},
+          "severity": {"enum": ["info", "warn", "fail"]},
+          "fix": {"type": "string"}
+        },
+        "additionalProperties": true
+      }
+    },
+    "structure_checks": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "label", "rubric_rule", "severity"],
+        "properties": {
+          "id": {"type": "string", "pattern": "^[a-z0-9_]+$"},
+          "src": {"type": "array", "items": {"type": "string", "pattern": "^D[0-9]+$"}},
+          "lang": {"enum": ["en", "ru", "any"]},
+          "label": {"type": "string"},
+          "rubric_rule": {"type": "string", "pattern": "^R[1-8]\\.[0-9]+$"},
+          "applies_to": {
+            "type": "array",
+            "items": {
+              "enum": [
+                "opening",
+                "motivation",
+                "behavioural",
+                "failure",
+                "weakness",
+                "strength",
+                "situational",
+                "planning",
+                "hard_skills",
+                "self_assessment",
+                "closing",
+                "negotiation",
+                "presentation",
+                "all"
+              ]
+            }
+          },
+          "severity": {"enum": ["warn", "fail"]}
+        },
+        "additionalProperties": true
+      }
+    },
+    "consistency_checks": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "label", "rule", "severity"],
+        "properties": {
+          "id": {"type": "string", "pattern": "^[a-z0-9_]+$"},
+          "src": {"type": "array", "items": {"type": "string", "pattern": "^D[0-9]+$"}},
+          "lang": {"enum": ["en", "ru", "any"]},
+          "label": {"type": "string"},
+          "rule": {"type": "string", "minLength": 1},
+          "severity": {"enum": ["warn", "fail"]}
+        },
+        "additionalProperties": true
+      }
+    }
+  },
+  "additionalProperties": true
+}

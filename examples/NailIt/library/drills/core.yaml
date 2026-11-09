@@ -1,0 +1,18 @@
+- id: compression_ladder
+  title: Compression ladder
+  minutes: 10
+  pillar: structuring
+  steps: [Say the story in 3 words., Then one sentence., Then 30 seconds., Then 90 seconds.]
+  measure: answer_seconds per rung
+  pass: Each rung within its time limit.
+  lang: any
+  src: [D09]
+- id: freeze_protocol
+  title: Freeze protocol
+  minutes: 5
+  pillar: regulation
+  steps: [Get a random freeze cue., Use a bridge line., Restart from the result.]
+  measure: freeze_recovery_s
+  pass: Recovery under 5 s.
+  lang: en
+  src: [D09]

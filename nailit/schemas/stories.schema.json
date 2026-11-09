@@ -1,0 +1,75 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "stories",
+  "type": "object",
+  "required": ["facts", "stories"],
+  "properties": {
+    "facts": {
+      "type": "object",
+      "propertyNames": {"pattern": "^F[0-9]+$"},
+      "additionalProperties": {
+        "type": "object",
+        "required": ["text", "status", "source"],
+        "properties": {
+          "text": {"type": "string", "minLength": 1},
+          "status": {"enum": ["confirmed", "approximate", "unconfirmed"]},
+          "source": {"type": "string", "minLength": 1}
+        },
+        "additionalProperties": false
+      }
+    },
+    "stories": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "facts", "trigger", "stages", "compressed"],
+        "properties": {
+          "id": {"type": "string", "pattern": "^S[0-9A-Za-z_]+$"},
+          "title": {"type": "string"},
+          "facts": {"type": "array", "items": {"type": "string", "pattern": "^F[0-9]+$"}, "minItems": 1},
+          "trigger": {"type": "string"},
+          "alt_triggers": {"type": "array", "items": {"type": "string"}},
+          "answers": {"type": "array", "items": {"type": "string"}},
+          "lp_tags": {"type": "array", "items": {"type": "string"}},
+          "competencies": {"type": "array", "items": {"type": "string"}},
+          "stages": {
+            "type": "object",
+            "propertyNames": {"enum": ["HOOK", "WORLD", "CALL", "CROSSROADS", "ORDEAL", "RESULT", "RESULT_OF_RESULT", "LESSON"]},
+            "additionalProperties": {"type": "string"}
+          },
+          "ally": {"type": "string"},
+          "my_part": {"type": "string"},
+          "team_part": {"type": "string"},
+          "trade_off": {"type": "string"},
+          "rejected_option": {"type": "string"},
+          "obstacle_internal": {"type": "string"},
+          "obstacle_external": {"type": "string"},
+          "transformation": {"type": "string"},
+          "stakeholder_outcome": {"type": "string"},
+          "punchline": {"type": "string"},
+          "opening_hook": {"type": "string"},
+          "goal_verb": {"type": "string"},
+          "plot_type": {"type": "string"},
+          "type": {"type": "string"},
+          "fallback_story": {"type": "string"},
+          "delivery_cues": {"type": "array", "items": {"type": "string"}},
+          "concerns": {"type": "array", "items": {"type": "string"}},
+          "confidential": {"type": "boolean"},
+          "compressed": {
+            "type": "object",
+            "required": ["3_words", "1_sentence", "30s", "90s"],
+            "properties": {
+              "3_words": {"type": "string", "minLength": 1},
+              "1_sentence": {"type": "string", "minLength": 1},
+              "30s": {"type": "string", "minLength": 1},
+              "90s": {"type": "string", "minLength": 1}
+            },
+            "additionalProperties": false
+          }
+        },
+        "additionalProperties": false
+      }
+    }
+  },
+  "additionalProperties": false
+}

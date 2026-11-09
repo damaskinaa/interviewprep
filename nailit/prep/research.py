@@ -16,7 +16,6 @@ from nailit.prep.common import (
     STAGE_QUALITY_INSTRUCTION,
     as_list,
     log,
-    module_artifact_path,
     normalize_text,
     report_progress,
     submit_with_context,

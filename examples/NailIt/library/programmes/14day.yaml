@@ -1,0 +1,7 @@
+name: 14-day sprint (example)
+days: 14
+gates:
+  - {after_day: 7, rule: 3 clean reps on every core story, on_fail: Repeat days 5-7.}
+schedule:
+  - {day: 1, phase: baseline, objective: Record a day-0 baseline., minutes: 30, drills: [compression_ladder], questions: [tell_me_about_yourself], checklist: [Quiet room]}
+  - {day: 2, phase: retrieval, objective: Recall stories fast., minutes: 25, drills: [freeze_protocol, falling_result], questions: [weak_list:3, behavioural, mode:A, round:behavioural, bank:ownership, company:example_corp, count:5]}
