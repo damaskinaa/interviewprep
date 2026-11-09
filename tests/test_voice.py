@@ -229,6 +229,11 @@ class RealtimePipelineTest(VoicePipelineTest):
                 self._until(ws, "tts_done")
                 ws.send_text(json.dumps({"type": "played"}))
                 ws.send_text(json.dumps({"type": "ptt", "down": True}))
+                ws.send_text(json.dumps({"type": "ptt", "down": False}))  # a tap: no audio, no commit
+                events, _ = self._until(ws, "error")
+                self.assertTrue(events[-1]["retry"])
+                time.sleep(0.2)
+                ws.send_text(json.dumps({"type": "ptt", "down": True}))
                 for _ in range(20):
                     ws.send_bytes(b"\x00\x00" * 320)
                 ws.send_text(json.dumps({"type": "ptt", "down": False}))
@@ -247,6 +252,7 @@ class RealtimePipelineTest(VoicePipelineTest):
         kinds = [e.type for e in fake.sent]
         self.assertEqual(kinds.count("response.create"), 2)
         self.assertLess(kinds.index("input_audio_buffer.clear"), kinds.index("input_audio_buffer.commit"))
+        self.assertEqual(kinds.count("input_audio_buffer.commit"), 1)
         self.assertIn(turn["interviewer"], fake.sent[-1].response.instructions)
         self.assertIsNotNone(events[-1]["latency_s"])
         state = self.store.load_mock(mock_id)

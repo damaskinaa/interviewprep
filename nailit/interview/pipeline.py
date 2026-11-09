@@ -44,6 +44,7 @@ logger = logging.getLogger(__name__)
 IN_RATE, OUT_RATE = 16000, 24000
 ACTIVE = set()  # mock ids with a live voice session; one session per mock
 TRAILING_PAD_S = 0.5
+MIN_COMMIT_S = 0.15
 
 
 @dataclass
@@ -58,6 +59,7 @@ class Turn:
     limit_s: float | None = None
     segment: int = 0
     last_audio: str | None = None
+    last_audio_s: float = 0.0
     marks: dict = field(default_factory=dict)
 
 
@@ -284,7 +286,11 @@ class InterviewerProcessor(FrameProcessor):
         if self.realtime and isinstance(frame, VADUserStartedSpeakingFrame):
             await self.realtime.user_started(replay_preroll=self.turn.input == "vad")
         if self.realtime and isinstance(frame, VADUserStoppedSpeakingFrame):
-            await self.realtime.user_stopped()
+            if self.turn.last_audio_s < MIN_COMMIT_S:  # the Realtime API rejects a commit under 100 ms
+                await self.push_frame(message({"type": "error", "error": "Too short: hold the key while you answer.",
+                                               "retry": True}))
+            else:
+                await self.realtime.user_stopped()
         if isinstance(frame, InputTransportMessageFrame):
             kind = frame.message.get("type")
             if kind == "ready":
@@ -336,7 +342,8 @@ class AnswerRecorder(FrameProcessor):
             with wave.open(str(path), "wb") as wav:
                 wav.setnchannels(1), wav.setsampwidth(2), wav.setframerate(IN_RATE)
                 wav.writeframes(bytes(self.buffer))
-            self.buffer, self.turn.last_audio = None, name
+            self.turn.last_audio, self.turn.last_audio_s = name, len(self.buffer) / (2 * IN_RATE)
+            self.buffer = None
         await self.push_frame(frame, direction)
 
 

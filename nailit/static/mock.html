@@ -140,7 +140,7 @@ function onEvent(e) {
     held = false; $("talk").classList.remove("on"); status("Interrupted.");
   } else if (e.type === "listening") status("Thinking…");
   else if (e.type === "clear") clearPlayback();
-  else if (e.type === "error") status("Error: " + e.error);
+  else if (e.type === "error") { status("Error: " + e.error); if (e.retry) setTimeout(ready, 1500); }
   else if (e.type === "done") finish();
 }
 
