@@ -36,6 +36,10 @@ class AnonymiseTest(HomeMixin, unittest.TestCase):
             "my engineering manager asked me; later my engineering manager's plan clashed with the support lead.",
         )
 
+    def test_names_split_across_lines_and_short_first_names(self):
+        people = {"Alex Sample": "my manager", "Jo Smith": "the analyst"}
+        self.assertEqual(library.anonymise("Alex\nSample and Jo agreed.", people), "my manager and the analyst agreed.")
+
     def test_shared_first_name_is_left_alone(self):
         people = {"Sam One": "the PM", "Sam Two": "the designer"}
         with self.assertLogs("nailit.library", level="WARNING"):

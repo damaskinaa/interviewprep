@@ -345,7 +345,8 @@ def anonymise(text, people):
         if first != name and firsts.count(first) == 1 and len(first) >= 2:
             replacements.setdefault(first, role)
     for name in sorted(replacements, key=len, reverse=True):
-        text = re.sub(rf"(?<!\w){re.escape(name)}(?!\w)", replacements[name], text, flags=re.IGNORECASE)
+        pattern = r"\s+".join(re.escape(part) for part in name.split())
+        text = re.sub(rf"(?<!\w){pattern}(?!\w)", replacements[name], text, flags=re.IGNORECASE)
     parts = {part for name in people for part in name.split() if len(part) >= 3}
     leftovers = sum(1 for part in parts if re.search(rf"(?<!\w){re.escape(part)}(?!\w)", text))
     if leftovers:
