@@ -40,9 +40,15 @@ def load_deck():
 
 
 def card(card_id):
+    base_id, _, follow = card_id.partition("__f")
     for c in load_deck()["cards"]:
-        if c["id"] == card_id:
-            return c
+        if c["id"] == base_id:
+            if not follow:
+                return c
+            items = c.get("followups") or []
+            if follow.isdigit() and int(follow) < len(items):
+                f = items[int(follow)]
+                return {"id": card_id, "question": f["q"], "answer": f["a"], "moves": [], "type": "followup"}
     raise HTTPException(status_code=404, detail="Card not found")
 
 
@@ -71,7 +77,7 @@ def deck(kind: str = "", limit: int = 400):
     TYPE_FIX = {"behavioral": "behavioural"}
     for c in data["cards"]:
         c["type"] = TYPE_FIX.get(c.get("type"), c.get("type"))
-    cards = [{k: c.get(k) for k in ("id", "question", "answer", "moves", "hook", "frequency", "type", "why_it_won",
+    cards = [{k: c.get(k) for k in ("id", "question", "answer", "moves", "hook", "frequency", "type", "why_it_won", "followups",
                                      "roles", "companies", "win_rate", "candidates", "origin")} | {"best_score": best.get(c["id"])}
              for c in data["cards"] if not kind or c.get("type") == kind]
     return {"cards": cards[:limit], "built": data.get("built"), "total": len(data["cards"]),

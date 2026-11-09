@@ -189,7 +189,8 @@
         <div class="best" id="best"></div>
         <div class="moves" id="resMoves"></div>
         <div class="compare"><div><p class="label">What you said</p><span id="yours"></span></div><div><p class="label">Best answer</p><span id="theirs"></span></div></div>
-        <div class="bar"><button class="btn ghost" id="again">Try again</button><button class="btn" id="next">Next question</button></div>
+        <div id="fups" style="display:none;margin-top:22px"><p class="label">Bar Raiser follow-ups for this answer</p><div id="fupList"></div></div>
+        <div class="bar"><button class="btn ghost" id="again">Try again</button><button class="btn ghost" id="drillFups" style="display:none">Practise the follow-ups</button><button class="btn" id="next">Next question</button></div>
       </div>
     </div>
   </section>
@@ -226,7 +227,7 @@ function chips(el, items, get, set) {
     el.appendChild(b);
   }
 }
-const TYPE_NAMES = { "": "Everything", behavioural: "Behavioural stories", motivation: "Why you / why us", opening: "Tell me about yourself",
+const TYPE_NAMES = { followup: "Bar Raiser follow-up", "": "Everything", behavioural: "Behavioural stories", motivation: "Why you / why us", opening: "Tell me about yourself",
   failure: "Failure", weakness: "Weakness", strength: "Strengths", situational: "Situations", planning: "First 90 days",
   hard_skills: "Hard skills", closing: "Closing", negotiation: "Negotiation", self_assessment: "Self-assessment", presentation: "Presentation" };
 
@@ -391,9 +392,22 @@ function showResult(r) {
   for (const m of r.moves) { const s = document.createElement("span"); s.className = "move " + ((r.moves_hit || []).includes(m) ? "hit" : "miss"); s.textContent = ((r.moves_hit || []).includes(m) ? "✓ " : "○ ") + m; $("resMoves").appendChild(s); }
   $("yours").textContent = r.transcript; $("theirs").textContent = r.model_answer;
   S.results[S.i] = { q: S.cards[S.i].question, score: r.score };
+  const base = S.cards[S.i]; const f = base.followups || [];
+  $("fups").style.display = f.length ? "block" : "none"; $("drillFups").style.display = f.length ? "inline-block" : "none";
+  $("fupList").innerHTML = "";
+  f.forEach((x) => { const d = document.createElement("details"); d.style.cssText = "background:var(--bg);border-radius:12px;padding:10px 14px;margin-bottom:8px";
+    const sm = document.createElement("summary"); sm.textContent = x.q; sm.style.cursor = "pointer"; sm.style.fontWeight = "600";
+    const p = document.createElement("p"); p.textContent = x.a; p.style.cssText = "margin:8px 0 0;color:var(--soft)"; d.append(sm, p); $("fupList").appendChild(d); });
   loadStats();
 }
 $("again").onclick = () => { $("modelBlock").style.display = "block"; $("result").style.display = "none"; myTurn(); };
+$("drillFups").onclick = () => {
+  const base = S.cards[S.i];
+  const subs = (base.followups || []).map((x, k) => ({ id: base.id + "__f" + k, question: x.q, answer: x.a, moves: [], type: "followup", frequency: 0 }));
+  S.cards.splice(S.i + 1, 0, ...subs);
+  $("dots").innerHTML = S.cards.map(() => "<i></i>").join("");
+  $("next").click();
+};
 $("next").onclick = () => { S.i += 1; if (S.i >= S.cards.length) return summary(); showCard(); };
 $("quit").onclick = () => summary();
 

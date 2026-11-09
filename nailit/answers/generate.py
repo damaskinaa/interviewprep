@@ -37,7 +37,13 @@ STYLE = ("Write the answer exactly as spoken in an interview by a top-1% candida
          "sentence; at most two sentences of context; 'I' for decisions; one named trade-off or rejected option; "
          "one number with a baseline or timeframe; the result of the result; a specific lesson ('Since then, I...'); "
          "plain spoken English, no buzzwords, no self-praise adjectives, no 'we' for my decisions; 150-210 words "
-         "(about 75-90 seconds) for behavioural questions, 80-140 words for direct questions. No headings, no markup.")
+         "(about 75-90 seconds) for behavioural questions, 80-140 words for direct questions. No headings, no markup. "
+         "It must sound like a real person talking, never like a checklist: do NOT restate or echo the question in the "
+         "first sentence; NEVER name the structure out loud (forbidden: 'the trade-off was', 'the named trade-off', "
+         "'the result of the result', 'the lesson I learned', 'the key insight', 'in terms of', 'to summarise', 'STAR'). "
+         "Show the trade-off and the knock-on effect in natural words ('I could have X, but…', 'which meant…').")
+TELLS = re.compile(r"(trade-off was|named trade-off|result of (that|the) result|the lesson (i learned|is)|key insight|"
+                   r"to summari[sz]e|in terms of|STAR|situation was|task was|action i took)", re.I)
 JUDGE_RUBRIC = ("Judge as a Bar Raiser and hiring committee would. Prefer: answer first; specific, attributable actions; "
                 "decision and trade-off; numbers with context; resistance or difficulty named; result of the result; "
                 "specific lesson; sounds natural when spoken; would survive follow-ups ('what would you do differently?', "
@@ -123,6 +129,11 @@ def write_candidates(item, stories, existing):
         if slot == "B" and not story:
             strategy = "Use a different structure from a typical answer: Statement-Explanation-Illustration, compressed and sharp."
         text = chat(WRITER, f"{PERSONA}\n\n{STYLE}\n\nQuestion: {item['question']}\n\n{strategy}\n\nStory to use:\n{story or '(none)'}")
+        echo = text and text.lower().startswith(" ".join(item["question"].lower().split()[3:7])[:25])
+        if text and (TELLS.search(text) or echo):
+            text = chat(WRITER, f"Rewrite this interview answer so it sounds like natural speech. Remove any phrase that names "
+                                f"the answer's structure ({TELLS.pattern}) and don't open by echoing the question; open with "
+                                f"the decision or result. Keep every fact and number.\n\nQuestion: {item['question']}\n\n{text}") or text
         if text:
             cands.append({"slot": slot, "story": story_id if story else None, "text": text, "origin": "generated"})
     for q, answer in existing.items():
@@ -170,8 +181,21 @@ def build_card(item, stories, existing):
     if not cands:
         return None
     ranked = tournament(item["question"], cands) if len(cands) > 1 else [{**cands[0], "wins": 0, "win_rate": 1.0, "reasons": []}]
+    if len(ranked) > 1:  # final: the strongest model decides between the top two, in both orders
+        votes = 0
+        for first, second in ((0, 1), (1, 0)):
+            w, _ = judge_pair(item["question"], ranked[first]["text"], ranked[second]["text"], WRITER)
+            votes += 1 if (w == 1 and first == 0) or (w == 2 and second == 0) else 0
+        if votes == 0:
+            ranked[0], ranked[1] = ranked[1], ranked[0]
     best = ranked[0]
     moves, hook = key_moves(item["question"], best["text"])
+    probes = chat(WRITER, f"{PERSONA}\n\nQuestion: {item['question']}\nAnswer given:\n{best['text']}\n\n"
+                          "As a Bar Raiser, ask the 3 hardest follow-ups (one counterfactual 'what would you do differently', "
+                          "one data probe 'how did you measure / where is the number', one scope or disagreement probe). "
+                          "Then give the model candidate's best spoken reply to each, 30-60 words, consistent with every fact "
+                          "in the answer, no new numbers unless they follow from it. Reply JSON {\"followups\":[{\"q\":\"...\",\"a\":\"...\"}]}",
+                   json_mode=True) or {}
     return {"id": item.get("id") or re.sub(r"[^a-z0-9]+", "_", item["question"].lower())[:60].strip("_"),
             "question": item["question"], "variants": item.get("variants", [])[:5], "frequency": item.get("frequency", 1),
             "roles": item.get("roles", []), "companies": item.get("companies", []),
@@ -179,6 +203,7 @@ def build_card(item, stories, existing):
             "answer": best["text"], "story": best.get("story"), "origin": best["origin"], "win_rate": best["win_rate"],
             "why_it_won": best["reasons"], "moves": moves, "hook": hook,
             "runner_up": ranked[1]["text"] if len(ranked) > 1 else None, "candidates": len(cands),
+            "followups": (probes.get("followups") or [])[:3],
             "practice_only": True}
 
 

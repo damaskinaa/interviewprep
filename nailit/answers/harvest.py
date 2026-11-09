@@ -153,6 +153,47 @@ def yt_transcript(http, video_id):
     return {"url": f"https://www.youtube.com/watch?v={video_id}", "title": row.get("title", ""), "text": (row.get("full_text") or "")[:60000]}
 
 
+# ---------- free YouTube access (no API credits): yt-dlp search + youtube-transcript-api captions ----------
+YT_CHANNELS = ["Exponent", "Hello Interview", "Amazon Bound", "Dan Croitor", "Jeff H Sipe", "IGotAnOffer",
+               "A Life After Layoff", "Don Georgevich", "Self Made Millennial", "Linda Raynier", "Andrew LaCivita",
+               "CareerVidz", "Mock Questions", "Holly Lee", "Day One Careers", "Amazon interview whizz", "Mario Gerard TPM",
+               "Big Interview", "Jeff Su", "Ashley Rizzotto"]
+YT_TOPICS = ["behavioral interview mock", "program manager interview answers", "leadership principles example answers",
+             "bar raiser interview", "operations manager interview answers", "tell me about yourself senior manager",
+             "conflict interview answer example", "failure interview answer example"]
+
+
+def yt_free_search(query, n=25):
+    import subprocess
+    out = subprocess.run(["yt-dlp", "--flat-playlist", "-j", f"ytsearch{n}:{query}"], capture_output=True, text=True, timeout=180)
+    rows = []
+    for line in out.stdout.splitlines():
+        try:
+            v = json.loads(line)
+        except ValueError:
+            continue
+        rows.append({"video_id": v.get("id"), "title": v.get("title", ""), "channel": v.get("channel") or v.get("uploader") or "",
+                     "duration": v.get("duration") or 0, "views": v.get("view_count") or 0})
+    return rows
+
+
+def yt_free_transcript(video_id):
+    from youtube_transcript_api import YouTubeTranscriptApi
+    tr = YouTubeTranscriptApi().fetch(video_id, languages=["en", "en-US", "en-GB", "en-IN"])
+    return {"url": f"https://www.youtube.com/watch?v={video_id}", "title": "", "text": " ".join(s.text for s in tr)[:90000]}
+
+
+def yt_free_queries():
+    queries = [f"{role} mock interview" for role in ROLES] + [f"{role} interview questions and answers" for role in ROLES]
+    queries += [f"{company} {role} behavioral interview" for company in COMPANIES
+                for role in ("program manager", "technical program manager", "operations manager", "manager")]
+    queries += [f"{channel} {topic}" for channel in YT_CHANNELS for topic in YT_TOPICS[:3]]
+    queries += YT_TOPICS + ["amazon leadership principles mock interview full", "meta behavioral interview full mock",
+                            "google googleyness interview mock", "STAR method example answers senior", "hiring manager reacts interview answers",
+                            "ex amazon recruiter interview answers", "service delivery manager interview", "head of operations interview"]
+    return queries
+
+
 EXTRACT_PROMPT = """From this source about job interviews for roles like {roles}, extract:
 1. every interview QUESTION an interviewer could ask (verbatim where possible; skip questions TO the interviewer
    unless the source lists them as questions for the candidate to ask, then mark kind "ask_them");
@@ -169,7 +210,7 @@ def extract(text, title):
     from openai import OpenAI
     client = OpenAI()
     out = {"questions": [], "answers": []}
-    for start in range(0, min(len(text), 48000), 16000):
+    for start in range(0, min(len(text), 96000), 16000):
         chunk = text[start:start + 16000]
         if len(chunk) < 300:
             continue
@@ -244,6 +285,8 @@ def main():
     parser.add_argument("--budget", type=int, default=1500, help="Firecrawl credit cap")
     parser.add_argument("--max-pages", type=int, default=160)
     parser.add_argument("--max-videos", type=int, default=90)
+    parser.add_argument("--youtube", action="store_true", help="free YouTube search + captions (yt-dlp, youtube-transcript-api)")
+    parser.add_argument("--yt-delay", type=float, default=8.0, help="seconds between caption requests")
     args = parser.parse_args()
     OUT.mkdir(parents=True, exist_ok=True)
     budget, http, log = Budget(args.budget), httpx.Client(timeout=90), []
@@ -265,7 +308,19 @@ def main():
                         hits.setdefault(hit["url"], hit)
             except Exception as error:  # noqa: BLE001
                 log.append(f"search failed: {engine.__name__} {query}: {error}")
-    for query in video_queries():
+    if args.youtube:
+        def search_one(query):
+            try:
+                return cached("yt_free_search", query, lambda: yt_free_search(query))
+            except Exception as error:  # noqa: BLE001
+                log.append(f"yt search failed: {query}: {error}")
+                return []
+        with ThreadPoolExecutor(4) as pool:
+            for rows in pool.map(search_one, yt_free_queries()):
+                for v in rows or []:
+                    if v.get("video_id") and 240 <= (v.get("duration") or 0) <= 5400:
+                        videos.setdefault(v["video_id"], v)
+    for query in ([] if args.youtube else video_queries()):
         if not budget.take(5):
             break
         try:
@@ -276,7 +331,9 @@ def main():
 
     # 2. fetch
     pages = list(hits)[: args.max_pages]
-    vids = list(videos)[: args.max_videos]
+    relevant = re.compile(r"interview|behavio|mock|answer|bar raiser|leadership principle|star method|tell me about", re.I)
+    ranked = sorted(videos.values(), key=lambda v: (not relevant.search(v.get("title", "")), -(v.get("views") or 0)))
+    vids = [v["video_id"] for v in ranked if relevant.search(v.get("title", ""))][: args.max_videos]
 
     def get_page(url):
         try:
@@ -284,7 +341,22 @@ def main():
         except Exception as error:  # noqa: BLE001
             log.append(f"scrape failed: {url}: {error}")
 
+    blocked = {"yes": False}
+
     def get_video(vid):
+        if args.youtube:
+            if _cache("video", vid).exists():
+                return cached("video", vid, lambda: None)
+            if blocked["yes"]:
+                return None
+            time.sleep(args.yt_delay)  # polite pacing; YouTube blocks bulk caption requests
+            try:
+                return cached("video", vid, lambda: yt_free_transcript(vid))
+            except Exception as error:  # noqa: BLE001 - no captions, private, or rate-limited
+                if type(error).__name__ in ("IpBlocked", "RequestBlocked", "TooManyRequests"):
+                    blocked["yes"] = True  # stop asking; rerun later and the cache resumes where this left off
+                log.append(f"transcript failed: {vid}: {type(error).__name__}")
+                return None
         if not _cache("video", vid).exists() and not budget.take(5):
             return None
         try:
@@ -294,7 +366,7 @@ def main():
 
     with ThreadPoolExecutor(4) as pool:
         docs = [d for d in pool.map(get_page, pages) if d and len(d.get("text", "")) > 500]
-    with ThreadPoolExecutor(2) as pool:
+    with ThreadPoolExecutor(1 if args.youtube else 2) as pool:
         docs += [d for d in pool.map(get_video, vids) if d and len(d.get("text", "")) > 500]
     docs += [{"url": s["url"], "title": s["title"], "text": s["text"]} for s in snippets if len(s.get("text", "")) > 80]
 
