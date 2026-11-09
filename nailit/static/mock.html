@@ -93,7 +93,10 @@ async function startMic() {
   await ctx.audioWorklet.addModule(URL.createObjectURL(new Blob([WORKLET], {type: "text/javascript"})));
   const node = new AudioWorkletNode(ctx, "pcm");
   node.port.onmessage = (e) => { if (ws && ws.readyState === 1) ws.send(e.data); };
+  const mute = ctx.createGain();
+  mute.gain.value = 0;
   ctx.createMediaStreamSource(stream).connect(node);
+  node.connect(mute).connect(ctx.destination);  // a worklet only runs while connected to the destination
 }
 
 function play(buffer) {
