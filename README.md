@@ -58,20 +58,18 @@ It reports schema errors and unknown cross-references (rubric rules, follow-up b
 5 freeze drills and your week-2 average is at least 3.5. `GET /interview/get?mock_id=` returns the transcript,
 per-question scores, the stories you used, repeated errors and the pressure events that fired.
 
-## Voice mock (N3b, Pipecat)
+## Voice mock (N3b)
 
-On the Mac: `brew install ffmpeg`, then `uv sync --extra voice` (Pipecat, Silero VAD, and on Apple silicon
-mlx-whisper + mlx-audio), then `uv run nailit` and open http://127.0.0.1:8000/mock in Chrome.
-- **Pipeline** (`nailit/interview/pipeline.py`): page mic → localhost websocket (16 kHz PCM) → turn gate → local
-  Whisper → interviewer engine (fast LLM from config) → Kokoro-82M → page speaker (24 kHz PCM).
-- **Input:** push-to-talk (default; hold Space), hands-free (Silero VAD; talking over the interviewer interrupts it;
-  `NAILIT_VAD_STOP_S`, default 1.5 s of silence ends an answer), or text. The interviewer's interrupt and 90-s
-  cut-off events stop your turn.
-- **STT:** mlx-whisper with word timestamps; its prompt keeps fillers (um/uh/like). `NAILIT_WHISPER_MODEL`, default
-  `mlx-community/whisper-large-v3-turbo`.
-- **TTS:** Kokoro-82M through mlx-audio (`NAILIT_KOKORO_VOICE`, default `af_heart`); macOS `say` if Kokoro can't
-  run, or with `NAILIT_TTS=say` (`NAILIT_SAY_VOICE`). If both fail, the line is shown as text.
-- **Saved files:** each answer (WAV) and the optional webcam video go to `~/NailIt/recordings/<mock_id>/`.
-- **Latency:** each turn logs STT, LLM time to first token and total, TTS to first audio, and end-to-end (your last
-  word → the interviewer's audio). `GET /voice/latency` lists them with the median.
-- First run downloads the Whisper (about 1.6 GB) and Kokoro models; after that it runs offline except the LLM.
+On the Mac: `brew install ffmpeg`, then `uv sync --extra voice` (installs mlx-whisper; Apple silicon only), then
+`uv run nailit` and open http://127.0.0.1:8000/mock in Chrome.
+- **Input:** push-to-talk (hold Space), hands-free (Silero VAD in the page; it stops recording after the set
+  seconds of silence), or text.
+- **Transcription:** runs locally with mlx-whisper (`NAILIT_WHISPER_MODEL`, default
+  `mlx-community/whisper-large-v3-turbo`). It keeps word timestamps, and its prompt keeps fillers (um/uh/like).
+- **Interviewer voice:** OpenAI TTS (`OPENAI_TTS_API_KEY` in the Keychain, or `OPENAI_API_KEY`;
+  `NAILIT_TTS_VOICE`, default `alloy`), macOS `say` (`NAILIT_SAY_VOICE`), or none. If OpenAI fails, it uses
+  `say`, then text.
+- **Saved files:** answers, interviewer audio and the optional webcam video go to `~/NailIt/recordings/<mock_id>/`.
+- **Latency:** the time from your last word to the interviewer's audio starting is logged per turn;
+  `GET /voice/latency` shows it with the median.
+- **Needs internet:** the VAD script loads from jsDelivr, and OpenAI TTS is online.

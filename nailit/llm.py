@@ -75,38 +75,6 @@ def log_cost_total(records, label):
     return total
 
 
-_stream_timing = ContextVar("llm_stream_timing", default=None)
-
-
-def stream_timing():
-    """Within this context, ask_llm streams and records time to first token in the returned dict (voice latency log)."""
-    timing = {}
-    _stream_timing.set(timing)
-    return timing
-
-
-def _complete(model, messages, max_tokens, temperature, started):
-    timing = _stream_timing.get()
-    if timing is None:
-        response = client().chat.completions.create(
-            model=model, messages=messages, temperature=temperature, max_tokens=max_tokens, timeout=150)
-        record_call(model, response.usage, time.monotonic() - started)
-        return response.choices[0].message.content or ""
-    parts, usage = [], None
-    stream = client().chat.completions.create(
-        model=model, messages=messages, temperature=temperature, max_tokens=max_tokens, timeout=150,
-        stream=True, stream_options={"include_usage": True})
-    for chunk in stream:
-        usage = chunk.usage or usage
-        delta = chunk.choices[0].delta.content if chunk.choices else None
-        if delta:
-            timing.setdefault("ttft_s", round(time.monotonic() - started, 3))
-            parts.append(delta)
-    timing["llm_s"] = round(time.monotonic() - started, 3)
-    record_call(model, usage, timing["llm_s"])
-    return "".join(parts)
-
-
 def ask_llm(prompt, model=None, max_tokens=2400, retries=3, temperature=0.25):
     model = model or MODEL_FAST
     if not os.getenv("OPENAI_API_KEY"):
@@ -116,8 +84,15 @@ def ask_llm(prompt, model=None, max_tokens=2400, retries=3, temperature=0.25):
     for attempt in range(1, retries + 1):
         started = time.monotonic()
         try:
-            messages = [{"role": "system", "content": SYSTEM_PROMPT}, {"role": "user", "content": user_prompt}]
-            return _complete(model, messages, max_tokens, temperature, started)
+            response = client().chat.completions.create(
+                model=model,
+                messages=[{"role": "system", "content": SYSTEM_PROMPT}, {"role": "user", "content": user_prompt}],
+                temperature=temperature,
+                max_tokens=max_tokens,
+                timeout=150,
+            )
+            record_call(model, response.usage, time.monotonic() - started)
+            return response.choices[0].message.content or ""
         except Exception as error:
             last_error = error
             if attempt < retries:

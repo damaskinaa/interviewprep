@@ -27,8 +27,14 @@
   <br>
   <label>Input <select id="input">
     <option value="ptt">Push-to-talk (hold Space)</option>
-    <option value="vad">Hands-free (Silero VAD, barge-in)</option>
+    <option value="vad">Hands-free (Silero VAD)</option>
     <option value="text">Text only</option>
+  </select></label>
+  <label>End of answer after <input id="endSilence" type="number" value="2.0" step="0.5" min="0.5" style="width:4em"> s silence</label>
+  <label>Voice <select id="tts">
+    <option value="openai">OpenAI TTS</option>
+    <option value="say">macOS say (free)</option>
+    <option value="none">None (read it)</option>
   </select></label>
   <label><input type="checkbox" id="webcam"> Record webcam locally</label>
   <button id="start">Start</button>
@@ -39,16 +45,17 @@
 <form id="textForm" hidden><textarea id="text" rows="4" style="width:100%"></textarea><button>Send</button></form>
 <div id="log"></div>
 
+<script src="https://cdn.jsdelivr.net/npm/onnxruntime-web@1.14.0/dist/ort.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@ricky0123/vad-web@0.0.22/dist/bundle.min.js"></script>
 <script>
 const $ = (id) => document.getElementById(id);
-const IN_RATE = 16000, OUT_RATE = 24000;
-let ws = null, mockId = null, ctx = null, playAt = 0, sources = [], held = false, mode = "ptt", lineDone = true;
-let camRecorder = null, camUploads = Promise.resolve(), camLost = 0;
+let mockId = null, done = false, micStream = null, recorder = null, chunks = [], recordStart = 0, recordStop = 0;
+let playbackEnded = 0, myvad = null, answerTimer = null, turnLimit = null, camRecorder = null, camUploads = Promise.resolve(), camLost = 0;
 
 async function api(path, body, form) {
   const res = await fetch(path, form ? {method: "POST", body} : body ? {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify(body)} : {});
   const data = await res.json();
-  if (!res.ok) throw new Error(data.error || data.detail || res.statusText);
+  if (!res.ok) throw new Error(data.error || res.statusText);
   return data;
 }
 function say(role, text, meta) {
@@ -58,9 +65,9 @@ function say(role, text, meta) {
   if (meta) { const m = document.createElement("div"); m.className = "meta"; m.textContent = meta; p.appendChild(m); }
   $("log").appendChild(p);
   p.scrollIntoView();
-  return p;
 }
-const status = (text) => ($("status").textContent = text);
+function status(text) { $("status").textContent = text; }
+const sleep = (s) => new Promise((r) => setTimeout(r, s * 1000));
 
 async function loadOptions() {
   const o = await api("/interview/options");
@@ -70,78 +77,78 @@ async function loadOptions() {
   for (const t of o.temperaments) $("temperament").add(new Option(t.label, t.id));
 }
 
-// Mic → 16 kHz 16-bit PCM over the websocket (an AudioWorklet downsamples in the audio thread).
-const WORKLET = `class Pcm extends AudioWorkletProcessor {
-  constructor() { super(); this.buf = []; this.ratio = sampleRate / ${IN_RATE}; this.pos = 0; }
-  process(inputs) {
-    const ch = inputs[0][0]; if (!ch) return true;
-    for (; this.pos < ch.length; this.pos += this.ratio) this.buf.push(ch[Math.floor(this.pos)]);
-    this.pos -= ch.length;
-    if (this.buf.length >= 320) {
-      const out = new Int16Array(this.buf.length);
-      this.buf.forEach((s, i) => (out[i] = Math.max(-1, Math.min(1, s)) * 32767));
-      this.port.postMessage(out.buffer, [out.buffer]); this.buf = [];
-    }
-    return true;
+async function interviewerTurn(data, lastWordAt) {
+  const turn = data.turn;
+  turnLimit = turn.interrupt_after_s || turn.cut_off_s || null;
+  if (turn.silence_before_s) { status("…"); await sleep(turn.silence_before_s); }
+  say("interviewer", turn.say);
+  if (data.audio_url) {
+    const audio = new Audio(data.audio_url);
+    pauseListening();
+    await audio.play();
+    if (lastWordAt) api("/voice/latency", {mock_id: mockId, turn: data.turn_index, latency_s: (performance.now() - lastWordAt) / 1000}).catch(() => {});
+    await new Promise((r) => (audio.onended = r));
   }
-}
-registerProcessor("pcm", Pcm);`;
-
-async function startMic() {
-  ctx = new AudioContext();
-  const stream = await navigator.mediaDevices.getUserMedia({audio: {echoCancellation: true, noiseSuppression: true}});
-  await ctx.audioWorklet.addModule(URL.createObjectURL(new Blob([WORKLET], {type: "text/javascript"})));
-  const node = new AudioWorkletNode(ctx, "pcm");
-  node.port.onmessage = (e) => { if (ws && ws.readyState === 1) ws.send(e.data); };
-  const mute = ctx.createGain();
-  mute.gain.value = 0;
-  ctx.createMediaStreamSource(stream).connect(node);
-  node.connect(mute).connect(ctx.destination);  // a worklet only runs while connected to the destination
+  playbackEnded = performance.now();
+  done = data.done;
+  if (done) return finish();
+  listen();
 }
 
-function play(buffer) {
-  if (!ctx) ctx = new AudioContext();
-  const pcm = new Int16Array(buffer), audio = ctx.createBuffer(1, pcm.length, OUT_RATE), data = audio.getChannelData(0);
-  pcm.forEach((s, i) => (data[i] = s / 32768));
-  const src = ctx.createBufferSource();
-  src.buffer = audio; src.connect(ctx.destination);
-  playAt = Math.max(playAt, ctx.currentTime);
-  src.start(playAt); playAt += audio.duration;
-  sources.push(src);
-  src.onended = () => {
-    sources = sources.filter((s) => s !== src);
-    // The server sends audio faster than real time, so only the page knows when the interviewer stopped talking.
-    if (!sources.length) played();
-  };
+function startRecorder() {
+  chunks = [];
+  recorder = new MediaRecorder(micStream, {mimeType: "audio/webm"});
+  recorder.ondataavailable = (e) => chunks.push(e.data);
+  recorder.start();
+  recordStart = performance.now();
+  if ($("input").value !== "vad") startTurnLimit();
 }
-// Only "played" once the server has sent the whole line (tts_done) and the queue has drained, so a pause between
-// Kokoro sentences doesn't count as the end.
-function played() { if (lineDone && !sources.length && ws && ws.readyState === 1) ws.send(JSON.stringify({type: "played"})); }
-function clearPlayback() { sources.forEach((s) => (s.onended = null, s.stop())); sources = []; playAt = 0; lineDone = true; played(); }
-
-function ready() {
-  if (mode === "text") { status("Type your answer."); $("textForm").hidden = false; }
-  else if (mode === "ptt") { status("Hold Space (or the button) while you answer."); $("talk").hidden = false; }
-  else status("Listening… answer when ready. Talking over the interviewer interrupts it.");
+function startTurnLimit() {
+  clearTimeout(answerTimer);
+  if (turnLimit) answerTimer = setTimeout(() => stopRecorder("cut"), turnLimit * 1000);
+}
+function stopRecorder(reason) {
+  if (!recorder || recorder.state !== "recording") return;
+  clearTimeout(answerTimer);
+  answerTimer = null;
+  recordStop = performance.now();
+  recorder.onstop = () => sendAnswer(new Blob(chunks, {type: "audio/webm"}));
+  recorder.stop();
+  status(reason === "cut" ? "Interrupted." : "Thinking…");
 }
 
-function onEvent(e) {
-  if (e.type === "tts_done") { lineDone = true; played(); }
-  else if (e.type === "question" || e.type === "turn") {
-    lineDone = false;
-    if (e.candidate) say("candidate", e.candidate, e.filled_pauses != null ? `${e.filled_pauses} filled pauses` : "");
-    say("interviewer", e.interviewer, e.event ? `event: ${e.event}` : "");
-    if (!e.done) ready();
-  } else if (e.type === "latency") {
-    const p = [...document.querySelectorAll(".interviewer")].pop();
-    if (p) { const m = document.createElement("div"); m.className = "meta";
-      m.textContent = `last word → voice ${e.latency_s}s · stt ${e.stt_s}s · llm first token ${e.llm_ttft_s}s (total ${e.llm_s}s) · tts ${e.tts_s}s`; p.appendChild(m); }
-  } else if (e.type === "listening" && e.reason === "cut") {
-    held = false; $("talk").classList.remove("on"); status("Interrupted.");
-  } else if (e.type === "listening") status("Thinking…");
-  else if (e.type === "clear") clearPlayback();
-  else if (e.type === "error") status("Error: " + e.error);
-  else if (e.type === "done") finish();
+async function sendAnswer(blob) {
+  const form = new FormData();
+  form.append("mock_id", mockId);
+  form.append("audio", blob, "answer.webm");
+  form.append("engine", $("tts").value);
+  form.append("gap_before_record_s", $("input").value === "ptt" ? ((recordStart - playbackEnded) / 1000).toFixed(2) : "0");
+  try {
+    const data = await api("/voice/answer", form, true);
+    const t = data.transcript;
+    say("candidate", t.text, `${t.speech_s}s · ${t.filled_pauses} filled pauses · stt ${data.timings.stt_s}s llm ${data.timings.llm_s}s tts ${data.timings.tts_s}s`);
+    await interviewerTurn(data, recordStop - t.trailing_silence_s * 1000);
+  } catch (e) { status("Error: " + e.message + " (you can switch to text)"); listen(); }
+}
+
+function pauseListening() { if (myvad) myvad.pause(); }
+function listen() {
+  const mode = $("input").value;
+  if (mode === "text") { status("Type your answer."); $("textForm").hidden = false; return; }
+  if (mode === "ptt") { status("Hold Space (or the button) while you answer."); $("talk").hidden = false; return; }
+  status("Listening… answer when ready.");
+  startRecorder();
+  myvad.start();
+}
+
+async function setupVad() {
+  const frames = Math.round(parseFloat($("endSilence").value) / 0.096);
+  myvad = await vad.MicVAD.new({
+    stream: micStream,
+    redemptionFrames: frames,
+    onSpeechStart: () => { if (recorder && recorder.state === "recording" && !answerTimer) startTurnLimit(); status("Recording…"); },
+    onSpeechEnd: () => { myvad.pause(); stopRecorder(); },
+  });
 }
 
 async function finish() {
@@ -159,64 +166,54 @@ async function finish() {
 
 $("start").onclick = async () => {
   $("setup").disabled = true;
-  mode = $("input").value;
   try {
-    if (mode !== "text") await startMic();
-    let cam = null;
+    if ($("input").value !== "text") micStream = await navigator.mediaDevices.getUserMedia({audio: {echoCancellation: true}});
     if ($("webcam").checked) {
-      cam = await navigator.mediaDevices.getUserMedia({video: true, audio: true});
+      const cam = await navigator.mediaDevices.getUserMedia({video: true, audio: true});
       $("preview").srcObject = cam; $("preview").hidden = false; $("preview").play();
-    }
-    const started = await api("/interview/start", {round_id: $("round").value, mode: $("mode").value,
-      company_id: $("company").value || null, temperament_id: $("temperament").value || null});
-    mockId = started.mock_id;
-    if (cam) {
       camRecorder = new MediaRecorder(cam, {mimeType: "video/webm"});
       // Each 10 s chunk is appended to the file on disk in order, so a long loop never sits in browser memory.
       camRecorder.ondataavailable = (e) => {
         camUploads = camUploads.then(async () => {
-          if (!e.data.size) return;
+          if (!mockId || !e.data.size) return;
           for (let attempt = 1; attempt <= 3; attempt++) {
             const form = new FormData();
             form.append("mock_id", mockId);
             form.append("video", e.data, "webcam.webm");
-            try { return await api("/voice/video", form, true); } catch { await new Promise((r) => setTimeout(r, attempt * 1000)); }
+            try { return await api("/voice/video", form, true); } catch { await sleep(attempt); }
           }
           camLost += 1;
         });
       };
-      camRecorder.start(10000);
     }
-    ws = new WebSocket(`ws://${location.host}/voice/ws/${mockId}?input=${mode}`);
-    ws.binaryType = "arraybuffer";
-    ws.onopen = () => ws.send(JSON.stringify({type: "ready"}));
-    ws.onmessage = (m) => (typeof m.data === "string" ? onEvent(JSON.parse(m.data)) : play(m.data));
-    ws.onclose = (e) => { if (e.code === 4404) status("Mock not found."); };
+    if ($("input").value === "vad") await setupVad();
+    const started = await api("/interview/start", {round_id: $("round").value, mode: $("mode").value,
+      company_id: $("company").value || null, temperament_id: $("temperament").value || null});
+    mockId = started.mock_id;
+    if (camRecorder) camRecorder.start(10000);
+    await interviewerTurn(await api("/voice/say", {mock_id: mockId, engine: $("tts").value}));
   } catch (e) { status("Error: " + e.message); $("setup").disabled = false; }
 };
 
-const ptt = (down) => {
-  if ($("talk").hidden || held === down || !ws) return;
-  held = down;
-  $("talk").classList.toggle("on", down);
-  if (!down) $("talk").hidden = true;
-  status(down ? "Recording…" : "Thinking…");
-  ws.send(JSON.stringify({type: "ptt", down}));
-};
-$("talk").onmousedown = () => ptt(true); $("talk").onmouseup = () => ptt(false);
-document.addEventListener("keydown", (e) => { if (e.code === "Space" && e.target.tagName !== "TEXTAREA") { e.preventDefault(); if (!e.repeat) ptt(true); } });
-document.addEventListener("keyup", (e) => { if (e.code === "Space" && e.target.tagName !== "TEXTAREA") { e.preventDefault(); ptt(false); } });
+const talkDown = () => { if ($("talk").hidden || (recorder && recorder.state === "recording")) return; $("talk").classList.add("on"); status("Recording…"); startRecorder(); };
+const talkUp = () => { if ($("talk").hidden) return; $("talk").classList.remove("on"); $("talk").hidden = true; stopRecorder(); };
+$("talk").onmousedown = talkDown; $("talk").onmouseup = talkUp;
+document.addEventListener("keydown", (e) => { if (e.code === "Space" && e.target.tagName !== "TEXTAREA") { e.preventDefault(); talkDown(); } });
+document.addEventListener("keyup", (e) => { if (e.code === "Space" && e.target.tagName !== "TEXTAREA") { e.preventDefault(); talkUp(); } });
 
-$("textForm").onsubmit = (e) => {
+$("textForm").onsubmit = async (e) => {
   e.preventDefault();
   const text = $("text").value.trim();
-  if (!text || !ws) return;
+  if (!text) return;
   $("text").value = ""; $("textForm").hidden = true;
+  say("candidate", text);
   status("Thinking…");
-  ws.send(JSON.stringify({type: "text", text}));
+  try {
+    await api("/interview/answer", {mock_id: mockId, text, seconds: null, pre_answer_silence_s: null});
+    await interviewerTurn(await api("/voice/say", {mock_id: mockId, engine: $("tts").value}));
+  } catch (err) { status("Error: " + err.message); $("textForm").hidden = false; }
 };
 
-window.addEventListener("beforeunload", () => { if (ws && ws.readyState === 1) ws.send(JSON.stringify({type: "end"})); });
 loadOptions().catch((e) => status("Error loading library: " + e.message));
 </script>
 </body>

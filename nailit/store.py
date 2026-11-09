@@ -95,7 +95,6 @@ def _connect():
             mock_id TEXT NOT NULL,
             turn INTEGER NOT NULL,
             stt_s REAL,
-            llm_ttft_s REAL,
             llm_s REAL,
             tts_s REAL,
             latency_s REAL,
@@ -122,10 +121,6 @@ def _connect():
             con.execute(f"ALTER TABLE sessions ADD COLUMN {col} {definition}")
         except Exception:
             pass  # column already exists — safe to ignore
-    try:
-        con.execute("ALTER TABLE voice_log ADD COLUMN llm_ttft_s REAL")
-    except Exception:
-        pass
     con.commit()
     return con
 
@@ -428,13 +423,19 @@ def mode_c_progress():
     return {"freeze_drills": freeze, "week2_average": average}
 
 
-def log_voice(mock_id, turn, stt_s=None, llm_ttft_s=None, llm_s=None, tts_s=None, latency_s=None, engine=""):
-    """One voice turn: STT, LLM time to first token and total, TTS to first audio, and end-to-end latency
-    (the candidate's last word → the interviewer's audio starting)."""
+def log_voice(mock_id, turn, stt_s=None, llm_s=None, tts_s=None, engine=""):
     with _connect() as con:
-        con.execute("INSERT INTO voice_log (mock_id, turn, stt_s, llm_ttft_s, llm_s, tts_s, latency_s, engine, created_at) "
-                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                    (mock_id, turn, stt_s, llm_ttft_s, llm_s, tts_s, latency_s, engine, _now()))
+        con.execute("INSERT INTO voice_log (mock_id, turn, stt_s, llm_s, tts_s, engine, created_at) "
+                    "VALUES (?, ?, ?, ?, ?, ?, ?)", (mock_id, turn, stt_s, llm_s, tts_s, engine, _now()))
+
+
+def set_voice_latency(mock_id, turn, latency_s):
+    """Seconds from the candidate's last word to the interviewer's audio starting, measured by the page."""
+    with _connect() as con:
+        cursor = con.execute(
+            "UPDATE voice_log SET latency_s = ? WHERE id = "
+            "(SELECT MAX(id) FROM voice_log WHERE mock_id = ? AND turn = ?)", (latency_s, mock_id, turn))
+        return cursor.rowcount
 
 
 def voice_latencies(mock_id=None):
