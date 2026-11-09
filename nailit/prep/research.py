@@ -1,4 +1,5 @@
 import json
+from datetime import datetime, timezone
 import logging as _logging
 import os
 import re
@@ -36,10 +37,8 @@ def classify_source(company_name, url, title, content, provided_type=""):
     provided_type = normalize_text(provided_type)
     type_map = {
         "official_company_source": "Official company source",
-        "directional_glassdoor": "Glassdoor directional theme",
         "directional_reddit": "Reddit directional theme",
         "directional_blind": "Blind directional theme",
-        "directional_linkedin": "LinkedIn directional theme",
         "directional_indeed": "Indeed directional theme",
         "directional_blog": "Blog directional theme",
         "directional_prep": "Public prep or candidate experience",
@@ -58,17 +57,13 @@ def classify_source(company_name, url, title, content, provided_type=""):
         return "Search summary"
     if company_slug and company_slug in re.sub(r"[^a-z0-9]+", "", host):
         return "Official company source"
-    if company_name.lower() == "google" and ("google.com" in host or "abc.xyz" in host):
-        return "Official company source"
     if "youtube.com" in host or "youtu.be" in host:
         return "YouTube public theme"
     if "reddit.com" in host:
         return "Reddit directional theme"
-    if "glassdoor." in host:
-        return "Glassdoor directional theme"
     if "blind.app" in host or "teamblind.com" in host:
         return "Blind directional theme"
-    public_domains = ["linkedin.com", "medium.com", "substack.com", "prepfully.com", "igotanoffer.com", "levels.fyi", "interviewquery.com", "tryexponent.com", "gogotechy.com", "interviewkickstart.com"]
+    public_domains = ["medium.com", "substack.com", "prepfully.com", "igotanoffer.com", "levels.fyi", "interviewquery.com", "tryexponent.com", "gogotechy.com", "interviewkickstart.com"]
     if any(domain in host for domain in public_domains):
         return "Public prep or candidate experience"
     if "interview" in title_l or "interview" in content_l:
@@ -101,6 +96,19 @@ def canonical_source_key(url):
     return url
 
 
+BLOCKED_HOSTS = ("linkedin.com", "glassdoor.")
+
+
+def is_blocked_source(url):
+    """LinkedIn and Glassdoor are never scraped or fetched."""
+    host = source_host(url)
+    return any(blocked in host for blocked in BLOCKED_HOSTS)
+
+
+def fetch_date():
+    return datetime.now(timezone.utc).date().isoformat()
+
+
 def source_record(source, index):
     content = normalize_text(source.get("content", ""))
     return {
@@ -110,6 +118,7 @@ def source_record(source, index):
         "source_type": source.get("source_type", ""),
         "confidence": source.get("source_confidence", ""),
         "query": source.get("query", ""),
+        "fetched_at": source.get("fetched_at", ""),
         "excerpt": trim_text(content, 650),
     }
 
@@ -196,13 +205,14 @@ def tavily_with_retry(query):
             rows = []
             for item in parsed.get("results", []) if isinstance(parsed, dict) else []:
                 url = item.get("url", "")
-                if not url:
+                if not url or is_blocked_source(url):
                     continue
                 rows.append({
                     "title": item.get("title", ""),
                     "url": url,
                     "content": item.get("content", "") or item.get("snippet", ""),
                     "query": query,
+                    "fetched_at": fetch_date(),
                 })
             return rows
         except urllib.error.HTTPError as e:
@@ -230,7 +240,7 @@ def tavily_extract(urls):
     if not urls:
         return []
     # Tavily extract API rejects batches larger than 20 URLs
-    urls = urls[:20]
+    urls = [url for url in urls if not is_blocked_source(url)][:20]
     try:
         data = tavily_post(
             "extract",
@@ -248,6 +258,7 @@ def tavily_extract(urls):
                 "url": item.get("url", ""),
                 "title": item.get("title", ""),
                 "content": trim_text(content, 5000),
+                "fetched_at": fetch_date(),
             })
     return rows
 
@@ -261,10 +272,6 @@ def collect_company_research(company_name, role_name):
         f"{c} careers how we hire",
         f"{c} values leadership principles culture",
         f"{c} {r} job requirements 2025",
-        # Glassdoor
-        f'site:glassdoor.com "{c}" "{r}" interview questions',
-        f'site:glassdoor.com "{c}" interview experience 2024 2025',
-        f'site:glassdoor.com "{c}" interview rounds process',
         # Blind
         f'site:teamblind.com "{c}" interview process',
         f'site:teamblind.com "{c}" "{r}" interview',
@@ -272,12 +279,11 @@ def collect_company_research(company_name, role_name):
         f'site:reddit.com "{c}" "{r}" interview questions asked',
         f'site:reddit.com "{c}" interview experience 2024 2025',
         f'site:reddit.com "{c}" behavioral interview',
-        # LinkedIn / Indeed
-        f'site:linkedin.com/interview-questions "{c}" "{r}"',
+        # Indeed
         f'site:indeed.com "{c}" "{r}" interview questions',
         # Round-specific
         f'"{c}" behavioral interview STAR method questions',
-        f'"{c}" googliness OR "culture fit" interview questions',
+        f'"{c}" "culture fit" interview questions',
         f'"{c}" hiring manager interview questions',
         f'"{c}" cross functional stakeholder interview',
         # YouTube
@@ -387,12 +393,9 @@ def build_round_queries(company, role, round_name, round_type, what_it_tests):
 
     base = [
         # Community — real questions reported for this exact round
-        f'site:glassdoor.com "{c}" "{rn}" interview questions',
-        f'site:glassdoor.com "{c}" "{r}" {rn} interview',
         f'site:teamblind.com "{c}" "{rn}" interview',
         f'site:reddit.com "{c}" "{rn}" interview questions asked',
         f'site:reddit.com "{c}" {rn} interview what they ask',
-        f'site:linkedin.com/interview-questions "{c}" {rn}',
         f'site:indeed.com "{c}" {rn} interview questions',
         # Prep resources targeting this round
         f'"{c}" "{rn}" interview questions {r}',
@@ -473,8 +476,7 @@ def extract_round_reported_questions(sources):
     seen = set()
     results = []
 
-    community_types = {"Glassdoor directional theme", "Reddit directional theme",
-                       "Blind directional theme", "LinkedIn directional theme",
+    community_types = {"Reddit directional theme", "Blind directional theme",
                        "Indeed directional theme", "Public prep or candidate experience"}
 
     for source in sources:
@@ -595,10 +597,6 @@ def run_all_rounds_research(company_name, role_name, rounds):
 
 def run_company_intelligence_module(session, progress_callback=None):
     session_id = session["session_id"]
-    path = module_artifact_path(session_id, "company_intelligence")
-    if path.exists() and time.time() - path.stat().st_mtime < 24 * 60 * 60:
-        report_progress(progress_callback, "Company intelligence cache hit", 100)
-        return json.loads(path.read_text(encoding="utf8"))
     report_progress(progress_callback, "Company research discovery", 15)
     sources = collect_company_research(session["company_name"], session["role_name"])
     report_progress(progress_callback, "Company signal extraction", 55)
@@ -658,6 +656,7 @@ Do not use page titles as claims.
             "url": source.get("url", ""),
             "source_type": source.get("source_type", ""),
             "confidence": source.get("source_confidence", ""),
+            "fetched_at": source.get("fetched_at") or fetch_date(),
         }
         for source in sources[:40]
     ]

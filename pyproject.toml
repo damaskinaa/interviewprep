@@ -9,6 +9,8 @@ dependencies = [
     "openai>=1.50,<2",
     "pydantic>=2.8,<3",
     "python-dotenv>=1.0,<2",
+    "pyyaml>=6.0,<7",
+    "jsonschema>=4.20,<5",
 ]
 
 [project.optional-dependencies]
@@ -23,3 +25,6 @@ build-backend = "setuptools.build_meta"
 
 [tool.setuptools]
 packages = ["nailit", "nailit.prep"]
+
+[tool.setuptools.package-data]
+nailit = ["schemas/*.json"]
