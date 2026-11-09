@@ -80,7 +80,7 @@ def strip_hallucinated_metrics(answer, raw_cv, raw_answer_bank):
     # Pattern: number optionally followed by %, unit words, or currency symbols.
     # Use lookahead/lookbehind instead of \b so the unit suffix is captured in the match.
     pattern = re.compile(
-        r"(?<![\d.,])\$?\d+(?:[.,]\d+)*(?:\s*(?:%|percent|thousand|million|billion|k|m|bn|hours?|minutes?|days?|weeks?|months?))?(?![\d\w])",
+        r"(?<![\d.,])\$?\d+(?:[.,]\d+)*(?:\s*(?:thousand|million|billion|k|m|bn))?(?:\s*(?:%|percent|hours?|minutes?|days?|weeks?|months?))?(?![\d\w])",
         re.IGNORECASE,
     )
     cleaned = pattern.sub(_replace, answer)
@@ -99,7 +99,7 @@ def answer_word_failures_from_strategy(strategy):
 
 
 NUMBER_PATTERN = re.compile(
-    r"(?<![\w.])\$?\d+(?:[.,]\d+)*(?:\s*(?:%|percent|thousand|million|billion|k|m|bn))?(?![\w])", re.IGNORECASE
+    r"(?<![\w.])\$?\d+(?:[.,]\d+)*(?:\s*(?:thousand|million|billion|k|m|bn))?(?:\s*(?:%|percent))?(?![\w])", re.IGNORECASE
 )
 
 
@@ -114,7 +114,7 @@ def _canonical_number(raw):
     """Scaled value as text, with a trailing % for percentages: "$250k" -> "250000", "40 percent" -> "40%"."""
     low = raw.lower().strip()
     value = Decimal(re.search(r"\d+(?:[.,]\d+)*", low).group(0).replace(",", ""))
-    scale = re.search(r"\d\s*(thousand|million|billion|k|m|bn)$", low)
+    scale = re.search(r"\d\s*(thousand|million|billion|bn|k|m)\b", low)
     if scale:
         value *= NUMBER_SCALES[scale.group(1)]
     text = format(value.normalize(), "f")

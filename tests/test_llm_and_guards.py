@@ -25,6 +25,9 @@ class GuardsTest(unittest.TestCase):
         self.assertEqual(self.guards.invented_numbers("Reached 1m users", "Reached 1 million users"), [])
         cleaned, stripped = self.guards.strip_hallucinated_metrics("We reached 1m users.", "Reached 1 million users", "")
         self.assertEqual((cleaned, stripped), ("We reached 1m users.", []))
+        self.assertEqual(self.guards.invented_numbers("Grew 1 thousand percent", "1k users"), ["1 thousand percent"])
+        _, stripped = self.guards.strip_hallucinated_metrics("Grew 1 thousand percent.", "1k users", "")
+        self.assertEqual(stripped, ["1 thousand percent"])
 
     def test_strip_keeps_comma_formatted_verified_metric(self):
         cleaned, stripped = self.guards.strip_hallucinated_metrics("We onboarded 1,200 users.", "Onboarded 1200 users", "")
