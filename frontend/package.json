@@ -1,18 +1,17 @@
 {
-  "name": "interview-frontend",
+  "name": "nailit-frontend",
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "next dev",
+    "dev": "next dev -H 127.0.0.1",
     "build": "next build",
-    "start": "next start",
+    "start": "next start -H 127.0.0.1",
     "lint": "eslint"
   },
   "dependencies": {
     "mammoth": "^1.12.0",
     "next": "16.2.4",
     "pdf-parse": "^2.4.5",
-    "posthog-js": "^1.386.4",
     "react": "19.2.4",
     "react-dom": "19.2.4"
   },

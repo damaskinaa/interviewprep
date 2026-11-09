@@ -1,0 +1,26 @@
+[project]
+name = "nailit"
+version = "0.1.0"
+description = "Personal interview prep and practice tool (local only)"
+requires-python = ">=3.11"
+dependencies = [
+    "fastapi",
+    "uvicorn",
+    "openai",
+    "pydantic",
+    "python-dotenv",
+]
+
+[project.optional-dependencies]
+dev = ["pytest", "httpx"]
+
+[project.scripts]
+nailit = "nailit.cli:main"
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+packages = ["nailit"]
+py-modules = ["api", "agent_v2", "answer_generator", "job_store", "lua_coach", "data_paths", "research_config"]

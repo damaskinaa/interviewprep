@@ -2,14 +2,6 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
-import posthog from "posthog-js";
-const POSTHOG_KEY = process.env.NEXT_PUBLIC_POSTHOG_KEY;
-if (typeof window !== "undefined" && POSTHOG_KEY) {
-  posthog.init(POSTHOG_KEY, {
-    api_host: process.env.NEXT_PUBLIC_POSTHOG_HOST || "https://app.posthog.com",
-    capture_pageview: false,
-  });
-}
 
 type SessionMeta = {
   session_id: string;
@@ -477,12 +469,6 @@ export default function Home() {
         },
       }));
       if (data.status === "done") {
-        if (moduleName === "prep_pack") {
-          posthog.capture("session_completed", {
-            company: session?.company_name,
-            tier: "free",
-          });
-        }
         return;
       }
       if (data.status === "failed") throw new Error(data.error || `${moduleName} failed.`);
@@ -503,9 +489,9 @@ export default function Home() {
         body: JSON.stringify({ session_id: session.session_id, module_name: moduleName }),
       });
       const data = await res.json();
-      if (res.status === 403 || res.status === 404) {
+      if (res.status === 404) {
         resetSession();
-        setError("This session is no longer available in this browser. Please create a new session.");
+        setError("This session no longer exists. Please create a new session.");
         return;
       }
       if (!res.ok) throw new Error(data?.body || data?.message || data?.error || "Could not start module.");
@@ -656,10 +642,6 @@ export default function Home() {
   function startMockInterview() {
     const all = Object.values(questionContexts) as QuestionContext[];
     if (!all.length) return;
-    posthog.capture("mock_interview_started", {
-      company: session?.company_name,
-      source: "session_end",
-    });
     const firstQ = all[0];
     // Pre-load answers for first question if already generated
     const firstState = answersByQuestion[questionId(firstQ.question, firstQ.round_name)];
@@ -739,11 +721,6 @@ export default function Home() {
         score: typeof feedback.score_out_of_10 === "number" ? feedback.score_out_of_10 : undefined,
       };
       const newTurns = [...mockState.turns, newTurn];
-      if (newTurns.length === 3) {
-        posthog.capture("lua_three_rounds", {
-          company: session?.company_name,
-        });
-      }
       setMockState((s) => s ? { ...s, submitting: false, turns: newTurns } : s);
     } catch (err: unknown) {
       setMockState((s) => s ? { ...s, submitting: false, error: err instanceof Error ? err.message : "Feedback failed." } : s);

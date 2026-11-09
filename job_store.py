@@ -1,12 +1,11 @@
 import json
 import logging
 import os
-import shutil
 import sqlite3
 from datetime import datetime, timedelta
 from pathlib import Path
 
-from data_paths import data_path, lua_data_path
+from data_paths import data_path
 
 logger = logging.getLogger(__name__)
 
@@ -42,11 +41,6 @@ def _truncate_session_fields(**fields):
 
 
 DB_PATH = data_path("nailit_jobs.db")
-
-
-def _lua_db_path(db_name: str) -> Path:
-    """Lua sidecar DBs resolve through the same helper the Lua stores use."""
-    return lua_data_path(db_name)
 
 
 def _now():
@@ -99,23 +93,6 @@ def _connect():
             con.execute(f"ALTER TABLE sessions ADD COLUMN {col} {definition}")
         except Exception:
             pass  # column already exists — safe to ignore
-    con.execute("""
-        CREATE TABLE IF NOT EXISTS credits (
-            user_id TEXT PRIMARY KEY,
-            balance INTEGER NOT NULL DEFAULT 0,
-            updated_at TEXT
-        )
-    """)
-    con.execute("""
-        CREATE TABLE IF NOT EXISTS credit_transactions (
-            tx_id TEXT PRIMARY KEY,
-            user_id TEXT NOT NULL,
-            amount INTEGER NOT NULL,
-            type TEXT NOT NULL,
-            description TEXT,
-            created_at TEXT
-        )
-    """)
     con.commit()
     return con
 
@@ -361,135 +338,6 @@ def get_session(session_id, include_raw=False):
     return session
 
 
-def delete_old_jobs(days=7):
-    """Delete jobs and their workspace directories older than `days` days."""
-    cutoff = (datetime.utcnow() - timedelta(days=days)).isoformat()
-    with _connect() as con:
-        rows = con.execute(
-            "SELECT json_extract(input_payload, '$.session_id') AS session_id "
-            "FROM jobs WHERE created_at < ?",
-            (cutoff,),
-        ).fetchall()
-        for row in rows:
-            sid = row[0]
-            if sid:
-                workspace = Path("jobs") / sid
-                if workspace.exists():
-                    try:
-                        shutil.rmtree(workspace)
-                        logger.info("delete_old_jobs: removed workspace %s", workspace)
-                    except Exception as exc:
-                        logger.warning("delete_old_jobs: could not remove %s — %s", workspace, exc)
-        deleted = con.execute(
-            "DELETE FROM jobs WHERE created_at < ?", (cutoff,)
-        ).rowcount
-        con.commit()
-    logger.info("delete_old_jobs: deleted %d job(s) older than %d days", deleted, days)
-
-
-def get_sessions_for_followup(days_ago=30):
-    """Returns sessions created exactly `days_ago` days ago
-    that have not yet received a followup email."""
-    target = (datetime.utcnow() - timedelta(days=days_ago)).date()
-    with _connect() as con:
-        rows = con.execute(
-            """
-            SELECT session_id, user_email, company_name
-            FROM sessions
-            WHERE DATE(created_at) = ?
-              AND followup_sent IS NULL
-              AND user_email IS NOT NULL
-            """,
-            (target.isoformat(),),
-        ).fetchall()
-    return [dict(row) for row in rows]
-
-
-def mark_followup_sent(session_id):
-    """Record that a followup email was sent for this session."""
-    with _connect() as con:
-        con.execute(
-            "UPDATE sessions SET followup_sent = ? WHERE session_id = ?",
-            (datetime.utcnow().isoformat(), session_id),
-        )
-        con.commit()
-
-
-import uuid as _uuid
-
-
-def get_credits(user_id: str) -> int:
-    """Return current credit balance for user_id, or 0 if no record."""
-    con = _connect()
-    try:
-        row = con.execute(
-            "SELECT balance FROM credits WHERE user_id = ?",
-            (user_id,),
-        ).fetchone()
-    finally:
-        con.close()
-    return row[0] if row else 0
-
-
-def add_credits(user_id: str, amount: int, description: str = "") -> None:
-    """Add credits to a user's balance and record the transaction."""
-    now = datetime.utcnow().isoformat()
-    con = _connect()
-    try:
-        con.execute(
-            """
-            INSERT INTO credits (user_id, balance, updated_at)
-            VALUES (?, ?, ?)
-            ON CONFLICT(user_id) DO UPDATE SET
-                balance = balance + excluded.balance,
-                updated_at = excluded.updated_at
-            """,
-            (user_id, amount, now),
-        )
-        con.execute(
-            """
-            INSERT INTO credit_transactions
-                (tx_id, user_id, amount, type, description, created_at)
-            VALUES (?, ?, ?, 'purchase', ?, ?)
-            """,
-            (str(_uuid.uuid4()), user_id, amount, description, now),
-        )
-        con.commit()
-    finally:
-        con.close()
-
-
-def deduct_credits(user_id: str, amount: int, description: str = "") -> None:
-    """Atomically deduct credits. Raises ValueError if the balance is insufficient."""
-    now = datetime.utcnow().isoformat()
-    con = _connect()
-    try:
-        con.execute("BEGIN IMMEDIATE")
-        cursor = con.execute(
-            "UPDATE credits SET balance = balance - ?, updated_at = ? "
-            "WHERE user_id = ? AND balance >= ?",
-            (amount, now, user_id, amount),
-        )
-        if cursor.rowcount != 1:
-            row = con.execute("SELECT balance FROM credits WHERE user_id = ?", (user_id,)).fetchone()
-            con.execute("ROLLBACK")
-            balance = row[0] if row else 0
-            raise ValueError(
-                f"Insufficient credits: {balance} available, {amount} required"
-            )
-        con.execute(
-            """
-            INSERT INTO credit_transactions
-                (tx_id, user_id, amount, type, description, created_at)
-            VALUES (?, ?, ?, 'deduction', ?, ?)
-            """,
-            (str(_uuid.uuid4()), user_id, amount, description, now),
-        )
-        con.commit()
-    finally:
-        con.close()
-
-
 def fail_stale_jobs(minutes: int = 30) -> int:
     """Mark queued/running jobs with no progress update for `minutes` as failed.
 
@@ -508,123 +356,3 @@ def fail_stale_jobs(minutes: int = 30) -> int:
         return cursor.rowcount or 0
 
 
-def delete_old_sessions(days=90):
-    """Delete session records older than `days` days (GDPR retention limit)."""
-    cutoff = (datetime.utcnow() - timedelta(days=days)).isoformat()
-    with _connect() as con:
-        rows = con.execute(
-            "SELECT session_id FROM sessions WHERE updated_at < ?",
-            (cutoff,),
-        ).fetchall()
-        for row in rows:
-            workspace = Path("jobs") / row[0]
-            if workspace.exists():
-                try:
-                    shutil.rmtree(workspace)
-                    logger.info("delete_old_sessions: removed workspace %s", row[0])
-                except Exception as exc:
-                    logger.warning("delete_old_sessions: could not remove %s — %s", row[0], exc)
-        deleted = con.execute(
-            "DELETE FROM sessions WHERE updated_at < ?", (cutoff,)
-        ).rowcount
-        con.commit()
-    logger.info("delete_old_sessions: deleted %d session(s) older than %d days", deleted, days)
-
-
-def delete_user_data(user_id: str) -> dict:
-    """
-    Hard-deletes all data for a user.
-    GDPR Article 17 — Right to erasure.
-    Returns count of deleted records.
-    """
-    with _connect() as con:
-        rows = con.execute(
-            "SELECT session_id FROM sessions WHERE user_id = ?",
-            (user_id,),
-        ).fetchall()
-        session_ids = [row[0] for row in rows]
-
-        deleted_sessions = 0
-        for session_id in session_ids:
-            workspace = Path("jobs") / session_id
-            if workspace.exists():
-                try:
-                    shutil.rmtree(workspace)
-                except Exception as exc:
-                    logger.warning("delete_user_data: could not remove workspace %s — %s", session_id, exc)
-            deleted_sessions += 1
-
-        deleted_jobs = 0
-        if session_ids:
-            placeholders = ",".join("?" for _ in session_ids)
-            cursor = con.execute(
-                f"DELETE FROM jobs WHERE json_extract(input_payload, '$.session_id') IN ({placeholders})",
-                session_ids,
-            )
-            deleted_jobs = cursor.rowcount if cursor.rowcount is not None else 0
-
-        con.execute("DELETE FROM sessions WHERE user_id = ?", (user_id,))
-        con.execute("DELETE FROM credits WHERE user_id = ?", (user_id,))
-        con.execute("DELETE FROM credit_transactions WHERE user_id = ?", (user_id,))
-        con.commit()
-
-    deleted_lua_rows = {}
-    # Lua stores are session-scoped. Global Lua memory is intentionally retained because it is not user-owned.
-    lua_stores = [
-        ("lua_sessions.db", "lua_turns", "lua_session"),
-        ("lua_benchmark_sessions.db", "benchmark_events", "benchmark"),
-        ("lua_memory.db", "coach_memory", "memory"),
-        ("lua_mastery.db", "mastery", "mastery"),
-    ]
-    for db_name, table_name, label in lua_stores:
-        deleted_lua_rows[label] = _delete_sqlite_session_rows(db_name, table_name, session_ids)
-
-    return {
-        "user_id": user_id,
-        "deleted_sessions": deleted_sessions,
-        "deleted_jobs": deleted_jobs,
-        "deleted_lua_rows": deleted_lua_rows,
-        "status": "complete",
-    }
-
-
-def _delete_sqlite_session_rows(db_name: str, table_name: str, session_ids: list[str]) -> int:
-    if not session_ids:
-        return 0
-    db_path = _lua_db_path(db_name)
-    if not db_path.exists():
-        return 0
-    placeholders = ",".join("?" for _ in session_ids)
-    with sqlite3.connect(db_path) as con:
-        cursor = con.execute(
-            f"DELETE FROM {table_name} WHERE session_id IN ({placeholders})",
-            session_ids,
-        )
-        con.commit()
-        return cursor.rowcount if cursor.rowcount is not None else 0
-
-
-def get_user_data_export(user_id: str) -> dict:
-    """
-    Returns all data held for a user.
-    GDPR Article 15 — Right of access.
-    """
-    with _connect() as con:
-        rows = con.execute(
-            """
-            SELECT session_id, company_name, role_name,
-                   created_at, followup_sent
-            FROM sessions WHERE user_id = ?
-            """,
-            (user_id,),
-        ).fetchall()
-
-    credit_balance = get_credits(user_id)
-
-    return {
-        "user_id": user_id,
-        "exported_at": datetime.utcnow().isoformat(),
-        "sessions": [dict(r) for r in rows],
-        "credit_balance": credit_balance,
-        "data_retained_until": "90 days after last activity",
-    }
