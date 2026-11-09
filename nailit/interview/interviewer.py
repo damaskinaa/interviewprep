@@ -136,8 +136,8 @@ def persona(state):
             f"Probing style: {company.get('probing_style', '')}. Temperament: {temperament.get('behaviour', '')}")
 
 
-def _say(state, instruction, fallback):
-    if PLAIN_LINES.get():
+def _say(state, instruction, fallback, plain_ok=True):
+    if plain_ok and PLAIN_LINES.get():
         return fallback
     try:
         return ask_llm(f"{INTERVIEWER_RULES}\n{persona(state)}\n\n{instruction}", max_tokens=200, retries=1).strip() or fallback
@@ -345,7 +345,7 @@ def answer(state, text, seconds=None, pre_answer_silence_s=None, lib=None):
                          "closing")
         state["candidate_questions"] += 1
         reply = _say(state, f"The candidate asks: {text}\nAnswer realistically and briefly as this interviewer, "
-                            "then ask if they have anything else.", "Good question. Anything else?")
+                            "then ask if they have anything else.", "Good question. Anything else?", plain_ok=False)
         return _turn(state, reply, "answer")
     if state["phase"] == "closing":
         state["phase"] = "done"
