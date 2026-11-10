@@ -55,10 +55,15 @@ def _cache(kind, key):
     return path
 
 
+OFFLINE = {"on": False}
+
+
 def cached(kind, key, fetch):
     path = _cache(kind, key)
     if path.exists():
         return json.loads(path.read_text())
+    if OFFLINE["on"] and kind != "extract":
+        return None
     value = fetch()
     if value is not None:
         path.write_text(json.dumps(value))
@@ -208,16 +213,20 @@ Source text:
 
 def extract(text, title):
     from nailit.answers import ai
-    out = {"questions": [], "answers": []}
+    out, failed, tried = {"questions": [], "answers": []}, 0, 0
     for start in range(0, min(len(text), 96000), 16000):
         chunk = text[start:start + 16000]
-        if len(chunk) < 300:
+        if len(chunk) < 300 and start:
             continue
+        tried += 1
         data = ai.chat(EXTRACT_MODEL, EXTRACT_PROMPT.format(roles=", ".join(ROLES[:5]), title=title, text=chunk),
-                       json_mode=True, effort="low") or {}
+                       json_mode=True, effort="low", thinking=False)
+        if not data:
+            failed += 1
+            continue
         out["questions"] += data.get("questions") or []
         out["answers"] += data.get("answers") or []
-    return out
+    return None if tried and failed == tried else out  # None is not cached, so a failed source is retried next run
 
 
 def embed(texts):
@@ -254,6 +263,23 @@ def cluster(items, threshold=0.86):  # bge-small scale (was 0.84 on OpenAI)
     return sorted(canon, key=lambda c: -c["frequency"])
 
 
+def cached_docs():
+    """Every cached page and transcript, deduplicated by URL and by normalised opening text (mirrors and reposts)."""
+    seen_url, seen_text, docs = set(), set(), []
+    for kind in ("page", "video"):
+        for path in sorted((OUT / "raw" / kind).glob("*.json")):
+            doc = json.loads(path.read_text())
+            if not doc or len(doc.get("text", "")) <= 500:
+                continue
+            key = hashlib.sha1(re.sub(r"\W+", " ", doc["text"].lower())[:3000].encode()).hexdigest()
+            if doc["url"] in seen_url or key in seen_text:
+                continue
+            seen_url.add(doc["url"])
+            seen_text.add(key)
+            docs.append(doc)
+    return docs
+
+
 def library_seed():
     lib = library.load_library()
     questions, ask = library._questions(lib["questions"])
@@ -278,7 +304,12 @@ def main():
     parser.add_argument("--max-videos", type=int, default=90)
     parser.add_argument("--youtube", action="store_true", help="free YouTube search + captions (yt-dlp, youtube-transcript-api)")
     parser.add_argument("--yt-delay", type=float, default=8.0, help="seconds between caption requests")
+    parser.add_argument("--cap", type=float, default=2.0, help="hard LLM spending cap in USD for extraction")
+    parser.add_argument("--offline", action="store_true", help="use cached searches, pages and transcripts only")
     args = parser.parse_args()
+    from nailit.answers import ai
+    ai.set_cap(args.cap)
+    OFFLINE["on"] = args.offline
     OUT.mkdir(parents=True, exist_ok=True)
     budget, http, log = Budget(args.budget), httpx.Client(timeout=90), []
 
@@ -355,15 +386,30 @@ def main():
         except Exception as error:  # noqa: BLE001
             log.append(f"transcript failed: {vid}: {error}")
 
-    with ThreadPoolExecutor(4) as pool:
-        docs = [d for d in pool.map(get_page, pages) if d and len(d.get("text", "")) > 500]
-    with ThreadPoolExecutor(1 if args.youtube else 2) as pool:
-        docs += [d for d in pool.map(get_video, vids) if d and len(d.get("text", "")) > 500]
-    docs += [{"url": s["url"], "title": s["title"], "text": s["text"]} for s in snippets if len(s.get("text", "")) > 80]
+    if args.offline:
+        docs = cached_docs()
+    else:
+        with ThreadPoolExecutor(4) as pool:
+            docs = [d for d in pool.map(get_page, pages) if d and len(d.get("text", "")) > 500]
+        with ThreadPoolExecutor(1 if args.youtube else 2) as pool:
+            docs += [d for d in pool.map(get_video, vids) if d and len(d.get("text", "")) > 500]
+    seen_snippets = set()
+    for snip in snippets:
+        if len(snip.get("text", "")) > 80 and snip["url"] not in seen_snippets:
+            seen_snippets.add(snip["url"])
+            docs.append({"url": snip["url"], "title": snip["title"], "text": snip["text"]})
 
     # 3. extract
     def do_extract(doc):
-        return doc, cached("extract", doc["url"] + str(len(doc["text"])), lambda: extract(doc["text"], doc.get("title", "")))
+        if stop["yes"]:
+            return doc, None
+        try:
+            return doc, cached("extract", doc["url"] + str(len(doc["text"])), lambda: extract(doc["text"], doc.get("title", "")))
+        except ai.BudgetExceeded:
+            stop["yes"] = True
+            return doc, None
+
+    stop = {"yes": False}
 
     rows, answers = library_seed(), []
     with ThreadPoolExecutor(8) as pool:
@@ -399,7 +445,10 @@ def main():
     report += [f"{i + 1}. ({c['frequency']}) {c['question']}" for i, c in enumerate(canon[:40])]
     report += ["", "## Errors", *log[:50]]
     (OUT / "report.md").write_text("\n".join(report))
-    print("\n".join(report[:9]))
+    if stop["yes"]:
+        report.insert(1, f"- STOPPED at the ${args.cap:.2f} cap: some sources were not extracted; rerun to resume")
+    print("\n".join(report[:10]))
+    print(ai.usage_report())
 
 
 if __name__ == "__main__":

@@ -10,10 +10,25 @@ import time
 from nailit.llm import parse_json_object
 
 USAGE = {}
+PRICES = {"claude-opus-5-5": (4, 20), "claude-sonnet-5-5": (2, 10), "claude-haiku-5-5": (0.10, 0.50)}  # $/M tokens
+CAP_USD = float(os.getenv("NAILIT_BUDGET_USD") or 0)  # 0 = no cap; set per run with set_cap()
 EMBED_MODEL = os.getenv("NAILIT_EMBED_MODEL") or "BAAI/bge-small-en-v1.5"
 _anthropic = None
 _openai = None
 _embedder = None
+
+
+class BudgetExceeded(RuntimeError):
+    pass
+
+
+def set_cap(usd):
+    global CAP_USD
+    CAP_USD = float(usd or 0)
+
+
+def spent():
+    return sum((inp * PRICES[m][0] + out * PRICES[m][1]) / 1e6 for m, (inp, out) in USAGE.items() if m in PRICES)
 
 
 def _claude():
@@ -38,17 +53,28 @@ def _track(model, inp, out):
     u[1] += out or 0
 
 
-def chat(model, prompt, json_mode=False, effort="medium", max_tokens=16000, retries=3):
-    """One request. JSON mode asks for a single JSON object and parses it ({} on failure)."""
+def chat(model, prompt, json_mode=False, effort="medium", max_tokens=16000, retries=3, thinking=True):
+    """One request. JSON mode asks for a single JSON object and parses it ({} on failure).
+
+    thinking=False switches thinking off where the model allows it (Haiku 5.5: disabled; Sonnet 5.5: between_tools);
+    Opus 5.5 always thinks, so effort is its only cost control. Raises BudgetExceeded once the run's cap is spent, and
+    re-raises request errors (bad parameter, auth, no credit) instead of quietly returning empty results.
+    """
+    if CAP_USD and spent() >= CAP_USD:
+        raise BudgetExceeded(f"spending cap ${CAP_USD:.2f} reached (spent ${spent():.2f})")
     if json_mode:
         prompt += "\n\nReply with one JSON object only, no prose before or after it."
     for attempt in range(retries):
         try:
             if model.startswith("claude"):
-                import anthropic
+                extra = {}
+                if not thinking and "haiku" in model:
+                    extra["thinking"] = {"type": "disabled"}
+                elif not thinking and "sonnet-5-5" in model:
+                    extra["thinking"] = {"type": "between_tools"}
                 resp = _claude().messages.create(
                     model=model, max_tokens=max_tokens, output_config={"effort": effort},
-                    messages=[{"role": "user", "content": prompt}])
+                    messages=[{"role": "user", "content": prompt}], **extra)
                 _track(model, resp.usage.input_tokens, resp.usage.output_tokens)
                 if resp.stop_reason == "refusal":
                     return {} if json_mode else ""
@@ -60,7 +86,8 @@ def chat(model, prompt, json_mode=False, effort="medium", max_tokens=16000, retr
                 text = (resp.choices[0].message.content or "").strip()
             return parse_json_object(text, {}) if json_mode else text
         except Exception as error:  # noqa: BLE001 - SDKs already retry 429/5xx; this covers parse and transient errors
-            if "credit" in str(error).lower() or "quota" in str(error).lower() or "authentication" in str(error).lower():
+            status = getattr(error, "status_code", None)
+            if status in (400, 401, 402, 403, 404) or any(w in str(error).lower() for w in ("credit", "quota", "authentication")):
                 raise
             time.sleep(3 * (attempt + 1))
     return {} if json_mode else ""
@@ -75,16 +102,19 @@ def embed(texts):
 
 
 def usage_report():
-    prices = {"claude-opus-5-5": (4, 20), "claude-sonnet-5-5": (2, 10), "claude-haiku-5-5": (0.10, 0.50)}
-    total = 0.0
     lines = []
     for model, (inp, out) in USAGE.items():
-        p = prices.get(model)
+        p = PRICES.get(model)
         cost = (inp * p[0] + out * p[1]) / 1e6 if p else None
-        total += cost or 0
         lines.append(f"{model}: {inp:,} in / {out:,} out" + (f" ≈ ${cost:.2f}" if cost is not None else ""))
-    return "\n".join(lines + [f"total (Claude) ≈ ${total:.2f}"])
+    cap = f" of ${CAP_USD:.2f} cap" if CAP_USD else ""
+    return "\n".join(lines + [f"total (Claude) ≈ ${spent():.2f}{cap}"])
 
 
-if __name__ == "__main__":
-    print(json.dumps(chat(os.getenv("NAILIT_ANSWER_WRITER", "claude-opus-5-5"), "Say OK as JSON {\"ok\": true}", json_mode=True)))
+if __name__ == "__main__":  # smoke test: one tiny call per model, about $0.01 in all
+    from nailit.config import load_secrets
+    load_secrets()
+    for name in ("claude-haiku-5-5", "claude-sonnet-5-5", "claude-opus-5-5"):
+        print(name, json.dumps(chat(name, 'Reply {"ok": true}', json_mode=True, effort="low", max_tokens=2000,
+                                    thinking=False)))
+    print(usage_report())
