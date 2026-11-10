@@ -13,11 +13,6 @@ DECK = {"cards": [{"id": "tmay", "question": "Tell me about yourself.", "answer"
                    "type": "opening", "why_it_won": ["specific"], "practice_only": True}], "built": "today"}
 
 
-class FakeChoice:
-    def __init__(self, content):
-        self.message = mock.Mock(content=content)
-
-
 class RehearseTest(unittest.TestCase):
     def setUp(self):
         self.tmp = Path(tempfile.mkdtemp())
@@ -39,9 +34,7 @@ class RehearseTest(unittest.TestCase):
     def test_typed_attempt_is_scored_and_logged(self):
         reply = json.dumps({"score": 8, "moves_hit": ["Opens with the result"], "moves_missed": ["Gives a number"],
                             "one_fix": "Say the number.", "best_line": "I run delivery.", "verdict": "Hire"})
-        fake = mock.Mock()
-        fake.chat.completions.create.return_value = mock.Mock(choices=[FakeChoice(reply)])
-        with mock.patch("openai.OpenAI", return_value=fake):
+        with mock.patch("nailit.answers.ai.chat", return_value=json.loads(reply)):
             result = self.client.post("/rehearse/attempt_text", json={"card_id": "tmay", "text": "I run delivery, we like it."}).json()
         self.assertEqual(result["score"], 8)
         self.assertEqual(result["delivery"]["we"], 1)

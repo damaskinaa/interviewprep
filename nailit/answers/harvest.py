@@ -33,8 +33,8 @@ ROLES = ["Service Delivery Manager", "Operations Manager", "Senior Operations Ma
 COMPANIES = ["Amazon", "Google", "Meta", "Microsoft", "Stripe"]
 NO_SCRAPE = ("linkedin.com", "glassdoor.", "reddit.com", "teamblind.com", "quora.com", "facebook.com", "instagram.com",
              "tiktok.com", "x.com", "twitter.com")
-EXTRACT_MODEL = os.getenv("NAILIT_HARVEST_MODEL") or "gpt-5.4-mini"
-EMBED_MODEL = "text-embedding-3-small"
+EXTRACT_MODEL = os.getenv("NAILIT_HARVEST_MODEL") or "claude-opus-5-5"
+EMBED_MODEL = "local-bge-small"  # see nailit.answers.ai.embed
 OUT = library.home() / "library" / "model_level" / "harvest"
 
 
@@ -207,36 +207,25 @@ Source text:
 
 
 def extract(text, title):
-    from openai import OpenAI
-    client = OpenAI()
+    from nailit.answers import ai
     out = {"questions": [], "answers": []}
     for start in range(0, min(len(text), 96000), 16000):
         chunk = text[start:start + 16000]
         if len(chunk) < 300:
             continue
-        for attempt in range(3):
-            try:
-                resp = client.chat.completions.create(model=EXTRACT_MODEL, response_format={"type": "json_object"},
-                                                      messages=[{"role": "user", "content": EXTRACT_PROMPT.format(
-                                                          roles=", ".join(ROLES[:5]), title=title, text=chunk)}])
-                data = parse_json_object(resp.choices[0].message.content, {}) or {}
-                out["questions"] += data.get("questions") or []
-                out["answers"] += data.get("answers") or []
-                break
-            except Exception:  # noqa: BLE001 - retry, then skip this chunk
-                time.sleep(2 * (attempt + 1))
+        data = ai.chat(EXTRACT_MODEL, EXTRACT_PROMPT.format(roles=", ".join(ROLES[:5]), title=title, text=chunk),
+                       json_mode=True, effort="low") or {}
+        out["questions"] += data.get("questions") or []
+        out["answers"] += data.get("answers") or []
     return out
 
 
 def embed(texts):
-    from openai import OpenAI
-    client, vectors = OpenAI(), []
-    for i in range(0, len(texts), 500):
-        vectors += [d.embedding for d in client.embeddings.create(model=EMBED_MODEL, input=texts[i:i + 500]).data]
-    return vectors
+    from nailit.answers import ai
+    return ai.embed(texts)
 
 
-def cluster(items, threshold=0.84):
+def cluster(items, threshold=0.86):  # bge-small scale (was 0.84 on OpenAI)
     import numpy as np
     vectors = np.array(embed([i["q"] for i in items]), dtype="float32")
     vectors /= np.linalg.norm(vectors, axis=1, keepdims=True)
@@ -281,6 +270,8 @@ def library_seed():
 
 
 def main():
+    from nailit.config import load_secrets
+    load_secrets()
     parser = argparse.ArgumentParser(description="Deep question harvest")
     parser.add_argument("--budget", type=int, default=1500, help="Firecrawl credit cap")
     parser.add_argument("--max-pages", type=int, default=160)

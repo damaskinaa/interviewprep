@@ -4,6 +4,7 @@ Cards come from ~/NailIt/library/model_level/deck.json (built by nailit.answers.
 practice-only: they're spoken by a different voice from the interviewer, and their numbers are never yours.
 """
 import json
+import os
 import re
 import time
 from pathlib import Path
@@ -24,7 +25,7 @@ SPEAK_STYLE = {
     "answer": "A confident, calm senior candidate answering in an interview. Warm, measured, clear; land the results "
               "with a falling tone and a short pause after numbers. Not salesy.",
 }
-SCORER = "gpt-5.4-mini"
+SCORER = os.getenv("NAILIT_SCORER") or "claude-opus-5-5"
 FILLERS = re.compile(r"\b(um+|uh+|er+|erm|like|you know|basically|sort of|kind of|actually)\b", re.I)
 
 
@@ -157,13 +158,11 @@ def attempt_text(req: TypedAttempt):
 
 
 def _score(c, text, seconds, filled_pauses, audio_name=None, log=True):
-    from openai import OpenAI
+    from nailit.answers import ai
     words = len(text.split())
     try:
-        resp = OpenAI().chat.completions.create(model=SCORER, response_format={"type": "json_object"}, messages=[{
-            "role": "user", "content": SCORE_PROMPT.format(question=c["question"], answer=c["answer"], moves=c.get("moves"),
-                                                           attempt=text, seconds=seconds or "typed")}])
-        result = parse_json_object(resp.choices[0].message.content, {}) or {}
+        result = ai.chat(SCORER, SCORE_PROMPT.format(question=c["question"], answer=c["answer"], moves=c.get("moves"),
+                                                     attempt=text, seconds=seconds or "typed"), json_mode=True, effort="low") or {}
     except Exception as error:  # noqa: BLE001
         raise HTTPException(status_code=502, detail=f"Scoring failed: {error}") from error
     score = max(0, min(10, int(result.get("score") or 0)))

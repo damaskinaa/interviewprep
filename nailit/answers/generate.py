@@ -24,8 +24,8 @@ from pathlib import Path
 from nailit import library
 from nailit.llm import parse_json_object
 
-WRITER = os.getenv("NAILIT_ANSWER_WRITER") or "gpt-5.5"
-JUDGES = [m.strip() for m in (os.getenv("NAILIT_JUDGES") or "gpt-5.4-mini,gpt-5-mini").split(",")]
+WRITER = os.getenv("NAILIT_ANSWER_WRITER") or "claude-opus-5-5"
+JUDGES = [m.strip() for m in (os.getenv("NAILIT_JUDGES") or "claude-opus-5-5").split(",")]
 ML = library.home() / "library" / "model_level"
 DECK = ML / "deck.json"
 
@@ -51,27 +51,9 @@ JUDGE_RUBRIC = ("Judge as a Bar Raiser and hiring committee would. Prefer: answe
                 "decisions, context-first openings, rambling, clichés. Do NOT prefer an answer because it is longer.")
 
 
-def _client():
-    from openai import OpenAI
-    return OpenAI()
-
-
-USAGE = {}
-
-
 def chat(model, prompt, json_mode=False, retries=3):
-    for attempt in range(retries):
-        try:
-            kwargs = {"response_format": {"type": "json_object"}} if json_mode else {}
-            resp = _client().chat.completions.create(model=model, messages=[{"role": "user", "content": prompt}], **kwargs)
-            u = USAGE.setdefault(model, [0, 0])
-            u[0] += resp.usage.prompt_tokens
-            u[1] += resp.usage.completion_tokens
-            text = resp.choices[0].message.content or ""
-            return parse_json_object(text, {}) if json_mode else text.strip()
-        except Exception:  # noqa: BLE001 - retry with backoff, then give up on this call
-            time.sleep(3 * (attempt + 1))
-    return {} if json_mode else ""
+    from nailit.answers import ai
+    return ai.chat(model, prompt, json_mode=json_mode, effort="high" if model == WRITER else "medium", retries=retries)
 
 
 def story_bank():
@@ -222,11 +204,11 @@ def attach_samples(items):
     qv /= np.linalg.norm(qv, axis=1, keepdims=True)
     sims = qv @ sv.T
     for index, item in enumerate(items):
-        best = [int(k) for k in sims[index].argsort()[::-1][:2] if sims[index][k] > 0.85]
+        best = [int(k) for k in sims[index].argsort()[::-1][:2] if sims[index][k] > 0.88]  # bge-small scale
         item["_samples"] = [samples[k] for k in best if len(samples[k].get("answer", "")) > 200]
 
 
-def merge_similar(items, existing, threshold=0.76):
+def merge_similar(items, existing, threshold=0.84):  # bge-small scale (was 0.76 on OpenAI)
     """Drop questions that mean the same as a more frequent one (or one already in the deck); keep their phrasing."""
     if not items:
         return items
@@ -245,6 +227,8 @@ def merge_similar(items, existing, threshold=0.76):
 
 
 def main():
+    from nailit.config import load_secrets
+    load_secrets()
     parser = argparse.ArgumentParser(description="Build the rehearsal deck")
     parser.add_argument("--questions", default="harvest", choices=["harvest", "library"])
     parser.add_argument("--limit", type=int, default=60)
@@ -267,7 +251,8 @@ def main():
     deck["built"] = time.strftime("%Y-%m-%d %H:%M")
     DECK.write_text(json.dumps(deck, indent=1))
     print(f"deck: {len(deck['cards'])} cards → {DECK}")
-    print("tokens by model (input, output):", json.dumps(USAGE))
+    from nailit.answers import ai
+    print(ai.usage_report())
 
 
 if __name__ == "__main__":
