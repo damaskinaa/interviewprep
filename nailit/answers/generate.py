@@ -25,7 +25,7 @@ from nailit import library
 from nailit.llm import parse_json_object
 
 WRITER = os.getenv("NAILIT_ANSWER_WRITER") or "claude-opus-5-5"
-JUDGES = [m.strip() for m in (os.getenv("NAILIT_JUDGES") or "claude-opus-5-5").split(",")]
+JUDGES = [m.strip() for m in (os.getenv("NAILIT_JUDGES") or "claude-sonnet-5-5").split(",")]
 ML = library.home() / "library" / "model_level"
 DECK = ML / "deck.json"
 

@@ -33,7 +33,7 @@ ROLES = ["Service Delivery Manager", "Operations Manager", "Senior Operations Ma
 COMPANIES = ["Amazon", "Google", "Meta", "Microsoft", "Stripe"]
 NO_SCRAPE = ("linkedin.com", "glassdoor.", "reddit.com", "teamblind.com", "quora.com", "facebook.com", "instagram.com",
              "tiktok.com", "x.com", "twitter.com")
-EXTRACT_MODEL = os.getenv("NAILIT_HARVEST_MODEL") or "claude-opus-5-5"
+EXTRACT_MODEL = os.getenv("NAILIT_HARVEST_MODEL") or "claude-haiku-5-5"
 EMBED_MODEL = "local-bge-small"  # see nailit.answers.ai.embed
 OUT = library.home() / "library" / "model_level" / "harvest"
 
