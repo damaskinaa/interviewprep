@@ -57,6 +57,31 @@ JUDGE_RUBRIC = ("Judge as a Bar Raiser and hiring committee would. Prefer: answe
 ROLE_SETTINGS = {"writer": ("medium", True), "drafter": ("medium", True), "judge": ("low", False), "helper": ("low", False)}
 
 
+DIRECT = re.compile(r"salary|compensation|pay expect|notice period|start date|relocat|software|tools? (do|have) you|"
+                    r"which tools|certificat|questions for (us|me)|availability|visa|work authori", re.I)
+DIRECT_RULES = {
+    "salary": ("Market: Dublin, Ireland, euros. Researched 2026 bands (Morgan McKinley / Payscale): Service Delivery "
+               "Manager about EUR 75-90k base; Senior Operations / Programme Manager about EUR 100-120k, senior programme "
+               "roles up to EUR 110-150k. Give a researched range anchored slightly above the role's midpoint, say it is "
+               "based on market data for the role in Dublin, keep it flexible on total package (bonus, pension, equity, "
+               "learning budget), and hand the question back ('what band have you budgeted?'). 60-90 words. NO story, "
+               "NO achievements, NO SLA numbers."),
+    "tools": ("Name the actual tools plainly first (e.g. Jira, Confluence, Smartsheet, MS Project, Excel / Power BI, "
+              "ServiceNow or Zendesk, SharePoint), say what each was used for in one clause, then one sentence on how you "
+              "pick tools (fit to the process, adoption). 70-110 words. No long story."),
+    "other": "Answer the literal question directly and briefly, 50-110 words. No story unless it is the point.",
+}
+
+
+def direct_rule(question):
+    q = question.lower()
+    if re.search(r"salary|compensation|pay expect", q):
+        return DIRECT_RULES["salary"]
+    if re.search(r"software|tool", q):
+        return DIRECT_RULES["tools"]
+    return DIRECT_RULES["other"] if DIRECT.search(q) else None
+
+
 def chat(model, prompt, json_mode=False, retries=3, role="drafter"):
     from nailit.answers import ai
     effort, thinking = ROLE_SETTINGS[role]
@@ -109,6 +134,9 @@ def write_candidates(item, stories, existing):
                         "e.g. 'why this company')? Reply JSON {\"best\":\"M..|none\",\"second\":\"M..|none\",\"type\":"
                         "\"behavioural|motivation|failure|weakness|strength|situational|planning|opening|hard_skills|"
                         "closing|negotiation|self_assessment|presentation\"}", json_mode=True, role="helper") or {}
+    rule = direct_rule(item["question"])
+    if rule:
+        pick = {**pick, "best": "none", "second": "none"}
     cands = []
     for slot, story_id in (("A", pick.get("best")), ("B", pick.get("second"))):
         story = stories.get(story_id or "", "")
@@ -117,6 +145,8 @@ def write_candidates(item, stories, existing):
                     if story else "Answer directly (no story needed); be specific to an operations/programme leader.")
         if slot == "B" and not story:
             strategy = "Use a different structure from a typical answer: Statement-Explanation-Illustration, compressed and sharp."
+        if rule:
+            strategy = rule + (" Variant: a different wording and order." if slot == "B" else "")
         text = chat(DRAFTER, f"{PERSONA}\n\n{STYLE}\n\nQuestion: {item['question']}\n\n{strategy}\n\nStory to use:\n{story or '(none)'}")
         echo = text and text.lower().startswith(" ".join(item["question"].lower().split()[3:7])[:25])
         if text and (TELLS.search(text) or echo):
@@ -173,6 +203,7 @@ def build_card(item, stories, existing):
     best = ranked[0]
     final = chat(WRITER, f"{PERSONA}\n\n{STYLE}\n\nQuestion: {item['question']}\n\nThis answer won a judged tournament "
                          f"against {len(cands) - 1} alternatives:\n{best['text']}\n\nJudges' reasons: {best['reasons'][:2]}\n\n"
+                         + (f"Rules for this question: {direct_rule(item['question'])}\n" if direct_rule(item['question']) else "") +
                          "1. Polish it into the final spoken answer: keep what made it win, keep the story and every fact and "
                          "number (add none), fix anything that breaks the style rules, tighten weak sentences.\n"
                          "2. As a Bar Raiser, ask the 3 hardest follow-ups (one counterfactual 'what would you do differently', "
@@ -279,15 +310,23 @@ def main():
     parser.add_argument("--limit", type=int, default=60)
     parser.add_argument("--min-frequency", type=int, default=1)
     parser.add_argument("--cap", type=float, default=DEFAULT_CAP_USD, help="hard spending cap in USD; the run stops there")
+    parser.add_argument("--redo", default="", help="regex: rebuild deck cards whose question matches (e.g. 'salary|software')")
     parser.add_argument("--dry-run", action="store_true", help="no API calls: count calls and estimate cost")
     args = parser.parse_args()
     from nailit.answers import ai
     ai.set_cap(args.cap)
     items = [q for q in questions(args.questions, 10_000) if q.get("frequency", 1) >= args.min_frequency][: args.limit * 3]
     deck = json.loads(DECK.read_text()) if DECK.exists() else {"cards": []}
-    done = {c["question"].lower() for c in deck["cards"]}
-    items = [i for i in items if i["question"].lower() not in done]
-    items = merge_similar(items, [c["question"] for c in deck["cards"]])[: args.limit]
+    if args.redo:
+        pattern = re.compile(args.redo, re.I)
+        redo = [c for c in deck["cards"] if pattern.search(c["question"])]
+        deck["cards"] = [c for c in deck["cards"] if not pattern.search(c["question"])]
+        items = [{k: c.get(k) for k in ("id", "question", "variants", "frequency", "roles", "companies", "type")} for c in redo]
+        print(f"redo: {len(items)} cards")
+    if not args.redo:
+        done = {c["question"].lower() for c in deck["cards"]}
+        items = [i for i in items if i["question"].lower() not in done]
+        items = merge_similar(items, [c["question"] for c in deck["cards"]])[: args.limit]
     attach_samples(items)
     stories, existing = story_bank(), role_answers()
     if args.dry_run:
