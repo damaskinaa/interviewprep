@@ -6,7 +6,7 @@ from pathlib import Path
 from dotenv import load_dotenv
 
 KEYCHAIN_SERVICE = "nailit"
-SECRET_NAMES = ("OPENAI_API_KEY", "OPENAI_TTS_API_KEY", "TAVILY_API_KEY", "ANTHROPIC_API_KEY")
+SECRET_NAMES = ("OPENAI_API_KEY", "OPENAI_TTS_API_KEY", "TAVILY_API_KEY", "ANTHROPIC_API_KEY", "TENSORX_API_KEY")
 
 
 def keychain_secret(name: str) -> str:

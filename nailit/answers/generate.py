@@ -24,10 +24,10 @@ from pathlib import Path
 from nailit import library
 from nailit.llm import parse_json_object
 
-WRITER = os.getenv("NAILIT_ANSWER_WRITER") or "claude-opus-5-5"     # final polish of the winner + follow-ups only
-DRAFTER = os.getenv("NAILIT_DRAFTER") or "claude-sonnet-5-5"         # candidate drafts
-JUDGES = [m.strip() for m in (os.getenv("NAILIT_JUDGES") or "claude-sonnet-5-5").split(",")]
-HELPER = os.getenv("NAILIT_HELPER") or "claude-haiku-5-5"            # story pick, key moves (small structured tasks)
+WRITER = os.getenv("NAILIT_ANSWER_WRITER") or "tx:moonshotai/kimi-k3.1-pro"     # final polish of the winner + follow-ups only
+DRAFTER = os.getenv("NAILIT_DRAFTER") or "tx:deepseek/deepseek-v4-pro-0813"         # candidate drafts
+JUDGES = [m.strip() for m in (os.getenv("NAILIT_JUDGES") or "tx:z-ai/glm-5.3").split(",")]
+HELPER = os.getenv("NAILIT_HELPER") or "tx:deepseek/deepseek-v4.1-flash-1017"            # story pick, key moves (small structured tasks)
 DEFAULT_CAP_USD = 38.0
 ML = library.home() / "library" / "model_level"
 DECK = ML / "deck.json"

@@ -39,6 +39,19 @@ def _claude():
     return _anthropic
 
 
+TENSORX_BASE = os.getenv("TENSORX_BASE_URL") or "https://api.tensorx.ai/v1"
+_tensorx = None
+
+
+def _tx():
+    """TensorX: OpenAI-compatible API; models are named "tx:<model id>" in this module."""
+    global _tensorx
+    if _tensorx is None:
+        from openai import OpenAI
+        _tensorx = OpenAI(api_key=os.environ["TENSORX_API_KEY"], base_url=TENSORX_BASE, max_retries=4)
+    return _tensorx
+
+
 def _gpt():
     global _openai
     if _openai is None:
@@ -98,7 +111,14 @@ def chat(model, prompt, json_mode=False, effort="medium", max_tokens=16000, retr
         prompt += "\n\nReply with one JSON object only, no prose before or after it."
     for attempt in range(retries):
         try:
-            if model.startswith("claude") and BACKEND == "cli":
+            if model.startswith("tx:"):
+                kwargs = {"response_format": {"type": "json_object"}} if json_mode else {}
+                resp = _tx().chat.completions.create(model=model[3:], messages=[{"role": "user", "content": prompt}],
+                                                     max_tokens=max_tokens, **kwargs)
+                _track(model, resp.usage.prompt_tokens, resp.usage.completion_tokens)
+                text = (resp.choices[0].message.content or "").strip()
+                text = text.split("</think>")[-1].strip()  # reasoning models may inline their thinking
+            elif model.startswith("claude") and BACKEND == "cli":
                 text = _cli(model, prompt, effort)
             elif model.startswith("claude"):
                 extra = {}
@@ -150,6 +170,11 @@ def usage_report():
 if __name__ == "__main__":  # smoke test: one tiny call per model, about $0.01 in all
     from nailit.config import load_secrets
     load_secrets()
+    import sys
+    if "--tensorx-models" in sys.argv:  # list the models your TensorX key can use
+        for m in sorted(x.id for x in _tx().models.list().data):
+            print(m)
+        raise SystemExit
     print("backend:", BACKEND)
     for name in ("claude-haiku-5-5", "claude-sonnet-5-5", "claude-opus-5-5"):
         print(name, json.dumps(chat(name, 'Reply {"ok": true}', json_mode=True, effort="low", max_tokens=2000,

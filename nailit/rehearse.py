@@ -25,7 +25,7 @@ SPEAK_STYLE = {
     "answer": "A confident, calm senior candidate answering in an interview. Warm, measured, clear; land the results "
               "with a falling tone and a short pause after numbers. Not salesy.",
 }
-SCORER = os.getenv("NAILIT_SCORER") or "claude-opus-5-5"
+SCORER = os.getenv("NAILIT_SCORER") or "tx:z-ai/glm-5.3"
 FILLERS = re.compile(r"\b(um+|uh+|er+|erm|like|you know|basically|sort of|kind of|actually)\b", re.I)
 
 
