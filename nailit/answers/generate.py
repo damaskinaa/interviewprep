@@ -26,7 +26,7 @@ from nailit.llm import parse_json_object
 
 WRITER = os.getenv("NAILIT_ANSWER_WRITER") or "tx:moonshotai/kimi-k3.1-pro"     # final polish of the winner + follow-ups only
 DRAFTER = os.getenv("NAILIT_DRAFTER") or "tx:deepseek/deepseek-v4-pro-0813"         # candidate drafts
-JUDGES = [m.strip() for m in (os.getenv("NAILIT_JUDGES") or "tx:z-ai/glm-5.3").split(",")]
+JUDGES = [m.strip() for m in (os.getenv("NAILIT_JUDGES") or "tx:z-ai/glm-5.3,tx:qwen/qwen3.8-2.4t-a95b").split(",")]
 HELPER = os.getenv("NAILIT_HELPER") or "tx:deepseek/deepseek-v4.1-flash-1017"            # story pick, key moves (small structured tasks)
 DEFAULT_CAP_USD = 38.0
 ML = library.home() / "library" / "model_level"
