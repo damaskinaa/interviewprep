@@ -47,6 +47,38 @@ def _gpt():
     return _openai
 
 
+CLI_MODELS = {"claude-haiku-5-5": "haiku", "claude-sonnet-5-5": "sonnet", "claude-opus-5-5": "opus"}
+BACKEND = os.getenv("NAILIT_LLM_BACKEND") or "cli"  # "cli" = Claude Code on your Claude plan (no API key); "api" = SDK
+
+
+class CLIError(RuntimeError):
+    pass
+
+
+def _cli(model, prompt, effort):
+    """One headless Claude Code call (`claude -p`): uses your signed-in Claude plan, no tools, no project context."""
+    import subprocess
+    import tempfile
+    cmd = ["claude", "-p", "--model", CLI_MODELS.get(model, model), "--effort", effort, "--tools", "",
+           "--strict-mcp-config", "--no-session-persistence", "--output-format", "json",
+           "--system-prompt", "You are a precise assistant. Follow the user's instructions exactly."]
+    with tempfile.TemporaryDirectory() as cwd:  # empty folder: no CLAUDE.md or project files leak into the prompt
+        run = subprocess.run(cmd, input=prompt, capture_output=True, text=True, timeout=600, cwd=cwd)
+    try:
+        data = json.loads(run.stdout)
+    except json.JSONDecodeError as error:
+        raise CLIError(f"claude -p failed: {(run.stderr or run.stdout)[:300]}") from error
+    if data.get("is_error"):
+        message = str(data.get("result"))
+        if any(w in message.lower() for w in ("authenticate", "login", "limit", "credit")):
+            raise PermissionError(f"claude -p: {message}")  # not retried: sign in, or wait for the usage limit to reset
+        raise CLIError(f"claude -p: {message}")
+    usage = data.get("usage") or {}
+    _track("cli:" + CLI_MODELS.get(model, model), usage.get("input_tokens", 0) + usage.get("cache_read_input_tokens", 0)
+           + usage.get("cache_creation_input_tokens", 0), usage.get("output_tokens", 0))
+    return (data.get("result") or "").strip()
+
+
 def _track(model, inp, out):
     u = USAGE.setdefault(model, [0, 0])
     u[0] += inp or 0
@@ -66,7 +98,9 @@ def chat(model, prompt, json_mode=False, effort="medium", max_tokens=16000, retr
         prompt += "\n\nReply with one JSON object only, no prose before or after it."
     for attempt in range(retries):
         try:
-            if model.startswith("claude"):
+            if model.startswith("claude") and BACKEND == "cli":
+                text = _cli(model, prompt, effort)
+            elif model.startswith("claude"):
                 extra = {}
                 if not thinking and "haiku" in model:
                     extra["thinking"] = {"type": "disabled"}
@@ -87,7 +121,7 @@ def chat(model, prompt, json_mode=False, effort="medium", max_tokens=16000, retr
             return parse_json_object(text, {}) if json_mode else text
         except Exception as error:  # noqa: BLE001 - SDKs already retry 429/5xx; this covers parse and transient errors
             status = getattr(error, "status_code", None)
-            if status in (400, 401, 402, 403, 404) or any(w in str(error).lower() for w in ("credit", "quota", "authentication")):
+            if isinstance(error, PermissionError) or status in (400, 401, 402, 403, 404) or any(w in str(error).lower() for w in ("credit", "quota", "authentication")):
                 raise
             time.sleep(3 * (attempt + 1))
     return {} if json_mode else ""
@@ -108,12 +142,15 @@ def usage_report():
         cost = (inp * p[0] + out * p[1]) / 1e6 if p else None
         lines.append(f"{model}: {inp:,} in / {out:,} out" + (f" ≈ ${cost:.2f}" if cost is not None else ""))
     cap = f" of ${CAP_USD:.2f} cap" if CAP_USD else ""
+    if BACKEND == "cli":
+        return "\n".join(lines + ["backend: Claude Code on your Claude plan (no API charges; counts toward your plan's usage limits)"])
     return "\n".join(lines + [f"total (Claude) ≈ ${spent():.2f}{cap}"])
 
 
 if __name__ == "__main__":  # smoke test: one tiny call per model, about $0.01 in all
     from nailit.config import load_secrets
     load_secrets()
+    print("backend:", BACKEND)
     for name in ("claude-haiku-5-5", "claude-sonnet-5-5", "claude-opus-5-5"):
         print(name, json.dumps(chat(name, 'Reply {"ok": true}', json_mode=True, effort="low", max_tokens=2000,
                                     thinking=False)))
