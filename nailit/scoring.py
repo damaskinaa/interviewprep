@@ -99,7 +99,7 @@ Reply JSON {{"on_topic": true or false (does it answer this question at all?),
 "one_fix": "the single most valuable change for the next attempt, as a spoken-coach instruction of at most 25 words"}}"""
 
 
-def score(card, text, level=1, judge=None):
+def score(card, text, level=1, judge=None, timeout=40):
     """Returns {score, quality, fidelity, rules[], moves_hit, moves_missed, one_fix, best_line, verdict, on_topic}."""
     from nailit.answers import ai
     from nailit.rehearse import SCORER
@@ -112,7 +112,7 @@ def score(card, text, level=1, judge=None):
                   if moves else "")
     reply = ai.chat(judge or SCORER, PROMPT.format(
         question=card["question"], rules="\n".join(f"{rid}: {all_rules.get(rid, SHORT.get(rid, ''))}" for rid in chosen),
-        model_block=model_block, attempt=text, moves_keys=moves_keys), json_mode=True, effort="low", timeout=40) or {}
+        model_block=model_block, attempt=text, moves_keys=moves_keys), json_mode=True, effort="low", timeout=timeout) or {}
     if not reply.get("rules"):
         raise RuntimeError("the scoring model returned no rule verdicts")
     overrides, results, total, weight = code_checks(text, chosen), [], 0.0, 0.0
