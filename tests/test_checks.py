@@ -41,6 +41,7 @@ class StructureTest(unittest.TestCase):
     def test_applies_to_is_optional(self):
         checks = [{"id": "c", "label": "C", "rubric_rule": "R1.1", "severity": "warn"}]
         self.assertEqual(structure.applicable(checks, "behavioural"), checks)
+        self.assertEqual(structure.applicable([{**checks[0], "applies_to": []}], "behavioural"), [])
 
     def test_missing_or_malformed_verdicts_are_not_failures(self):
         self.assertEqual(structure.check(self.lib, "x", "behavioural", ask=lambda p, **_: {"checks": "?"}), [])

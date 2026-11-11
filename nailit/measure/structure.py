@@ -18,7 +18,7 @@ with one entry for every check id above."""
 
 
 def applicable(checks, question_type):
-    scopes = [(c, c.get("applies_to") or ["all"]) for c in checks]
+    scopes = [(c, c.get("applies_to", ["all"])) for c in checks]
     return [c for c, applies in scopes if "all" in applies or question_type in applies]
 
 
