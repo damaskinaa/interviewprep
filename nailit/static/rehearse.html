@@ -58,6 +58,7 @@
   .q-meta { display: flex; gap: 10px; align-items: center; color: var(--faint); font-size: .85rem; margin-bottom: 10px; }
   .badge { background: var(--amber-soft); color: var(--amber); border-radius: 999px; padding: 3px 10px; font-weight: 600; font-size: .75rem; }
   .question { font: 600 2.05rem/1.25 Fraunces, Georgia, serif; letter-spacing: -.015em; margin: 0 0 6px; }
+  .variants { color: var(--soft); font-size: .95rem; margin: 0 0 10px; line-height: 1.45; }
   .speaker { display: flex; align-items: center; gap: 10px; color: var(--soft); font-size: .9rem; margin: 18px 0 10px; }
   .orb { width: 34px; height: 34px; border-radius: 50%; display: grid; place-items: center; font-weight: 700; font-size: .8rem; }
   .orb.i { background: var(--indigo-soft); color: var(--indigo); }
@@ -156,6 +157,7 @@
     <div class="panel">
       <div class="q-meta"><span class="badge" id="qType">question</span><span id="qFreq"></span></div>
       <p class="question" id="question">…</p>
+      <p class="variants" id="variants" hidden></p>
 
       <div id="modelBlock">
         <div class="speaker" id="spk"><div class="orb m">MC</div><span id="spkText">Model candidate</span></div>
@@ -285,6 +287,9 @@ async function showCard() {
   $("modelBlock").style.display = "block";
   $("typed").style.display = "none"; $("sendTyped").style.display = "none";
   $("question").textContent = c.question;
+  const vs = (c.variants || []).slice(0, 4);
+  $("variants").hidden = !vs.length;
+  $("variants").textContent = vs.length ? "Also asked as: " + vs.map(v => "“" + v + "”").join(" · ") + ((c.variants || []).length > 4 ? " …" : "") : "";
   $("qType").textContent = TYPE_NAMES[c.type] || c.type || "question";
   $("qFreq").textContent = c.frequency > 1 ? `asked in ${c.frequency} sources` : "";
   const parts = renderModel(c.answer);

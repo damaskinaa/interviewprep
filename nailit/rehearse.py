@@ -76,9 +76,16 @@ def deck(kind: str = "", limit: int = 400):
     for row in history():
         best[row["card_id"]] = max(best.get(row["card_id"], 0), row["score"])
     TYPE_FIX = {"behavioral": "behavioural"}
+    norm = lambda q: re.sub(r"[^a-z0-9]+", " ", q.lower().replace("résumé", "resume")).replace(" us ", " me ").strip()
     for c in data["cards"]:
         c["type"] = TYPE_FIX.get(c.get("type"), c.get("type"))
-    cards = [{k: c.get(k) for k in ("id", "question", "answer", "moves", "hook", "frequency", "type", "why_it_won", "followups",
+        seen, variants = {norm(c["question"])}, []
+        for v in c.get("variants") or []:  # show only genuinely different wordings
+            if norm(v) not in seen:
+                seen.add(norm(v))
+                variants.append(v)
+        c["variants"] = variants
+    cards = [{k: c.get(k) for k in ("id", "question", "answer", "moves", "hook", "frequency", "type", "why_it_won", "followups", "variants",
                                      "roles", "companies", "win_rate", "candidates", "origin")} | {"best_score": best.get(c["id"])}
              for c in data["cards"] if not kind or c.get("type") == kind]
     return {"cards": cards[:limit], "built": data.get("built"), "total": len(data["cards"]),

@@ -118,6 +118,10 @@ def chat(model, prompt, json_mode=False, effort="medium", max_tokens=16000, retr
                 _track(model, resp.usage.prompt_tokens, resp.usage.completion_tokens)
                 text = (resp.choices[0].message.content or "").strip()
                 text = text.split("</think>")[-1].strip()  # reasoning models may inline their thinking
+                if resp.choices[0].finish_reason == "length" or (json_mode and not parse_json_object(text, {})):
+                    # long thinking ran out of room, or the JSON came back broken: retry with more room
+                    max_tokens = min(max_tokens * 2, 64000)
+                    raise ValueError("truncated or invalid JSON reply")
             elif model.startswith("claude") and BACKEND == "cli":
                 text = _cli(model, prompt, effort)
             elif model.startswith("claude"):

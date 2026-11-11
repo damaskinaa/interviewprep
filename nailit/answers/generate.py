@@ -45,8 +45,8 @@ STYLE = ("Write the answer exactly as spoken in an interview by a top-1% candida
          "first sentence; NEVER name the structure out loud (forbidden: 'the trade-off was', 'the named trade-off', "
          "'the result of the result', 'the lesson I learned', 'the key insight', 'in terms of', 'to summarise', 'STAR'). "
          "Show the trade-off and the knock-on effect in natural words ('I could have X, but…', 'which meant…').")
-TELLS = re.compile(r"(trade-off was|named trade-off|result of (that|the) result|the lesson (i learned|is)|key insight|"
-                   r"to summari[sz]e|in terms of|STAR|situation was|task was|action i took)", re.I)
+TELLS = re.compile(r"(?i:trade-off was|named trade-off|result of (that|the) result|the lesson (i learned|is)|key insight|"
+                   r"to summari[sz]e|in terms of|the situation was|the task was|action i took)|\bSTAR\b")  # STAR only in capitals: 'start' is fine
 JUDGE_RUBRIC = ("Judge as a Bar Raiser and hiring committee would. Prefer: answer first; specific, attributable actions; "
                 "decision and trade-off; numbers with context; resistance or difficulty named; result of the result; "
                 "specific lesson; sounds natural when spoken; would survive follow-ups ('what would you do differently?', "
@@ -57,7 +57,7 @@ JUDGE_RUBRIC = ("Judge as a Bar Raiser and hiring committee would. Prefer: answe
 ROLE_SETTINGS = {"writer": ("medium", True), "drafter": ("medium", True), "judge": ("low", False), "helper": ("low", False)}
 
 
-DIRECT = re.compile(r"salary|compensation|pay expect|notice period|start date|relocat|software|tools? (do|have) you|"
+DIRECT = re.compile(r"salary|compensation|pay expect|earning now|current (pay|salary)|pay history|notice period|start date|relocat|software|tools? (do|have) you|"
                     r"which tools|certificat|questions for (us|me)|availability|visa|work authori", re.I)
 DIRECT_RULES = {
     "salary": ("Market: Dublin, Ireland, euros. Researched 2026 bands (Morgan McKinley / Payscale): Service Delivery "
@@ -69,12 +69,19 @@ DIRECT_RULES = {
     "tools": ("Name the actual tools plainly first (e.g. Jira, Confluence, Smartsheet, MS Project, Excel / Power BI, "
               "ServiceNow or Zendesk, SharePoint), say what each was used for in one clause, then one sentence on how you "
               "pick tools (fit to the process, adoption). 70-110 words. No long story."),
+    "pay_history": ("The interviewer asks about CURRENT or PAST pay. Do not state a figure. Politely decline in one "
+                    "sentence (EU pay-transparency rules discourage pay-history questions; Ireland is still transposing "
+                    "them, so say it as a preference, not a legal threat), then pivot to the expected range for THIS role "
+                    "in Dublin in euros, flexible on total package, and ask what band they have budgeted. 40-70 words. "
+                    "No story, no achievements, never pounds or dollars."),
     "other": "Answer the literal question directly and briefly, 50-110 words. No story unless it is the point.",
 }
 
 
 def direct_rule(question):
     q = question.lower()
+    if re.search(r"earning now|current (pay|salary)|pay history|last compensation|(what|how much) (do|did) you (make|earn)", q):
+        return DIRECT_RULES["pay_history"]
     if re.search(r"salary|compensation|pay expect", q):
         return DIRECT_RULES["salary"]
     if re.search(r"software|tool", q):
@@ -215,14 +222,14 @@ def build_card(item, stories, existing):
     answer = (final.get("answer") or "").strip() or best["text"]
     moves, hook = key_moves(item["question"], answer)
     return {"id": item.get("id") or re.sub(r"[^a-z0-9]+", "_", item["question"].lower())[:60].strip("_"),
-            "question": item["question"], "variants": item.get("variants", [])[:5], "frequency": item.get("frequency", 1),
+            "question": item["question"], "variants": item.get("variants") or [], "frequency": item.get("frequency", 1),
             "roles": item.get("roles", []), "companies": item.get("companies", []),
             "type": {"behavioral": "behavioural"}.get(qtype or item.get("type"), qtype or item.get("type")),
             "answer": answer, "story": best.get("story"), "origin": best["origin"], "win_rate": best["win_rate"],
             "why_it_won": best["reasons"], "moves": moves, "hook": hook,
             "runner_up": ranked[1]["text"] if len(ranked) > 1 else None, "candidates": len(cands),
             "followups": (final.get("followups") or [])[:3], "polished_by": WRITER if final.get("answer") else None,
-            "practice_only": True}
+            "merged": item.get("merged") or [], "practice_only": True}
 
 
 def attach_samples(items):
@@ -310,6 +317,7 @@ def main():
     parser.add_argument("--limit", type=int, default=60)
     parser.add_argument("--min-frequency", type=int, default=1)
     parser.add_argument("--cap", type=float, default=DEFAULT_CAP_USD, help="hard spending cap in USD; the run stops there")
+    parser.add_argument("--redo-unpolished", action="store_true", help="rebuild cards whose final polish failed")
     parser.add_argument("--redo", default="", help="regex: rebuild deck cards whose question matches (e.g. 'salary|software')")
     parser.add_argument("--dry-run", action="store_true", help="no API calls: count calls and estimate cost")
     args = parser.parse_args()
@@ -317,16 +325,21 @@ def main():
     ai.set_cap(args.cap)
     items = [q for q in questions(args.questions, 10_000) if q.get("frequency", 1) >= args.min_frequency][: args.limit * 3]
     deck = json.loads(DECK.read_text()) if DECK.exists() else {"cards": []}
-    if args.redo:
-        pattern = re.compile(args.redo, re.I)
-        redo = [c for c in deck["cards"] if pattern.search(c["question"])]
-        deck["cards"] = [c for c in deck["cards"] if not pattern.search(c["question"])]
-        items = [{k: c.get(k) for k in ("id", "question", "variants", "frequency", "roles", "companies", "type")} for c in redo]
+    from nailit.answers.curate import OFF_TOPIC, is_fragment
+    items = [i for i in items if not OFF_TOPIC.search(i["question"]) and not is_fragment(i["question"])]
+    if args.redo or args.redo_unpolished:
+        pattern = re.compile(args.redo, re.I) if args.redo else None
+        wanted = lambda c: (pattern and pattern.search(c["question"])) or (args.redo_unpolished and not c.get("polished_by"))
+        redo = [c for c in deck["cards"] if wanted(c)]
+        deck["cards"] = [c for c in deck["cards"] if not wanted(c)]
+        items = [{k: c.get(k) for k in ("id", "question", "variants", "frequency", "roles", "companies", "type", "merged")}
+                 for c in redo]
         print(f"redo: {len(items)} cards")
-    if not args.redo:
-        done = {c["question"].lower() for c in deck["cards"]}
+    if not (args.redo or args.redo_unpolished):
+        known = [c["question"] for c in deck["cards"]] + [v for c in deck["cards"] for v in c.get("variants") or []]
+        done = {q.lower() for q in known}
         items = [i for i in items if i["question"].lower() not in done]
-        items = merge_similar(items, [c["question"] for c in deck["cards"]])[: args.limit]
+        items = merge_similar(items, known)[: args.limit]
     attach_samples(items)
     stories, existing = story_bank(), role_answers()
     if args.dry_run:
@@ -353,6 +366,7 @@ def main():
                       f"{card['win_rate']:.0%} · {card['origin'][:40]} · spent ${ai.spent():.2f}", flush=True)
                 if n == 10:
                     print(f"  projection: ${ai.spent() / 10 * len(items):.2f} for {len(items)} cards (cap ${args.cap:.2f})", flush=True)
+    deck["cards"].sort(key=lambda c: -(c.get("frequency") or 1))
     deck["persona"] = PERSONA
     deck["built"] = time.strftime("%Y-%m-%d %H:%M")
     DECK.write_text(json.dumps(deck, indent=1))
