@@ -129,7 +129,10 @@ class TimerTest(unittest.TestCase):
 
     def test_barge_in_ignores_sound_before_the_interviewer_speaks(self):
         words = _words("hm", 0.1) + _words("Sorry, can I add something?", 2.6)
-        self.assertEqual(vox.overlap_user_over_tts_s(3.0, words, tts_start_s=1.0), 0.4)
+        self.assertEqual(vox.overlap_user_over_tts_s(3.0, words, tts_start_s=1.0), 0.35)
+
+    def test_brief_interruption_counts_only_while_speaking(self):
+        self.assertEqual(vox.overlap_user_over_tts_s(6.0, segments=[(1.0, 1.3), (8.0, 9.0)], tts_start_s=0.0), 0.3)
 
     def test_unreadable_audio_keeps_timestamp_metrics(self):
         result = vox.measure_answer(_words("I cut costs by 20 percent.", 0.0), audio="/nonexistent.webm")

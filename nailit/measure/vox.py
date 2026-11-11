@@ -197,11 +197,14 @@ def _since(t, words, segments):
 
 
 def overlap_user_over_tts_s(tts_end_s, words=None, segments=None, tts_start_s=0.0):
-    """Barge-in: how long you spoke over the interviewer's audio (0 if you waited); onsets before it began don't count."""
+    """Barge-in: seconds of your speech inside the interviewer's audio window (0 if you waited)."""
     if tts_end_s is None:
         return None
-    first = speech_after(tts_start_s or 0.0, words, segments)
-    return None if first is None else round(max(0.0, tts_end_s - max(first, tts_start_s or 0.0)), 2)
+    spans = [(w["start"], w["end"]) for w in _content(words)] if words else list(segments or [])
+    if not spans:
+        return None
+    start = tts_start_s or 0.0
+    return round(sum(max(0.0, min(b, tts_end_s) - max(a, start)) for a, b in spans), 2)
 
 
 # ---- audio: pitch and loudness ----
