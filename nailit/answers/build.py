@@ -25,8 +25,8 @@ import yaml
 
 from nailit import guards, scoring
 from nailit.answers import competencies as comp_mod
-from nailit.answers.generate import (DECK, DRAFTER, HELPER, ML, PERSONA, TELLS, WRITER, chat, direct_rule, key_moves,
-                                     story_bank)
+from nailit.answers.generate import (DECK, DRAFTER, HELPER, ML, PERSONA, TELLS, WRITER, attach_samples, chat, direct_rule,
+                                     key_moves, story_bank)
 
 PLAN = ML / "harvest" / "plan_v5.json"
 SECOND_JUDGE = "tx:z-ai/glm-5.3"
@@ -82,11 +82,18 @@ def invented(text, *sources):
 
 # ---------- plan: angles per competency, stories spread across the deck ----------
 
-def angles(comp, items, k):
+def target_angles(mentions):
+    return 4 if mentions >= 150 else 3 if mentions >= 80 else 2 if mentions >= 40 else 1
+
+
+def angles(comp, items, k, existing=()):
     """The k distinct angles interviewers use for this competency, each with the wordings that belong to it."""
     listing = "\n".join(f"{i}. ({q['frequency']}) {q['question']}" for i, q in enumerate(items[:140]))
     reply = chat(DRAFTER, f"Competency: {comp['name']} — tests: {comp['tests']}.\nBelow are interview questions for it, with how "
-                          f"many sources ask each.\n{listing}\n\nPick the {k} most important DISTINCT angles: questions that need a "
+                          f"many sources ask each.\n{listing}\n\n" +
+                          ("These angles already have a card; do not pick them or rewordings of them, and leave their "
+                           "wordings unassigned:\n" + "\n".join("- " + e for e in existing) + "\n\n" if existing else "") +
+                          f"Pick the {k} most important DISTINCT angles: questions that need a "
                           "genuinely different answer from each other, not rewordings. Prefer the most-asked. Then assign every "
                           "listed question number to the angle it is closest to.\nReply JSON {\"angles\": [{\"question\": "
                           "\"the canonical wording, exactly as listed\", \"members\": [numbers]}]}", json_mode=True) or {}
@@ -98,51 +105,81 @@ def angles(comp, items, k):
             out.append({"question": lead["question"],
                         "variants": [m["question"] for m in members if m["question"] != lead["question"]],
                         "frequency": sum(m["frequency"] for m in members) or lead["frequency"]})
-    out = [a for n, a in enumerate(out) if n == 0 or a["frequency"] >= 10]  # a rare angle isn't worth a card
+    out = [a for n, a in enumerate(out) if (n == 0 and not existing) or a["frequency"] >= 8]  # a rare angle isn't worth a card
+    out = [a for a in out if a["question"] not in existing]
+    if existing:
+        return out
     return out or [{"question": items[0]["question"], "variants": [q["question"] for q in items[1:40]],
                     "frequency": sum(q["frequency"] for q in items)}]
 
 
-def make_plan(only=None):
+def make_plan(only=None, legacy=False):
+    """Angles for every competency (extending what an earlier run planned, never redoing it), then stories."""
     comps, _ = comp_mod.load()
     canon = json.loads((ML / "harvest" / "canonical.json").read_text())
     mapping = json.loads(comp_mod.MAP.read_text())
     plan = json.loads(PLAN.read_text()) if PLAN.exists() else {}
-    todo = [c for c in comps if c.get("core") and c["id"] not in plan and (not only or c["id"] in only)]
+    todo = [c for c in comps if not only or c["id"] in only]
 
     def one(comp):
         items = sorted((q for q in canon if mapping.get(q["question"]) == comp["id"]), key=lambda q: -q["frequency"])
         mentions = sum(q["frequency"] for q in items)
+        have = plan.get(comp["id"]) or []
         if comp.get("per_company"):
+            if have:
+                return comp["id"], []
             generic = {"question": "Why do you want to work here?", "variants": [q["question"] for q in items[:40]],
                        "frequency": mentions}
             return comp["id"], [generic] + [{"question": f"Why {c['name']}?", "variants": [], "frequency": mentions,
                                              "company": cid} for cid, c in COMPANIES.items()]
-        return comp["id"], angles(comp, items, 3 if mentions >= 150 else 2 if mentions >= 80 else 1) if items else []
+        missing = target_angles(mentions) - len(have)
+        if missing <= 0 or not items:
+            return comp["id"], []
+        return comp["id"], angles(comp, items, missing, tuple(a["question"] for a in have))
 
     with ThreadPoolExecutor(6) as pool:
         for cid, found in pool.map(one, todo):
-            plan[cid] = found
-            PLAN.write_text(json.dumps(plan, indent=1, ensure_ascii=False))
-    cards = [{**a, "competency": cid} for cid, found in plan.items() for a in found if not only or cid in only]
-    need = [c for c in cards if "stories" not in c]
+            if found:
+                plan[cid] = (plan.get(cid) or []) + found
+                PLAN.write_text(json.dumps(plan, indent=1, ensure_ascii=False))
+    if legacy and DECK.exists():  # older cards no new angle covers are rebuilt through the same pipeline, as they stand
+        planned = {a["question"] for found in plan.values() for a in found}
+        covered = planned | {v for found in plan.values() for a in found for v in a.get("variants") or []}
+        ids = {c["id"] for c in comps}
+        for old in json.loads(DECK.read_text())["cards"]:
+            if old.get("generation") != 2 and old["question"] not in covered and old.get("competency") in ids:
+                plan.setdefault(old["competency"], []).append({"question": old["question"], "variants": old.get("variants") or [],
+                                                               "frequency": old.get("frequency", 1), "legacy": True})
+        PLAN.write_text(json.dumps(plan, indent=1, ensure_ascii=False))
+    need = [{**a, "competency": cid} for cid, found in plan.items() for a in found if "stories" not in a]
     if need:
-        assign_stories(need, {c["id"]: c for c in comps})
-        for cid in plan:
-            for a in plan[cid]:
-                match = next((c for c in need if c["competency"] == cid and c["question"] == a["question"]), None)
-                if match:
-                    a["stories"] = match["stories"]
+        used = {}
+        for found in plan.values():
+            for a in found:
+                for sid in (a.get("stories") or [])[:1]:
+                    used[sid] = used.get(sid, 0) + 1
+        by_id = {c["id"]: c for c in comps}
+        for start in range(0, len(need), 45):
+            batch = need[start:start + 45]
+            assign_stories(batch, by_id, used)
+            for card in batch:
+                for a in plan[card["competency"]]:
+                    if a["question"] == card["question"]:
+                        a["stories"] = card["stories"]
+                for sid in card["stories"][:1]:
+                    used[sid] = used.get(sid, 0) + 1
         PLAN.write_text(json.dumps(plan, indent=1, ensure_ascii=False))
     return [{**a, "competency": cid} for cid, found in plan.items() for a in found if not only or cid in only]
 
 
-def assign_stories(cards, comps):
+def assign_stories(cards, comps, used=None):
     """One call assigns stories to every card at once, so no story carries half the deck."""
     stories = story_bank()
     bank = "\n".join(f"[{k}] " + re.sub(r"\s+", " ", v)[:380] for k, v in stories.items())
     listing = "\n".join(f"{i}. [{comps[c['competency']]['name']}] {c['question']}" for i, c in enumerate(cards))
     reply = chat(WRITER, f"{PERSONA}\n\nStory bank:\n{bank}\n\nInterview questions, by number:\n{listing}\n\n"
+                         + (f"Stories already used elsewhere in the deck (times as first choice): {used}. Prefer stories used "
+                            "less.\n\n" if used else "") +
                          "For each question choose the story that answers it best and a different second choice. Spread the "
                          "stories: no story may be the first choice for more than 4 questions, so that a candidate who is asked "
                          "five questions in a row tells five different stories. Use \"none\" only for questions that need no "
@@ -190,6 +227,10 @@ def brief(card, comp, story, index):
         parts.append("Length: 90 to 140 words. No formula ending.")
     parts.append("Facts: use ONLY facts and numbers from the persona above and the story below. Never invent a number, a "
                  "duration, a company or a product. If you need a figure the story does not give, say it without a figure.")
+    for sample in (card.get("_samples") or [])[:2]:
+        parts.append("A real answer to this question published by a coach or interviewer"
+                     + (f" (their verdict: {sample['verdict'][:160]})" if sample.get("verdict") else "") +
+                     ". Learn what it does well; do NOT copy its facts, numbers or wording:\n" + sample["answer"][:1400])
     parts.append("Story to use:\n" + (story or "(no story: answer directly from the persona)"))
     return "\n\n".join(parts)
 
@@ -276,6 +317,9 @@ def build_card(card, comps, stories, index):
             "win_rate": 1.0, "why_it_won": [], "candidates": len(drafts), "runner_up": drafts[1]["text"] if len(drafts) > 1 else None,
             "moves": moves, "hook": hook, "followups": (final.get("followups") or [])[:3],
             "amazon": comp.get("amazon") or [], "google": comp.get("google") or [], "practice_only": True,
+            "roles": comp.get("roles") or [],
+            "evidence": [{"source": s.get("source"), "verdict": (s.get("verdict") or "")[:200], "excerpt": s["answer"][:400]}
+                         for s in (card.get("_samples") or [])[:2]],
             "refresh_note": ("Before a real interview, replace the company fact with one from the last 30 days."
                              if card.get("company") else None)}
 
@@ -294,9 +338,10 @@ def main():
     parser.add_argument("--only", default="", help="comma-separated competency ids")
     parser.add_argument("--plan", action="store_true", help="show the plan and stop")
     parser.add_argument("--redo", action="store_true", help="rebuild cards that already exist as generation 2")
+    parser.add_argument("--legacy", action="store_true", help="also rebuild older cards that no new angle covers")
     args = parser.parse_args()
     only = {x.strip() for x in args.only.split(",") if x.strip()} or None
-    cards = make_plan(only)
+    cards = make_plan(only, args.legacy)
     comps = {c["id"]: c for c in comp_mod.load()[0]}
     stories = story_bank()
     if args.plan:
@@ -311,6 +356,7 @@ def main():
     done = {c["question"] for c in deck["cards"] if c.get("generation") == 2}
     todo = [(i, c) for i, c in enumerate(cards) if args.redo or c["question"] not in done]
     print(f"{len(todo)} cards to build ({len(cards) - len(todo)} already done)", flush=True)
+    attach_samples([c for _, c in todo])
 
     def run(job):
         index, card = job
@@ -328,14 +374,10 @@ def main():
             else:
                 print(f"✗ {card['competency']:20} {card['question'][:60]} · {built}", flush=True)
     new = {c["question"] for c in deck["cards"] if c.get("generation") == 2}
-    covered = {c["competency"] for c in deck["cards"] if c.get("generation") == 2}
-    planned = {c["competency"]: 0 for c in cards}
-    for c in cards:
-        planned[c["competency"]] += c["question"] in new
-    complete = {cid for cid in covered if planned.get(cid) == sum(1 for c in cards if c["competency"] == cid)}
     variants = {v for c in deck["cards"] if c.get("generation") == 2 for v in c.get("variants") or []}
-    deck["cards"] = [c for c in deck["cards"] if c.get("generation") == 2 or not (
-        c.get("competency") in complete and (c["question"] in variants or c.get("competency") == "why_company"))]
+    retired = [c for c in deck["cards"] if c.get("generation") != 2 and (c["question"] in variants or c["question"] in new
+                                                                          or c.get("competency") == "why_company")]
+    deck["cards"] = [c for c in deck["cards"] if c not in retired]
     deck["cards"].sort(key=lambda c: (c.get("generation") != 2, -(c.get("frequency") or 1)))
     deck["built"] = time.strftime("%Y-%m-%d %H:%M")
     DECK.write_text(json.dumps(deck, indent=1, ensure_ascii=False))

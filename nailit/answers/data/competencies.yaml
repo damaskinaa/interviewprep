@@ -165,6 +165,27 @@ competencies:
    tests: "clarify, options with trade-offs, a decision, when you'd escalate",
    examples: ["What would you do if a critical dependency slipped?", "The program is over budget. What do you do?", "What will your first 90 days look like?"]}
 
+- {id: product_sense, group: role, name: "Product sense and design", rule: R2.9, roles: [Product Manager],
+   google: [Role-related knowledge], meta: [Product sense],
+   tests: "clarify the goal and the user, pick a segment and its problem, options with trade-offs, one recommendation, how you'd know it worked",
+   examples: ["How would you improve our product?", "Design a product for X", "What is your favourite product and why?"]}
+- {id: product_metrics, group: role, name: "Product metrics and execution", rule: R2.12, roles: [Product Manager, Technical Program Manager],
+   google: [General cognitive ability], meta: [Execution],
+   tests: "the goal, the metric tree, a diagnosis path when a metric moves, a decision",
+   examples: ["A key metric dropped 10%. What do you do?", "How would you measure the success of this feature?", "What metrics would you track for X?"]}
+- {id: product_roadmap, group: role, name: "Roadmap, prioritisation of features and product strategy", rule: R2.9, roles: [Product Manager],
+   amazon: [Think Big, Customer Obsession], google: [Role-related knowledge],
+   tests: "who the customer is, what you'd say no to and why, how the roadmap ties to a business outcome",
+   examples: ["How do you prioritise features?", "How do you build a product roadmap?", "Tell me about a product you launched"]}
+- {id: tpm_technical, group: role, name: "Technical judgement without coding", rule: R2.12, roles: [Technical Program Manager, Program Manager],
+   amazon: [Dive Deep, "Are Right, A Lot"], google: [Role-related knowledge],
+   tests: "you can explain how the system works at the level needed to spot risk, ask engineers the right questions and make the trade-off call",
+   examples: ["Explain a technical project you ran to a non-engineer", "How do you earn credibility with engineers?", "Walk me through the architecture of a system you delivered"]}
+- {id: org_scale, group: role, name: "Running the function: org design, P&L and scale", rule: R2.9, roles: [Head of Operations, Director of Operations, Senior Operations Manager],
+   amazon: [Think Big, Ownership, Frugality], google: [Leadership],
+   tests: "how you'd structure the team, what you'd measure, where the money goes, what you'd change in the first two quarters",
+   examples: ["How would you structure the operations function here?", "How do you prepare operations for rapid growth?", "How do you manage a P&L?"]}
+
 - {id: salary_logistics, group: close, name: "Salary and logistics", rule: R2.13,
    tests: "a researched range, flexibility on the package, no pay history",
    examples: ["What are your salary expectations?", "When could you start?", "Are you interviewing elsewhere?"]}

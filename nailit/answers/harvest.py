@@ -29,8 +29,8 @@ from nailit.llm import parse_json_object
 
 ROLES = ["Service Delivery Manager", "Operations Manager", "Senior Operations Manager", "Program Manager",
          "Technical Program Manager", "Head of Operations", "Senior Project Manager", "Business Operations Manager",
-         "Customer Support Operations Manager"]
-COMPANIES = ["Amazon", "Google", "Meta", "Microsoft", "Stripe"]
+         "Customer Support Operations Manager", "Product Manager", "Project Manager", "Director of Operations"]
+COMPANIES = ["Amazon", "Google", "Meta", "Microsoft", "Stripe", "AWS", "Pfizer"]
 NO_SCRAPE = ("linkedin.com", "glassdoor.", "reddit.com", "teamblind.com", "quora.com", "facebook.com", "instagram.com",
              "tiktok.com", "x.com", "twitter.com")
 EXTRACT_MODEL = os.getenv("NAILIT_HARVEST_MODEL") or "tx:deepseek/deepseek-v4.1-flash-1017"
@@ -80,6 +80,16 @@ def web_queries():
     queries += ["Amazon bar raiser interview questions examples", "Amazon leadership principles interview questions list",
                 "Meta program manager partnership interview questions", "Google program manager program sense questions",
                 "head of operations startup interview questions", "fintech operations manager interview questions"]
+    # Real interview reports and rated answers. Glassdoor, Reddit and Blind are never opened: only the search snippet is kept.
+    for company in COMPANIES:
+        queries += [f"{company} interview questions operations manager glassdoor", f"{company} product manager interview questions",
+                    f"{company} behavioral interview best answer example", f"{company} interview experience program manager reddit"]
+    queries += ["non technical program manager interview questions without coding", "technical program manager system design for non engineers interview",
+                "product manager behavioral interview sample answers", "product sense interview questions with strong answers",
+                "product manager metrics interview questions example answers", "project manager interview questions sample answers STAR",
+                "head of operations interview questions sample answers", "director of operations interview questions and best answers",
+                "service delivery manager interview sample answers SLA", "pharma operations manager interview questions Pfizer values",
+                "strong hire answer example leadership principles", "bar raiser example answers rated", "hiring manager rates interview answers operations"]
     return queries
 
 

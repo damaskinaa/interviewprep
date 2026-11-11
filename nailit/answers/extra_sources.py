@@ -17,7 +17,7 @@ from nailit.answers.harvest import _cache, cached
 
 AGENTSITE = "https://interviewing-io.agentsite.network"
 ACED_SITEMAP = "https://www.aced.io/sitemap.txt"
-KEEP = re.compile(r"behavio|leader|manager|program|tpm|operations|star|conflict|tell-me|amazon-leadership", re.I)
+KEEP = re.compile(r"behavio|leader|manager|program|tpm|operations|star|conflict|tell-me|amazon-leadership|product|strategy|execution|estimation", re.I)
 HN_QUERIES = ["behavioral interview program manager", "technical program manager interview", "amazon bar raiser interview",
               "amazon leadership principles interview", "operations manager interview", "meta behavioral interview",
               "google googleyness interview", "engineering manager behavioral interview", "interview loop TPM",
@@ -32,9 +32,13 @@ def agentsite_urls(http):
 
 def aced_urls(http):
     lines = http.get(ACED_SITEMAP, headers=UA, timeout=60, follow_redirects=True).text.split()
-    picked = [u for u in lines if re.search(r"questions\?(type=behavioral|role=(tpm|program-manager|business-ops|product-ops))"
+    roles = "tpm|program-manager|business-ops|product-ops|product-manager|project-manager|operations-manager|bizops"
+    picked = [u for u in lines if re.search(rf"questions\?(type=behavioral|role=({roles}))"
+                                            rf"|questions\?company=(amazon|google|meta|microsoft|stripe|aws|pfizer)[a-z-]*&role=({roles})"
                                             r"|questions\?company=[a-z-]+&role=tpm|amazon-leadership|/tpm$|business-operations", u)]
-    return picked[:60]
+    first = re.compile(r"company=(amazon|google|meta|microsoft|stripe|aws|pfizer)|questions\?(type=behavioral|role=)")
+    picked.sort(key=lambda u: not first.search(u))  # target companies and role pages before other companies' TPM pages
+    return picked[:160]
 
 
 def read(http, url):
