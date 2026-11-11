@@ -334,10 +334,12 @@ def _consistency(state):
         me = library.load_me()
     except library.LibraryError:
         return None
-    current, answers = None, []
+    current, answers, asking = None, [], False
     for turn in state["turns"]:
         current = turn.get("question_id", current)
-        if turn.get("role") == "candidate":
+        if turn.get("role") == "interviewer":
+            asking = turn.get("kind") in ("candidate_questions", "answer")  # your questions to them aren't claims
+        elif not asking:
             answers.append({"text": turn.get("say") or "", "question_id": current})
     cv = library.home() / "me" / "cv.md"
     return consistency.check(answers, me, _library(), cv.read_text(encoding="utf8") if cv.exists() else "",
