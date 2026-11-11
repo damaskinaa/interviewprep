@@ -208,7 +208,7 @@ def fake_mode():
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    parser.add_argument("--round", default="recruiter")
+    parser.add_argument("--round", help="default: recruiter (behavioural with --fake)")
     parser.add_argument("--persona", default="strong", choices=sorted(PERSONAS))
     parser.add_argument("--mode", default="A")
     parser.add_argument("--tts", default="none", choices=["none", "say", "openai"])
@@ -220,9 +220,9 @@ def main():
         http, patches = fake_mode()
     else:
         http = httpx.Client(base_url=BASE, timeout=300)
-    end_round = "recruiter"
+    end_round = "behavioural" if args.fake else "recruiter"  # the example library has no recruiter round
+    args.round = args.round or end_round
     if args.all and args.fake:  # the example library only has behavioural and loop rounds
-        end_round = "behavioural"
         runs = [("behavioural", "strong", "A", "none"), ("behavioural", "nervous", "A", "none"),
                 ("behavioural", "minimal", "B", "none")]
     elif args.all:
