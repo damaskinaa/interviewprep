@@ -127,6 +127,9 @@ class TimerTest(unittest.TestCase):
         audio = _voice(np.full(3 * SR, 140.0))
         self.assertEqual(vox.speech_segments(audio, SR), [(0.0, 3.0)])
 
+    def test_silent_audio_has_no_speech(self):
+        self.assertEqual(vox.speech_segments(np.zeros(3 * SR), SR), [])
+
     def test_barge_in_ignores_sound_before_the_interviewer_speaks(self):
         words = _words("hm", 0.1) + _words("Sorry, can I add something?", 2.6)
         self.assertEqual(vox.overlap_user_over_tts_s(3.0, words, tts_start_s=1.0), 0.35)

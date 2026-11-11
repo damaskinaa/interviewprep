@@ -150,6 +150,9 @@ def distinct_facts_per_minute(words):
 
 # ---- timers (barge-in, silences, freeze, recall) ----
 
+SILENCE_DB = -70.0  # dBFS; quieter frames are never speech
+
+
 def speech_segments(samples, sample_rate, frame_s=0.02, floor_db=-30.0, min_gap_s=0.25, min_len_s=0.1):
     """Energy-based speech segments [(start, end)] from raw audio, for timers when words are missing."""
     samples = np.asarray(samples, dtype=np.float64)
@@ -161,7 +164,7 @@ def speech_segments(samples, sample_rate, frame_s=0.02, floor_db=-30.0, min_gap_
     db = 20 * np.log10(rms)
     noise = np.percentile(db, 10)
     # relative to the peak and above the room's noise floor; capped so steady, continuous speech still counts
-    voiced = db > max(db.max() + floor_db, min(noise + 10.0, db.max() - 6.0))
+    voiced = (db > max(db.max() + floor_db, min(noise + 10.0, db.max() - 6.0))) & (db > SILENCE_DB)
     segments, start = [], None
     for i, on in enumerate(voiced):
         if on and start is None:
