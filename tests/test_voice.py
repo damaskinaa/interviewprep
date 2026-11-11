@@ -62,6 +62,7 @@ class VoiceUnitTest(unittest.TestCase):
                 mock.patch.object(voice.shutil, "which", return_value="/usr/bin/ffmpeg"):
             result = voice.transcribe("x.webm")
         self.assertEqual(result["text"], "I led the migration.")
+        self.assertIsNone(result["first_word_s"])
 
     def test_oversized_upload_is_rejected(self):
         with mock.patch.object(voice, "MAX_UPLOAD_BYTES", 10), self.assertRaises(ValueError):

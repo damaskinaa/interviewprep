@@ -203,7 +203,7 @@ def fake_mode():
                mock.patch(f"{__name__}.speak_to_file", side_effect=fake_speak)]
     for p in patches:
         p.start()
-    return TestClient(api.app)
+    return TestClient(api.app), patches
 
 
 def main():
@@ -215,7 +215,11 @@ def main():
     parser.add_argument("--all", action="store_true", help="recruiter with all personas + one TTS run + end-early check")
     parser.add_argument("--fake", action="store_true", help="no Mac needed: fake STT/TTS/LLM, in-process app (CI)")
     args = parser.parse_args()
-    http = fake_mode() if args.fake else httpx.Client(base_url=BASE, timeout=300)
+    patches = []
+    if args.fake:
+        http, patches = fake_mode()
+    else:
+        http = httpx.Client(base_url=BASE, timeout=300)
     end_round = "recruiter"
     if args.all and args.fake:  # the example library only has behavioural and loop rounds
         end_round = "behavioural"
@@ -226,11 +230,16 @@ def main():
                 ("hiring_manager", "minimal", "B", "none")]
     else:
         runs = [(args.round, args.persona, args.mode, args.tts)]
-    results = [run_one(r, p, m, t, http=http) for r, p, m, t in runs]
-    text, path = report(results, check_end_early(http, end_round))
+    try:
+        results = [run_one(r, p, m, t, http=http) for r, p, m, t in runs]
+        extra = check_end_early(http, end_round)
+    finally:
+        for p in patches:
+            p.stop()
+    text, path = report(results, extra)
     print(text)
     print(f"\nSaved: {path}")
-    if any(r.get("fatal") or r.get("problems") for r in results) or "End interview failed" in text:
+    if extra or any(r.get("fatal") or r.get("problems") for r in results):
         raise SystemExit(1)
 
 

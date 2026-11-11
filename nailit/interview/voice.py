@@ -62,13 +62,14 @@ def words_result(result, duration_s):
         if w.get("word", "").strip()
     ]
     text = " ".join(w["word"] for w in words) if words else (result.get("text") or "").strip()
+    estimated = any(w.get("estimated") for segment in result.get("segments") or [] for w in segment.get("words") or [])
     filled = [w for w in words if re.sub(r"[^a-z]", "", w["word"].lower()) in FILLED_PAUSES]
     return {
         "text": text,
         "words": words,
         "language": result.get("language"),
         "duration_s": round(duration_s, 2),
-        "first_word_s": words[0]["start"] if words else None,
+        "first_word_s": words[0]["start"] if words and not estimated else None,  # no invented pre-answer silence
         "speech_s": round(words[-1]["end"] - words[0]["start"], 2) if words else 0.0,
         "trailing_silence_s": round(max(0.0, duration_s - words[-1]["end"]), 2) if words else round(duration_s, 2),
         "filled_pauses": len(filled),
@@ -113,8 +114,8 @@ def _words(audio, offset_s=0.0, model=None):
         text = (result.get("text") or "").split()
         if not words and text:  # recognised but not aligned: spread the words evenly so the answer isn't lost
             step = seconds / len(text)
-            words = [{"word": w, "start": round(offset_s + i * step, 2), "end": round(offset_s + (i + 1) * step, 2)}
-                     for i, w in enumerate(text)]
+            words = [{"word": w, "start": round(offset_s + i * step, 2), "end": round(offset_s + (i + 1) * step, 2),
+                      "estimated": True} for i, w in enumerate(text)]
         if not _looks_broken(words, seconds):
             return words
         logger.info("transcript looked broken (%d words in %.1fs); retrying without the filler prompt", len(words), seconds)
@@ -165,7 +166,7 @@ def transcribe(path, model=None, mock_id=None, take=None):
         words = state["words"] + _words(audio[int(start * SAMPLE_RATE):], start, model)
     else:
         words = _words(audio, 0.0, model)
-    return words_result({"segments": [{"words": [{"word": w["word"], "start": w["start"], "end": w["end"]} for w in words]}]},
+    return words_result({"segments": [{"words": [{**w} for w in words]}]},
                         duration)
 
 
