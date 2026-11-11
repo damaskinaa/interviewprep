@@ -37,7 +37,7 @@
       "lp": {"type": "array", "items": {"type": "string"}},
       "rounds": {
         "type": "array",
-        "items": {"enum": ["recruiter", "hiring_manager", "behavioural", "bar_raiser", "hard_skills", "final", "loop"]}
+        "items": {"enum": ["recruiter", "hiring_manager", "behavioural", "bar_raiser", "hard_skills", "final", "loop", "presentation", "negotiation"]}
       }
     },
     "additionalProperties": true
@@ -82,7 +82,7 @@
           "lp": {"type": "array", "items": {"type": "string"}},
           "rounds": {
             "type": "array",
-            "items": {"enum": ["recruiter", "hiring_manager", "behavioural", "bar_raiser", "hard_skills", "final", "loop"]}
+            "items": {"enum": ["recruiter", "hiring_manager", "behavioural", "bar_raiser", "hard_skills", "final", "loop", "presentation", "negotiation"]}
           }
         },
         "additionalProperties": true

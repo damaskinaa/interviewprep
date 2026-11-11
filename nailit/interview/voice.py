@@ -40,9 +40,14 @@ def recordings_dir(mock_id):
     return path
 
 
+MAX_UPLOAD_BYTES = 50 * 1024 * 1024  # about 50 minutes of opus audio, or one 10 s webcam chunk with lots of room
+
+
 def save_upload(mock_id, name, data):
     if not SAFE_NAME.match(name):
         raise ValueError("bad file name")
+    if len(data) > MAX_UPLOAD_BYTES:
+        raise ValueError("upload too large")
     path = recordings_dir(mock_id) / name
     path.write_bytes(data)
     return path
@@ -105,6 +110,11 @@ def _words(audio, offset_s=0.0, model=None):
         words = [{"word": w["word"].strip(), "start": round(float(w["start"]) + offset_s, 2),
                   "end": round(float(w["end"]) + offset_s, 2)}
                  for segment in result.get("segments") or [] for w in segment.get("words") or [] if w.get("word", "").strip()]
+        text = (result.get("text") or "").split()
+        if not words and text:  # recognised but not aligned: spread the words evenly so the answer isn't lost
+            step = seconds / len(text)
+            words = [{"word": w, "start": round(offset_s + i * step, 2), "end": round(offset_s + (i + 1) * step, 2)}
+                     for i, w in enumerate(text)]
         if not _looks_broken(words, seconds):
             return words
         logger.info("transcript looked broken (%d words in %.1fs); retrying without the filler prompt", len(words), seconds)
