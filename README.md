@@ -92,6 +92,13 @@ threshold) and measured detectors, whose `rule` is a comparison over the metric 
 out and stored on the turn for the debrief; nothing is shown during the round. `check-library` reports
 unknown metric names, rules the engine can't evaluate and broken regexes.
 
+Structure checks (`nailit.measure.structure`) make one LLM call per answer with the rubric rules named by the
+`structure_checks` that apply to the question type. Consistency checks (`nailit.measure.consistency`) are code:
+`number_not_in_facts`, `unconfirmed_fact`, `conflicting_numbers` (across answers), `cv_number_missing`
+(profile.md sections and optional `me/cv.md` vs facts) and `story_reused`. A library consistency check with one of
+these ids sets its label and severity; `check-library` warns about ids the engine doesn't implement.
+`/interview/get` returns the mock's consistency hits.
+
 ### Simulated candidate
 
 `uv run python -m nailit.sim_candidate --all` (app running, on the Mac) plays strong, nervous and minimal

@@ -15,6 +15,10 @@ def check_library(path):
             print(f"ERROR {line}", file=sys.stderr)
         print(f"{len(error.errors)} error(s)", file=sys.stderr)
         return 1
+    from nailit.measure.consistency import library_warnings
+
+    for line in library_warnings(lib["detectors"]):
+        print(f"WARNING {line}", file=sys.stderr)
     print(f"OK: {summary(lib)}")
     return 0
 

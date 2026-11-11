@@ -100,8 +100,13 @@ structure_checks:
     severity: warn
     src: [D02]
 consistency_checks:
-  - id: claim_in_stories
+  - id: number_not_in_facts
     label: Claim not in stories.md
     rule: Every number said must match a fact; unconfirmed facts warn, new numbers fail.
+    severity: fail
+    src: [D03]
+  - id: conflicting_numbers
+    label: Team size changed between answers
+    rule: The same thing (team size, budget) has one number across every answer.
     severity: fail
     src: [D03]
