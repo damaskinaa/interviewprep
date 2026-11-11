@@ -116,21 +116,25 @@ def _norm(text):
 
 
 def _without_bridges(words, bridges=()):
-    """Content words with fillers and every bridge removed; a bridge cut short (3+ words) only when it ends the sentence."""
+    """Content words with fillers and every bridge removed; a bridge cut short (3+ words) counts only when nothing
+    but more bridges follows it."""
     ws = [w for w in words if _bare(w["word"]) and _bare(w["word"]) not in FILLED_PAUSES]
     toks = [_bare(w["word"]) for w in ws]
     pats = [p for p in (_norm(b).split() for b in bridges) if p]
-    out, i = [], 0
-    while i < len(ws):
-        skip = 0
+    skip = [0] * (len(toks) + 1)
+    only_bridges = [False] * len(toks) + [True]  # only_bridges[i]: toks[i:] is all bridge text
+    for i in range(len(toks) - 1, -1, -1):
         for p in pats:
             n = 0
             while n < len(p) and i + n < len(toks) and toks[i + n] == p[n]:
                 n += 1
-            if n == len(p) or (n >= 3 and i + n == len(toks)):
-                skip = max(skip, n)
-        if skip:
-            i += skip
+            if n == len(p) or (n >= 3 and only_bridges[i + n]):
+                skip[i] = max(skip[i], n)
+        only_bridges[i] = bool(skip[i]) and only_bridges[i + skip[i]]
+    out, i = [], 0
+    while i < len(ws):
+        if skip[i]:
+            i += skip[i]
         else:
             out.append(ws[i])
             i += 1
@@ -283,7 +287,8 @@ def loudness_var_db(sound):
 
 
 def baseline_from(words, audio=None, sample_rate=16000):
-    """Calm baseline from a relaxed recording: wpm, pitch range and loudness variation."""
+    """Calm baseline from a relaxed recording: wpm, pitch range and loudness variation. Raises on unreadable audio
+    on purpose (unlike measure_answer): a silently missing baseline would drop the energy metric everywhere."""
     sound = as_sound(audio, sample_rate)
     track = pitch_track(sound) if sound is not None else None
     return {"wpm": wpm(words),
