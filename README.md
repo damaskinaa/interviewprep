@@ -75,6 +75,16 @@ On the Mac: `brew install ffmpeg`, then `uv sync --extra voice` (installs mlx-wh
 - **Needs internet:** the VAD script loads from jsDelivr (pinned with SRI hashes), and OpenAI TTS is online.
 - **Uploads:** capped at 50 MB each.
 
+### Measuring (N4)
+
+`nailit.measure.vox.measure_answer(words, audio, baseline, question_type, events)` computes every
+`measured_detectors` metric from word timestamps and, with audio, pitch and loudness (praat-parselmouth):
+pace vs your calm baseline (`baseline_from()` on a relaxed recording), pace stability per 10 s, the final pitch
+slope of RESULT sentences (sentences with a number or claim), energy vs baseline (1.0 = calm), pauses after
+number sentences, the longest stretch with no pause over 0.5 s, time to the first answering sentence (bridges
+from phrases.yaml don't count), answer length, filled pauses, and the barge-in / silence-gap / freeze /
+recall timers (from words, or from audio onsets when there is no transcript).
+
 ### Simulated candidate
 
 `uv run python -m nailit.sim_candidate --all` (app running, on the Mac) plays strong, nervous and minimal
