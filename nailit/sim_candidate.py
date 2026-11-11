@@ -130,8 +130,10 @@ def run_one(round_id, persona, mode="A", tts="none", max_turns=40, http=None):
             "turns": turns, "scores": summary.get("scores"), "problems": problems}
 
 
-def check_end_early(http):
-    r = http.post("/interview/start", json={"round_id": "recruiter", "mode": "A"})
+def check_end_early(http, round_id="recruiter"):
+    r = http.post("/interview/start", json={"round_id": round_id, "mode": "A"})
+    if r.status_code != 200:
+        return [f"End-early check could not start: {r.status_code} {r.text[:200]}"]
     mock_id = r.json()["mock_id"]
     http.post("/interview/answer", json={"mock_id": mock_id, "text": "I lead operations teams and I fix broken processes."})
     end = http.post("/interview/end", json={"mock_id": mock_id})
@@ -165,6 +167,45 @@ def report(results, extra):
     return text, path
 
 
+def fake_mode():
+    """CI mode: in-process app with fake STT (the uploaded file holds the answer text), no TTS, canned LLM lines."""
+    import os
+    import shutil
+    from unittest import mock
+
+    from fastapi.testclient import TestClient
+
+    from nailit import api, store
+    from nailit.interview import voice
+    home = Path(tempfile.mkdtemp()) / "NailIt"  # a copy, so reports never land inside the repo
+    shutil.copytree(Path(__file__).resolve().parents[1] / "examples" / "NailIt", home)
+    os.environ["NAILIT_HOME"] = str(home)
+    os.environ.setdefault("NAILIT_RECORDINGS", tempfile.mkdtemp())
+    os.environ.setdefault("DATA_DIR", tempfile.mkdtemp())
+
+    def fake_words(path, **_):
+        text = Path(path).read_text()
+        words = [{"word": w, "start": 0.4 * i, "end": 0.4 * i + 0.3} for i, w in enumerate(text.split())]
+        return voice.words_result({"segments": [{"words": words}]}, 0.4 * len(words) + 0.5)
+
+    def fake_speak(text, folder, index):
+        path = Path(folder) / f"answer_{index}.txt"
+        path.write_text(text)
+        return path
+
+    canned = ("I led the rollout. The result was a shorter queue. I chose a pilot over a big bang because it was "
+              "reversible, and the lesson was to test early.")
+    patches = [mock.patch.object(store, "DB_PATH", Path(tempfile.mkdtemp()) / "sim.db"),
+               mock.patch("nailit.interview.interviewer.ask_llm", return_value="Tell me more about that."),
+               mock.patch(f"{__name__}.ask_llm", return_value=canned),
+               mock.patch.object(voice, "transcribe", side_effect=fake_words),
+               mock.patch.object(voice, "live_update", side_effect=lambda mock_id, take, path: Path(path).read_text()),
+               mock.patch(f"{__name__}.speak_to_file", side_effect=fake_speak)]
+    for p in patches:
+        p.start()
+    return TestClient(api.app)
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--round", default="recruiter")
@@ -172,17 +213,25 @@ def main():
     parser.add_argument("--mode", default="A")
     parser.add_argument("--tts", default="none", choices=["none", "say", "openai"])
     parser.add_argument("--all", action="store_true", help="recruiter with all personas + one TTS run + end-early check")
+    parser.add_argument("--fake", action="store_true", help="no Mac needed: fake STT/TTS/LLM, in-process app (CI)")
     args = parser.parse_args()
-    http = httpx.Client(base_url=BASE, timeout=300)
-    if args.all:
+    http = fake_mode() if args.fake else httpx.Client(base_url=BASE, timeout=300)
+    end_round = "recruiter"
+    if args.all and args.fake:  # the example library only has behavioural and loop rounds
+        end_round = "behavioural"
+        runs = [("behavioural", "strong", "A", "none"), ("behavioural", "nervous", "A", "none"),
+                ("behavioural", "minimal", "B", "none")]
+    elif args.all:
         runs = [("recruiter", "strong", "A", "say"), ("recruiter", "nervous", "A", "none"),
                 ("hiring_manager", "minimal", "B", "none")]
     else:
         runs = [(args.round, args.persona, args.mode, args.tts)]
     results = [run_one(r, p, m, t, http=http) for r, p, m, t in runs]
-    text, path = report(results, check_end_early(http))
+    text, path = report(results, check_end_early(http, end_round))
     print(text)
     print(f"\nSaved: {path}")
+    if any(r.get("fatal") or r.get("problems") for r in results) or "End interview failed" in text:
+        raise SystemExit(1)
 
 
 if __name__ == "__main__":
