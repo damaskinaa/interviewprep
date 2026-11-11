@@ -1,6 +1,5 @@
 import logging
 import os
-import shutil
 import statistics
 import threading
 import uuid
