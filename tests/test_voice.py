@@ -144,6 +144,10 @@ class VoiceApiTest(unittest.TestCase):
         self.assertEqual((candidate["role"], candidate["audio"], candidate["pre_answer_silence_s"]), ("candidate", "answer_001.webm", 1.9))
         self.assertIn("answer_seconds", candidate["measure"]["metrics"])  # measured after the reply, not shown in the round
         self.assertNotIn("measure", reply["turn"])
+        self.assertIn("structure_error", candidate["measure"])  # no API key in tests: structure skipped, rest kept
+        self.assertIsNone(self.client.get("/interview/get", params={"mock_id": mock_id}).json()["consistency"])
+        self.client.post("/interview/end", json={"mock_id": mock_id})
+        self.assertIsInstance(self.client.get("/interview/get", params={"mock_id": mock_id}).json()["consistency"], list)
         self.client.post("/voice/latency", json={"mock_id": mock_id, "turn": reply["turn_index"], "latency_s": 1.2})
         self.assertEqual(self.client.get("/voice/latency", params={"mock_id": mock_id}).json()["median_s"], 1.2)
         self.assertEqual(self.client.get(f"/voice/audio/{mock_id}/..%2Ft.db").status_code, 404)

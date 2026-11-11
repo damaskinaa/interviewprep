@@ -11,9 +11,9 @@ from fastapi import BackgroundTasks, FastAPI, File, Form, HTTPException, UploadF
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 from pathlib import Path
-from nailit import library
+from nailit import library, llm
 from nailit.interview import interviewer, voice
-from nailit.measure import detectors
+from nailit.measure import consistency, detectors, structure
 logger = logging.getLogger("nailit.api")
 from nailit.store import (
     create_session,
@@ -267,13 +267,12 @@ def interview_start(req: MockStartRequest):
     return {"mock_id": state["id"], "turn": turn, "done": False}
 
 
-def _question_type(state, lib):
+def _question(state, lib):
     question_id = (state.get("current") or {}).get("question_id")
-    question = next((q for q in library._questions(lib["questions"])[0] if q["id"] == question_id), None)
-    return (question or {}).get("type")
+    return next((q for q in library._questions(lib["questions"])[0] if q["id"] == question_id), None) or {}
 
 
-def _measure_turn(mock_id, index, question_type, audio=None):
+def _measure_turn(mock_id, index, question, audio=None):
     """Run the detectors on one answer after the reply has gone out; stored on the turn for the debrief only."""
     try:
         lib = _library()
@@ -282,8 +281,12 @@ def _measure_turn(mock_id, index, question_type, audio=None):
         if not turn.get("words") and not turn.get("say"):
             return
         result = detectors.run(lib, words=turn.get("words"), text=turn.get("say"), audio=audio,
-                               question_type=question_type, pre_answer_silence_s=turn.get("pre_answer_silence_s"),
-                               people=library.people_map())
+                               question_type=question.get("type"),
+                               pre_answer_silence_s=turn.get("pre_answer_silence_s"), people=library.people_map())
+        try:
+            result["hits"] += structure.check(lib, turn.get("say"), question.get("type"), question.get("text", ""))
+        except llm.LLMError as error:
+            result["structure_error"] = str(error)[:200]
         with _mock_lock(mock_id):
             state = load_mock(mock_id)
             if index >= len(state["turns"]) or state["turns"][index].get("role") != "candidate":
@@ -301,14 +304,14 @@ def interview_answer(req: MockAnswerRequest, background: BackgroundTasks):
         if not state:
             raise HTTPException(status_code=404, detail="Mock not found")
         lib = _library()
-        question_type = _question_type(state, lib)
+        question = _question(state, lib)
         try:
             turn = interviewer.answer(state, req.text, req.seconds, req.pre_answer_silence_s, lib=lib)
         except ValueError as error:
             raise HTTPException(status_code=409, detail=str(error)) from error
         index = max(i for i, t in enumerate(state["turns"]) if t.get("role") == "candidate")
         save_mock(state)
-    background.add_task(_measure_turn, req.mock_id, index, question_type)
+    background.add_task(_measure_turn, req.mock_id, index, question)
     return {"mock_id": state["id"], "turn": turn, "done": state["phase"] == "done"}
 
 
@@ -317,7 +320,30 @@ def interview_get(mock_id: str):
     state = load_mock(mock_id)
     if not state:
         raise HTTPException(status_code=404, detail="Mock not found")
-    return {**interviewer.summary(state), "turns": state["turns"]}
+    if state["phase"] == "done" and "consistency" not in state:
+        with _mock_lock(mock_id):
+            state = load_mock(mock_id)
+            state["consistency"] = _consistency(state)
+            save_mock(state)
+    return {**interviewer.summary(state), "turns": state["turns"], "consistency": state.get("consistency")}
+
+
+def _consistency(state):
+    """Numbers and stories across a finished mock's answers vs stories.md (code only); computed once, for the debrief."""
+    try:
+        me = library.load_me()
+    except library.LibraryError:
+        return None
+    current, answers, asking = None, [], False
+    for turn in state["turns"]:
+        current = turn.get("question_id", current)
+        if turn.get("role") == "interviewer":
+            asking = turn.get("kind") in ("candidate_questions", "answer")  # your questions to them aren't claims
+        elif not asking:
+            answers.append({"text": turn.get("say") or "", "question_id": current})
+    cv = library.home() / "me" / "cv.md"
+    return consistency.check(answers, me, _library(), cv.read_text(encoding="utf8") if cv.exists() else "",
+                             state.get("stories_used"))
 
 
 STATIC = Path(__file__).resolve().parent / "static"
@@ -422,7 +448,7 @@ def voice_answer(background: BackgroundTasks, mock_id: str = Form(...), audio: U
             raise HTTPException(status_code=422, detail="No speech found in the recording")
         silence = None if transcript["first_word_s"] is None else round(gap_before_record_s + transcript["first_word_s"], 2)
         lib = _library()
-        question_type = _question_type(state, lib)
+        question = _question(state, lib)
         try:
             turn = interviewer.answer(state, transcript["text"], transcript["speech_s"], silence, lib=lib)
         except ValueError as error:
@@ -432,7 +458,7 @@ def voice_answer(background: BackgroundTasks, mock_id: str = Form(...), audio: U
         candidate_turn.update(audio=name, words=transcript["words"], filled_pauses=transcript["filled_pauses"])
         timer.mark("llm_s")
         save_mock(state)
-    background.add_task(_measure_turn, mock_id, index, question_type, str(path))
+    background.add_task(_measure_turn, mock_id, index, question, str(path))
     spoken = _speak_last_turn(state, engine, timer)
     log_voice(mock_id, spoken["turn_index"], stt_s=timer.marks["stt_s"], llm_s=timer.marks["llm_s"],
               tts_s=timer.marks["tts_s"], engine=spoken["tts_engine"])
