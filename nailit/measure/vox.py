@@ -150,7 +150,8 @@ def speech_segments(samples, sample_rate, frame_s=0.02, floor_db=-30.0, min_gap_
     rms = np.sqrt(np.mean(samples[: frames * hop].reshape(frames, hop) ** 2, axis=1) + 1e-12)
     db = 20 * np.log10(rms)
     noise = np.percentile(db, 10)
-    voiced = db > max(db.max() + floor_db, noise + 10.0)  # relative to the peak and above the room's noise floor
+    # relative to the peak and above the room's noise floor; capped so steady, continuous speech still counts
+    voiced = db > max(db.max() + floor_db, min(noise + 10.0, db.max() - 6.0))
     segments, start = [], None
     for i, on in enumerate(voiced):
         if on and start is None:

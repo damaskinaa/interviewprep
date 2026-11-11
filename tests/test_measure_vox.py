@@ -119,6 +119,10 @@ class TimerTest(unittest.TestCase):
                 self.assertIsNotNone(got)
                 self.assertLessEqual(abs(got - truth), 0.3, (metric, got, truth))
 
+    def test_continuous_speech_is_one_segment(self):
+        audio = _voice(np.full(3 * SR, 140.0))
+        self.assertEqual(vox.speech_segments(audio, SR), [(0.0, 3.0)])
+
     def test_barge_in_ignores_sound_before_the_interviewer_speaks(self):
         words = _words("hm", 0.1) + _words("Sorry, can I add something?", 2.6)
         self.assertEqual(vox.overlap_user_over_tts_s(3.0, words, tts_start_s=1.0), 0.4)
