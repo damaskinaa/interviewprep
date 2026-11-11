@@ -286,6 +286,8 @@ def _measure_turn(mock_id, index, question_type, audio=None):
                                people=library.people_map())
         with _mock_lock(mock_id):
             state = load_mock(mock_id)
+            if index >= len(state["turns"]) or state["turns"][index].get("role") != "candidate":
+                return
             state["turns"][index]["measure"] = result
             save_mock(state)
     except Exception:

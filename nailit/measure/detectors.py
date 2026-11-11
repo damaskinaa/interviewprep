@@ -143,6 +143,8 @@ def measured_hits(detectors, measurement):
     metrics, baselines = measurement["metrics"], measurement.get("baselines") or {}
     hits = []
     for detector in detectors:
+        if not detector.get("metric") or not detector.get("rule"):
+            continue
         value = metrics.get(detector["metric"])
         if evaluate_rule(detector["rule"], value, baselines.get(detector["metric"])):
             hits.append(_hit(detector, "measured", metric=detector["metric"], value=value,
@@ -165,7 +167,7 @@ def run(lib, words=None, text=None, audio=None, question_type=None, pre_answer_s
     measurement = vox.measure_answer(words or [], audio=audio, baseline=baseline, question_type=question_type,
                                      pre_answer_silence_s=pre_answer_silence_s, bridges=bridges, events=events)
     hits = phrase_hits(detectors["phrase_detectors"], words, text, question_type, people)
-    hits += measured_hits(detectors["measured_detectors"], measurement) if words or audio is not None else []
+    hits += measured_hits(detectors["measured_detectors"], measurement)
     return {"metrics": measurement["metrics"], "baselines": measurement["baselines"], "hits": hits,
             "result_sentences": measurement["result_sentences"], "filled_pauses": measurement["filled_pauses"]}
 

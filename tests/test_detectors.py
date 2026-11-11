@@ -84,6 +84,8 @@ class MeasuredRulesTest(unittest.TestCase):
         hit_ids = {h["id"] for h in result["hits"]}
         self.assertTrue({"long_answer", "thinking_pause", "rush", "too_fast"} <= hit_ids, hit_ids)
         self.assertNotIn("flat_or_frantic", hit_ids)
+        typed = detectors.run(lib, text="I rebuilt the queue.", question_type="behavioural", pre_answer_silence_s=4.0)
+        self.assertEqual({h["id"] for h in typed["hits"]}, {"thinking_pause"})
 
 
 if __name__ == "__main__":
