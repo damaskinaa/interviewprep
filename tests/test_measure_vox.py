@@ -67,6 +67,10 @@ class TimestampMetricsTest(unittest.TestCase):
         got = vox.seconds_to_first_answering_sentence(words, bridges=["That's a great question"])
         self.assertEqual(got, 3.0)
 
+    def test_bridge_and_answer_in_one_sentence(self):
+        words = _words("Good question, I rebuilt the escalation process last year.", 1.0)
+        self.assertEqual(vox.seconds_to_first_answering_sentence(words, bridges=["Good question"]), 1.6)
+
     def test_tmay_and_facts_per_minute(self):
         words = _words("I run ops for 12 markets and 3 teams.", 0.0, step=1.0)
         m = vox.measure_answer(words, question_type="opening")["metrics"]

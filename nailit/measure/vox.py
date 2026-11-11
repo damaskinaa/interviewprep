@@ -115,19 +115,29 @@ def _norm(text):
     return " ".join(_bare(t) for t in text.split() if _bare(t))
 
 
+def _without_bridges(words, bridges=()):
+    """The sentence's content words with fillers and any bridge phrase removed."""
+    ws = [w for w in words if _bare(w["word"]) and _bare(w["word"]) not in FILLED_PAUSES]
+    for bridge in bridges:
+        bt = _norm(bridge).split()
+        toks = [_bare(w["word"]) for w in ws]
+        for k in range(len(toks) - len(bt) + 1) if bt else ():
+            if toks[k:k + len(bt)] == bt:
+                ws = ws[:k] + ws[k + len(bt):]
+                break
+    return ws
+
+
 def is_answering(text, bridges=()):
-    """Not a buying-time line: at least 4 content words and not one of the library's bridge phrases."""
-    norm = _norm(text)
-    content = [t for t in norm.split() if t not in FILLED_PAUSES]
-    if len(content) < 4:
-        return False
-    return not any(_norm(b) and (_norm(b) in norm or norm in _norm(b)) for b in bridges)
+    """Not a buying-time line: at least 4 content words once fillers and bridge phrases are removed."""
+    return len(_without_bridges([{"word": t} for t in text.split()], bridges)) >= 4
 
 
 def seconds_to_first_answering_sentence(words, bridges=(), start_s=0.0):
     for s in sentences(words):
-        if is_answering(s["text"], bridges):
-            return round(s["start"] - start_s, 2)
+        rest = _without_bridges(s["words"], bridges)
+        if len(rest) >= 4:
+            return round(rest[0]["start"] - start_s, 2)
     return None
 
 
