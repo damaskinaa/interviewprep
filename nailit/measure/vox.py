@@ -116,16 +116,25 @@ def _norm(text):
 
 
 def _without_bridges(words, bridges=()):
-    """The sentence's content words with fillers and any bridge phrase removed."""
+    """The sentence's content words with fillers and every bridge removed (also a bridge cut short after 3+ words)."""
     ws = [w for w in words if _bare(w["word"]) and _bare(w["word"]) not in FILLED_PAUSES]
-    for bridge in bridges:
-        bt = _norm(bridge).split()
-        toks = [_bare(w["word"]) for w in ws]
-        for k in range(len(toks) - len(bt) + 1) if bt else ():
-            if toks[k:k + len(bt)] == bt:
-                ws = ws[:k] + ws[k + len(bt):]
-                break
-    return ws
+    toks = [_bare(w["word"]) for w in ws]
+    pats = [p for p in (_norm(b).split() for b in bridges) if p]
+    out, i = [], 0
+    while i < len(ws):
+        skip = 0
+        for p in pats:
+            n = 0
+            while n < len(p) and i + n < len(toks) and toks[i + n] == p[n]:
+                n += 1
+            if n == len(p) or n >= 3:
+                skip = max(skip, n)
+        if skip:
+            i += skip
+        else:
+            out.append(ws[i])
+            i += 1
+    return out
 
 
 def is_answering(text, bridges=()):

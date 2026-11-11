@@ -71,6 +71,12 @@ class TimestampMetricsTest(unittest.TestCase):
         words = _words("Good question, I rebuilt the escalation process last year.", 1.0)
         self.assertEqual(vox.seconds_to_first_answering_sentence(words, bridges=["Good question"]), 1.6)
 
+    def test_shortened_and_repeated_bridges_are_not_answers(self):
+        bridge = ["Let me take a moment to think about that"]
+        self.assertFalse(vox.is_answering("Let me take a moment.", bridge))
+        self.assertFalse(vox.is_answering("Let me take a moment to think about that, let me take a moment.", bridge))
+        self.assertTrue(vox.is_answering("Let me take a moment. I would start with the data.", bridge))
+
     def test_tmay_and_facts_per_minute(self):
         words = _words("I run ops for 12 markets and 3 teams.", 0.0, step=1.0)
         m = vox.measure_answer(words, question_type="opening")["metrics"]
