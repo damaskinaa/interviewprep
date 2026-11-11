@@ -92,3 +92,23 @@ class E8ConsistencyTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class MockAnswersTest(unittest.TestCase):
+    def test_questions_to_the_interviewer_are_not_claims(self):
+        from unittest import mock
+
+        from nailit import api
+        turns = [
+            {"role": "interviewer", "kind": "question", "question_id": "q1", "say": "Tell me about a team."},
+            {"role": "candidate", "say": "I led a team of 4."},
+            {"role": "interviewer", "kind": "candidate_questions", "say": "Any questions for me?"},
+            {"role": "candidate", "say": "What does success look like in 90 days?"},
+            {"role": "interviewer", "kind": "answer", "say": "Shipping two things."},
+            {"role": "candidate", "say": "And what about 30 days?"},
+        ]
+        with mock.patch.object(api.library, "load_me", return_value={}), \
+                mock.patch.object(api, "_library", return_value={}), \
+                mock.patch.object(api.consistency, "check", return_value=[]) as check:
+            api._consistency({"turns": turns})
+        self.assertEqual(check.call_args.args[0], [{"text": "I led a team of 4.", "question_id": "q1"}])
