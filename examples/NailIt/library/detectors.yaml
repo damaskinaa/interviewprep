@@ -25,6 +25,31 @@ phrase_detectors:
     severity: fail
     fix: Use the role, not the name.
     src: [D03]
+  - id: apology_opening
+    label: Opening with an apology
+    kind: phrase
+    patterns: [sorry, "i'm not sure"]
+    scope: answer_start
+    severity: warn
+    fix: Open with the result.
+    src: [D01]
+  - id: trailing_off
+    label: Trailing off
+    kind: phrase
+    patterns: [so yeah, "that's about it"]
+    scope: answer_end
+    severity: info
+    fix: End on the result or the lesson.
+    replacement: "The result was [result]."
+    src: [D01]
+  - id: blame_in_failure
+    label: Blame in a failure answer
+    kind: regex
+    patterns: ["\\b(they|the other team) (didn't|failed|never)\\b"]
+    scope: failure_answers
+    severity: fail
+    fix: Own your share before anyone else's.
+    src: [D02]
 measured_detectors:
   - id: too_fast
     label: Pace above calm baseline
@@ -39,6 +64,27 @@ measured_detectors:
     rule: "> 120"
     severity: warn
     fix: Cut to the 90-second version.
+    src: [D04]
+  - id: flat_or_frantic
+    label: Flat or frantic delivery
+    metric: pitch_range_and_loudness_var_vs_baseline
+    rule: "< baseline * 0.7 or > baseline * 1.5"
+    severity: warn
+    fix: Match your calm range; lift on the result.
+    src: [D04]
+  - id: thinking_pause
+    label: Thinking pause outside 1-3 s
+    metric: pre_answer_silence_s
+    rule: "> 3"
+    severity: info
+    fix: Use a bridge line if you need more time.
+    src: [D04]
+  - id: rush
+    label: Rush (20 s without a pause)
+    metric: longest_stretch_without_pause_gt_0_5s
+    rule: ">= 20"
+    severity: warn
+    fix: Pause after every number.
     src: [D04]
 structure_checks:
   - id: result_first

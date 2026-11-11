@@ -7,12 +7,13 @@ from datetime import datetime
 
 from nailit.prep.questions import run_session_module
 from nailit.prep.answers import generate_answer_options
-from fastapi import FastAPI, File, Form, HTTPException, UploadFile
+from fastapi import BackgroundTasks, FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 from pathlib import Path
 from nailit import library
 from nailit.interview import interviewer, voice
+from nailit.measure import detectors
 logger = logging.getLogger("nailit.api")
 from nailit.store import (
     create_session,
@@ -266,17 +267,48 @@ def interview_start(req: MockStartRequest):
     return {"mock_id": state["id"], "turn": turn, "done": False}
 
 
+def _question_type(state, lib):
+    question_id = (state.get("current") or {}).get("question_id")
+    question = next((q for q in library._questions(lib["questions"])[0] if q["id"] == question_id), None)
+    return (question or {}).get("type")
+
+
+def _measure_turn(mock_id, index, question_type, audio=None):
+    """Run the detectors on one answer after the reply has gone out; stored on the turn for the debrief only."""
+    try:
+        lib = _library()
+        with _mock_lock(mock_id):
+            turn = load_mock(mock_id)["turns"][index]
+        if not turn.get("words") and not turn.get("say"):
+            return
+        result = detectors.run(lib, words=turn.get("words"), text=turn.get("say"), audio=audio,
+                               question_type=question_type, pre_answer_silence_s=turn.get("pre_answer_silence_s"),
+                               people=library.people_map())
+        with _mock_lock(mock_id):
+            state = load_mock(mock_id)
+            if index >= len(state["turns"]) or state["turns"][index].get("role") != "candidate":
+                return
+            state["turns"][index]["measure"] = result
+            save_mock(state)
+    except Exception:
+        logger.exception("measuring turn %s of %s failed", index, mock_id)
+
+
 @app.post("/interview/answer")
-def interview_answer(req: MockAnswerRequest):
+def interview_answer(req: MockAnswerRequest, background: BackgroundTasks):
     with _mock_lock(req.mock_id):
         state = load_mock(req.mock_id)
         if not state:
             raise HTTPException(status_code=404, detail="Mock not found")
+        lib = _library()
+        question_type = _question_type(state, lib)
         try:
-            turn = interviewer.answer(state, req.text, req.seconds, req.pre_answer_silence_s, lib=_library())
+            turn = interviewer.answer(state, req.text, req.seconds, req.pre_answer_silence_s, lib=lib)
         except ValueError as error:
             raise HTTPException(status_code=409, detail=str(error)) from error
+        index = max(i for i, t in enumerate(state["turns"]) if t.get("role") == "candidate")
         save_mock(state)
+    background.add_task(_measure_turn, req.mock_id, index, question_type)
     return {"mock_id": state["id"], "turn": turn, "done": state["phase"] == "done"}
 
 
@@ -366,7 +398,7 @@ def voice_say(req: VoiceSayRequest):
 
 
 @app.post("/voice/answer")
-def voice_answer(mock_id: str = Form(...), audio: UploadFile = File(...), engine: str = Form(""),
+def voice_answer(background: BackgroundTasks, mock_id: str = Form(...), audio: UploadFile = File(...), engine: str = Form(""),
                  gap_before_record_s: float = Form(0.0), take: str = Form("")):
     """One spoken answer: save, transcribe locally (fillers kept), run the interviewer, speak the reply."""
     if engine and engine not in voice.TTS_ENGINES:
@@ -389,14 +421,18 @@ def voice_answer(mock_id: str = Form(...), audio: UploadFile = File(...), engine
         if not transcript["text"]:
             raise HTTPException(status_code=422, detail="No speech found in the recording")
         silence = None if transcript["first_word_s"] is None else round(gap_before_record_s + transcript["first_word_s"], 2)
+        lib = _library()
+        question_type = _question_type(state, lib)
         try:
-            turn = interviewer.answer(state, transcript["text"], transcript["speech_s"], silence, lib=_library())
+            turn = interviewer.answer(state, transcript["text"], transcript["speech_s"], silence, lib=lib)
         except ValueError as error:
             raise HTTPException(status_code=409, detail=str(error)) from error
-        candidate_turn = next(t for t in reversed(state["turns"]) if t.get("role") == "candidate")
+        index = max(i for i, t in enumerate(state["turns"]) if t.get("role") == "candidate")
+        candidate_turn = state["turns"][index]
         candidate_turn.update(audio=name, words=transcript["words"], filled_pauses=transcript["filled_pauses"])
         timer.mark("llm_s")
         save_mock(state)
+    background.add_task(_measure_turn, mock_id, index, question_type, str(path))
     spoken = _speak_last_turn(state, engine, timer)
     log_voice(mock_id, spoken["turn_index"], stt_s=timer.marks["stt_s"], llm_s=timer.marks["llm_s"],
               tts_s=timer.marks["tts_s"], engine=spoken["tts_engine"])

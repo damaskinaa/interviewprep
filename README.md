@@ -85,6 +85,13 @@ number sentences, the longest stretch with no pause over 0.5 s, time to the firs
 from phrases.yaml don't count), answer length, filled pauses, and the barge-in / silence-gap / freeze /
 recall timers (from words, or from audio onsets when there is no transcript).
 
+`nailit.measure.detectors.run(lib, words, ...)` runs every detector in `detectors.yaml` on an answer:
+phrase detectors (`phrase` / `regex` / `names_from_profile`, with scope, `except_context` and `per_answer`
+threshold) and measured detectors, whose `rule` is a comparison over the metric and its `baseline`
+(`"> baseline * 1.2"`, `"< 1 or > 3"`). Each mock answer is measured after the interviewer's reply has gone
+out and stored on the turn for the debrief; nothing is shown during the round. `check-library` reports
+unknown metric names, rules the engine can't evaluate and broken regexes.
+
 ### Simulated candidate
 
 `uv run python -m nailit.sim_candidate --all` (app running, on the Mac) plays strong, nervous and minimal
