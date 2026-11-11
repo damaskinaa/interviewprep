@@ -34,12 +34,75 @@ TX_FAST = os.getenv("NAILIT_TX_FAST") or "minimax/minimax-m3.1-flash"
 TX_STRONG = os.getenv("NAILIT_TX_STRONG") or "moonshotai/kimi-k3.1-pro"
 
 
+ENGINES = {
+    "tensorx": {"label": "TensorX", "needs": ["TENSORX_API_KEY"], "cost": "TensorX credit; fractions of a cent per turn",
+                "note": "Fastest tested (interviewer replies in 0.4–2 s)."},
+    "lua": {"label": "Lua", "needs": ["LUA_API_KEY", "LUA_AGENT_ID"], "cost": "Lua credits",
+            "note": "Your Lua agent plays the interviewer through Lua's chat API; hearing and speaking stay on this Mac."},
+    "claude": {"label": "Claude (your subscription)", "needs": [], "cost": "No extra cost; counts toward your Claude plan's limits",
+               "note": "Runs through Claude Code in the terminal (sign in once with `claude auth login`). Slower: several "
+                       "seconds per reply."},
+    "gemini": {"label": "Gemini (free key)", "needs": ["GEMINI_API_KEY"], "cost": "Free, with daily limits",
+               "note": "A free Google AI Studio key."},
+    "openai": {"label": "OpenAI", "needs": ["OPENAI_API_KEY"], "cost": "OpenAI credit", "note": "Needs credit on the account."},
+}
+GEMINI_BASE = "https://generativelanguage.googleapis.com/v1beta/openai/"
+GEMINI_MODEL = os.getenv("NAILIT_GEMINI_MODEL") or "gemini-flash-latest"
+
+
+def settings_path():
+    from nailit import library
+    return library.home() / "settings.json"
+
+
 def provider():
-    """TensorX when its key is present (the default); OpenAI only if forced or if it's the only key."""
+    """Who plays the model: NAILIT_PROVIDER, else the engine chosen in settings.json, else TensorX, else OpenAI."""
     forced = (os.getenv("NAILIT_PROVIDER") or "").lower()
-    if forced in ("openai", "tensorx"):
+    if forced in ENGINES:
         return forced
+    try:
+        chosen = json.loads(settings_path().read_text()).get("engine")
+    except (OSError, ValueError):
+        chosen = None
+    if chosen in ENGINES:
+        return chosen
     return "tensorx" if os.getenv("TENSORX_API_KEY") else "openai"
+
+
+def engine_ready(name):
+    if name == "claude":
+        import shutil
+        return bool(shutil.which("claude"))
+    return all(os.getenv(key) for key in ENGINES[name]["needs"])
+
+
+def _lua(prompt, max_tokens):
+    """One stateless turn on the user's Lua agent. A fresh thread per call keeps Lua from adding its own history."""
+    import uuid
+
+    import httpx
+    reply = httpx.post(f"https://api.heylua.ai/chat/generate/{os.environ['LUA_AGENT_ID']}", params={"channel": "api"},
+                       headers={"Authorization": "Bearer " + os.environ["LUA_API_KEY"]}, timeout=90,
+                       json={"messages": [{"type": "text", "text": prompt}], "systemPrompt": SYSTEM_PROMPT,
+                             "threadId": "nailit-" + uuid.uuid4().hex[:12]})
+    data = reply.json() if reply.headers.get("content-type", "").startswith("application/json") else {}
+    if reply.status_code >= 300 or data.get("type") in ("error", "preprocessor_blocked", "governance_blocked"):
+        raise LLMError(f"Lua {reply.status_code}: {str(data.get('error') or data.get('message') or reply.text)[:200]}")
+    return (data.get("text") or "").strip()
+
+
+def _other_engine(name, prompt, max_tokens):
+    if name == "lua":
+        return _lua(prompt, max_tokens)
+    if name == "claude":
+        from nailit.answers import ai
+        return ai._cli("claude-haiku-5-5", SYSTEM_PROMPT + "\n\n" + prompt, "low")
+    if name == "gemini":
+        response = OpenAI(api_key=os.environ["GEMINI_API_KEY"], base_url=GEMINI_BASE, max_retries=1).chat.completions.create(
+            model=GEMINI_MODEL, messages=[{"role": "system", "content": SYSTEM_PROMPT}, {"role": "user", "content": prompt}],
+            max_tokens=max(max_tokens * 3, 1200), timeout=90)
+        return (response.choices[0].message.content or "").strip()
+    raise LLMError(f"unknown engine {name}")
 
 
 class LLMError(RuntimeError):
@@ -91,7 +154,23 @@ def log_cost_total(records, label):
 
 def ask_llm(prompt, model=None, max_tokens=2400, retries=3, temperature=0.25):
     model = model or MODEL_FAST
-    via_tx = provider() == "tensorx"
+    engine = provider()
+    if engine in ("lua", "claude", "gemini"):
+        if not engine_ready(engine):
+            raise LLMError(f"{ENGINES[engine]['label']} is selected but not set up: needs {ENGINES[engine]['needs'] or 'the claude command'}.")
+        last_error = None
+        for attempt in range(1, retries + 1):
+            try:
+                text = _other_engine(engine, anonymise(prompt.strip(), people_map()), max_tokens)
+                if text:
+                    return text
+                last_error = "empty reply"
+            except Exception as error:  # noqa: BLE001
+                last_error = error
+                if isinstance(error, PermissionError):
+                    break
+        raise LLMError(f"{ENGINES[engine]['label']} call failed: {last_error}")
+    via_tx = engine == "tensorx"
     if via_tx:
         global _tx_client
         if _tx_client is None:

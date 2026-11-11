@@ -1,0 +1,184 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>NailIt · Interview call</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,650&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #f5f2ea; --paper: #fffdf8; --ink: #191917; --soft: #5f5d57; --faint: #8f8c84; --line: #e7e2d6;
+    --indigo: #2b3fd6; --indigo-soft: #eceffe; --green: #17804b; --green-soft: #e3f4ea; --amber: #a3630c; --amber-soft: #fdf1dc;
+    --shadow: 0 1px 2px rgba(25,25,23,.04), 0 8px 28px rgba(25,25,23,.06);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg: #121211; --paper: #1b1b19; --ink: #f3f1ea; --soft: #b6b3aa; --faint: #8c8980; --line: #2e2d29;
+      --indigo: #8c9bff; --indigo-soft: #222849; --green: #5fd197; --green-soft: #15301f; --amber: #f4b75e; --amber-soft: #36280f; --shadow: none; }
+  }
+  * { box-sizing: border-box; }
+  html { font-size: 18px; }
+  body { margin: 0; background: var(--bg); color: var(--ink); font: 1rem/1.6 Inter, -apple-system, system-ui, sans-serif; -webkit-font-smoothing: antialiased; }
+  .wrap { max-width: 980px; margin: 0 auto; padding: 26px 16px 90px; }
+  header { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 30px; flex-wrap: wrap; }
+  .brand { font: 650 1.3rem/1 Fraunces, Georgia, serif; }
+  .brand em { font-style: normal; color: var(--indigo); }
+  nav a { color: var(--indigo); text-decoration: none; font-size: .85rem; margin-left: 14px; }
+  h1 { font: 650 2.3rem/1.1 Fraunces, Georgia, serif; letter-spacing: -.02em; margin: 0 0 10px; }
+  h2 { font: 650 1.35rem/1.2 Fraunces, Georgia, serif; margin: 0 0 6px; }
+  .sub { color: var(--soft); max-width: 680px; margin: 0 0 26px; }
+  .panel { background: var(--paper); border: 1px solid var(--line); border-radius: 22px; padding: 26px; box-shadow: var(--shadow); margin-bottom: 22px; }
+  .label { font-size: .75rem; letter-spacing: .09em; text-transform: uppercase; color: var(--faint); font-weight: 600; margin: 18px 0 8px; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 12px; }
+  .opt { text-align: left; font: inherit; background: var(--paper); color: var(--ink); border: 1px solid var(--line); border-radius: 16px; padding: 14px 16px; cursor: pointer; }
+  .opt[aria-pressed="true"] { border-color: var(--indigo); box-shadow: inset 0 0 0 1px var(--indigo); }
+  .opt b { display: block; }
+  .opt small { display: block; color: var(--soft); font-size: .82rem; line-height: 1.4; margin-top: 4px; }
+  .tag { display: inline-block; font-size: .72rem; border-radius: 999px; padding: 2px 9px; margin-left: 6px; vertical-align: 2px; }
+  .tag.ok { background: var(--green-soft); color: var(--green); } .tag.no { background: var(--amber-soft); color: var(--amber); }
+  .chips { display: flex; flex-wrap: wrap; gap: 8px; }
+  .chip { font: inherit; font-size: .88rem; border: 1px solid var(--line); background: var(--paper); color: var(--ink); padding: 8px 14px; border-radius: 999px; cursor: pointer; }
+  .chip[aria-pressed="true"] { background: var(--ink); color: var(--paper); border-color: var(--ink); }
+  .btn { font: inherit; font-weight: 600; border: 0; border-radius: 14px; padding: 13px 22px; cursor: pointer; background: var(--indigo); color: #fff; }
+  .btn.ghost { background: transparent; color: var(--ink); border: 1px solid var(--line); font-weight: 500; }
+  .btn:disabled { opacity: .45; cursor: not-allowed; }
+  .bar { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 16px; align-items: center; }
+  textarea, pre { width: 100%; font: .85rem/1.5 ui-monospace, Menlo, monospace; background: var(--bg); color: var(--ink); border: 1px solid var(--line); border-radius: 14px; padding: 14px; }
+  pre { white-space: pre-wrap; max-height: 320px; overflow: auto; margin: 10px 0 0; }
+  textarea { min-height: 180px; resize: vertical; }
+  .msg { font-size: .9rem; color: var(--soft); }
+  .msg.err { color: var(--amber); }
+  .how { background: var(--indigo-soft); color: var(--indigo); border-radius: 14px; padding: 12px 16px; font-size: .92rem; margin-top: 12px; }
+  .big { font: 650 2.6rem/1 Fraunces, Georgia, serif; }
+  .ans { border-top: 1px solid var(--line); padding: 16px 0; }
+  .ans h3 { font: 600 1.05rem/1.35 Inter, sans-serif; margin: 0 0 6px; }
+  .score { display: inline-block; min-width: 34px; text-align: center; border-radius: 10px; padding: 2px 8px; font-weight: 700; background: var(--indigo-soft); color: var(--indigo); margin-right: 8px; }
+  .rule { display: grid; grid-template-columns: 22px 1fr; gap: 8px; font-size: .9rem; }
+  .rule.pass .m { color: var(--green); } .rule.partial .m { color: var(--indigo); } .rule.fail .m { color: var(--amber); }
+  .rule small { display: block; color: var(--soft); font-size: .82rem; }
+  .fix { background: var(--amber-soft); color: var(--amber); border-radius: 12px; padding: 10px 14px; font-size: .92rem; margin: 8px 0; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div class="brand">Nail<em>It</em> · Interview call</div>
+    <nav><a href="/rehearse">Rehearse</a><a href="/mock">Mock interview in the app</a></nav>
+  </header>
+  <h1>Choose how to run the interview</h1>
+  <p class="sub">Practise inside the app with the interviewer of your choice, or hold a real voice call in a tool you already pay for and bring the transcript back to be scored by the same rules.</p>
+
+  <section class="panel">
+    <h2>Inside the app</h2>
+    <p class="msg">Who plays the interviewer in the mock interview. Hearing and speaking always run on this Mac.</p>
+    <div class="grid" id="engines" style="margin-top:14px"></div>
+    <div class="bar"><button class="btn ghost" id="test">Test the selected interviewer</button><a class="btn" href="/mock" style="text-decoration:none">Start a mock interview</a><span class="msg" id="engineMsg"></span></div>
+  </section>
+
+  <section class="panel">
+    <h2>A real voice call in another tool</h2>
+    <p class="msg">The app writes the interviewer's brief. You hold the call there, say “end interview”, and paste the transcript below.</p>
+    <p class="label">Tool</p><div class="chips" id="tools"></div>
+    <p class="label">Company</p><div class="chips" id="companies"></div>
+    <p class="label">Round</p><div class="chips" id="rounds"></div>
+    <p class="label">Questions</p><div class="chips" id="counts"></div>
+    <div class="bar"><button class="btn" id="make">Write the interviewer's brief</button><button class="btn ghost" id="copy" disabled>Copy brief</button><span class="msg" id="packMsg"></span></div>
+    <div class="how" id="how" hidden></div>
+    <pre id="brief" hidden></pre>
+  </section>
+
+  <section class="panel">
+    <h2>Score the call</h2>
+    <p class="msg">Paste the transcript (lines starting INTERVIEWER: and CANDIDATE:). Each answer is scored rule by rule.</p>
+    <textarea id="transcript" placeholder="INTERVIEWER: Tell me about a time you…&#10;CANDIDATE: …" style="margin-top:12px"></textarea>
+    <div class="bar"><button class="btn" id="scoreIt">Score my interview</button><span class="msg" id="scoreMsg"></span></div>
+    <div id="results"></div>
+  </section>
+</div>
+<script>
+const $ = (id) => document.getElementById(id);
+const S = { tool: "chatgpt", company: "generic", round: "behavioural", n: 8 };
+const api = async (url, opts) => { const r = await fetch(url, opts); const j = await r.json().catch(() => ({})); if (!r.ok) throw new Error(j.error || j.detail || ("Error " + r.status)); return j; };
+const el = (tag, cls, text) => { const e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; };
+
+function chips(box, items, key) {
+  box.innerHTML = "";
+  for (const it of items) {
+    const b = el("button", "chip", it.label); b.setAttribute("aria-pressed", String(S[key] === it.id));
+    b.onclick = () => { S[key] = it.id; chips(box, items, key); };
+    box.appendChild(b);
+  }
+}
+
+function drawEngines(data) {
+  $("engines").innerHTML = "";
+  for (const e of data.engines) {
+    const b = el("button", "opt"); b.setAttribute("aria-pressed", String(e.selected));
+    const name = el("b", null, e.label); name.appendChild(el("span", "tag " + (e.ready ? "ok" : "no"), e.ready ? "ready" : "not set up"));
+    b.append(name, el("small", null, e.cost), el("small", null, e.note));
+    b.onclick = async () => {
+      $("engineMsg").className = "msg"; $("engineMsg").textContent = "";
+      try { drawEngines(await api("/settings", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ engine: e.id }) })); $("engineMsg").textContent = e.label + " will play the interviewer."; }
+      catch (err) { $("engineMsg").className = "msg err"; $("engineMsg").textContent = err.message; }
+    };
+    $("engines").appendChild(b);
+  }
+}
+
+async function init() {
+  const [settings, options] = await Promise.all([api("/settings"), api("/interview/options")]);
+  drawEngines(settings);
+  S.tools = settings.outside;
+  chips($("tools"), settings.outside.map((t) => ({ id: t.id, label: t.label })), "tool");
+  chips($("companies"), options.companies.map((c) => ({ id: c.id, label: c.name })), "company");
+  chips($("rounds"), options.rounds.filter((r) => !["full_90", "loop", "presentation"].includes(r.id)).map((r) => ({ id: r.id, label: r.label })), "round");
+  chips($("counts"), [5, 8, 12].map((n) => ({ id: n, label: String(n) })), "n");
+}
+
+$("test").onclick = async () => {
+  $("engineMsg").className = "msg"; $("engineMsg").textContent = "Asking for an opening question…";
+  try { const r = await api("/settings/test", { method: "POST" }); $("engineMsg").textContent = `Answered in ${r.seconds} s: “${r.reply}”`; }
+  catch (err) { $("engineMsg").className = "msg err"; $("engineMsg").textContent = err.message; }
+};
+
+$("make").onclick = async () => {
+  $("packMsg").className = "msg"; $("packMsg").textContent = "";
+  try {
+    const p = await api(`/call/pack?company=${S.company}&round_id=${S.round}&n=${S.n}&tool=${S.tool}`);
+    $("brief").textContent = p.brief; $("brief").hidden = false; $("copy").disabled = false;
+    $("how").hidden = false; $("how").textContent = `${p.tool.label}: ${p.tool.how} Cost: ${p.tool.cost}.`;
+  } catch (err) { $("packMsg").className = "msg err"; $("packMsg").textContent = err.message; }
+};
+$("copy").onclick = async () => { try { await navigator.clipboard.writeText($("brief").textContent); $("packMsg").textContent = "Copied."; } catch { $("packMsg").textContent = "Select the text and copy it."; } };
+
+$("scoreIt").onclick = async () => {
+  const text = $("transcript").value.trim();
+  if (text.length < 40) { $("scoreMsg").className = "msg err"; $("scoreMsg").textContent = "Paste the transcript first."; return; }
+  $("scoreIt").disabled = true; $("scoreMsg").className = "msg"; $("scoreMsg").textContent = "Scoring each answer…"; $("results").innerHTML = "";
+  try {
+    const r = await api("/call/import", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ text, company: S.company, tool: S.tool }) });
+    $("scoreMsg").textContent = "";
+    const head = el("div"); head.style.marginTop = "18px";
+    head.append(el("span", "big", r.overall + "/10"), el("span", "msg", `  ${r.count} answers · committee view: ${r.verdict}`));
+    $("results").appendChild(head);
+    if (r.repeat_misses.length) $("results").appendChild(el("div", "fix", "Missed most often: " + r.repeat_misses.map(([n, c]) => `${n} (${c}×)`).join(" · ")));
+    for (const a of r.answers) {
+      const box = el("div", "ans"); const h = el("h3");
+      if (a.score != null) h.appendChild(el("span", "score", String(a.score)));
+      h.appendChild(document.createTextNode(a.question)); box.appendChild(h);
+      if (a.error) { box.appendChild(el("p", "msg err", "Couldn't score this answer: " + a.error)); $("results").appendChild(box); continue; }
+      if (a.one_fix) box.appendChild(el("div", "fix", "Next time: " + a.one_fix));
+      for (const x of a.rules) {
+        const row = el("div", "rule " + x.verdict); const body = el("span", null, x.name);
+        if (x.evidence) body.appendChild(el("small", null, x.evidence));
+        row.append(el("span", "m", x.verdict === "pass" ? "✓" : x.verdict === "partial" ? "◐" : "○"), body); box.appendChild(row);
+      }
+      $("results").appendChild(box);
+    }
+  } catch (err) { $("scoreMsg").className = "msg err"; $("scoreMsg").textContent = err.message; }
+  $("scoreIt").disabled = false;
+};
+init().catch((err) => { $("engineMsg").className = "msg err"; $("engineMsg").textContent = err.message; });
+</script>
+</body>
+</html>
