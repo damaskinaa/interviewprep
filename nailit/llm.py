@@ -26,6 +26,20 @@ SYSTEM_PROMPT = (
 
 _cost_log = ContextVar("nailit_cost_log", default=None)
 _client = None
+_tx_client = None
+TENSORX_BASE = os.getenv("TENSORX_BASE_URL") or "https://api.tensorx.ai/v1"
+# Live conversation needs speed (interviewer lines); analysis needs strength. Measured on TensorX, Nov 2026:
+# MiniMax M3.1 Flash answers in under a second; Kimi K3.1 Pro is the strongest writer on the key.
+TX_FAST = os.getenv("NAILIT_TX_FAST") or "minimax/minimax-m3.1-flash"
+TX_STRONG = os.getenv("NAILIT_TX_STRONG") or "moonshotai/kimi-k3.1-pro"
+
+
+def provider():
+    """TensorX when its key is present (the default); OpenAI only if forced or if it's the only key."""
+    forced = (os.getenv("NAILIT_PROVIDER") or "").lower()
+    if forced in ("openai", "tensorx"):
+        return forced
+    return "tensorx" if os.getenv("TENSORX_API_KEY") else "openai"
 
 
 class LLMError(RuntimeError):
@@ -77,14 +91,21 @@ def log_cost_total(records, label):
 
 def ask_llm(prompt, model=None, max_tokens=2400, retries=3, temperature=0.25):
     model = model or MODEL_FAST
-    if not os.getenv("OPENAI_API_KEY"):
-        raise LLMError("OPENAI_API_KEY is not set (Keychain service 'nailit' or .env).")
+    via_tx = provider() == "tensorx"
+    if via_tx:
+        global _tx_client
+        if _tx_client is None:
+            _tx_client = OpenAI(api_key=os.environ["TENSORX_API_KEY"], base_url=TENSORX_BASE, max_retries=1)
+        model = TX_STRONG if model == MODEL_STRONG and MODEL_STRONG != MODEL_FAST else TX_FAST
+        max_tokens = max(max_tokens * 3, 1200)  # room for the model's own reasoning before the reply
+    elif not os.getenv("OPENAI_API_KEY"):
+        raise LLMError("No model key found: add TENSORX_API_KEY or OPENAI_API_KEY (Keychain service 'nailit').")
     user_prompt = anonymise(prompt.strip(), people_map())
     last_error = None
     for attempt in range(1, retries + 1):
         started = time.monotonic()
         try:
-            response = client().chat.completions.create(
+            response = (_tx_client if via_tx else client()).chat.completions.create(
                 model=model,
                 messages=[{"role": "system", "content": SYSTEM_PROMPT}, {"role": "user", "content": user_prompt}],
                 temperature=temperature,
@@ -92,7 +113,10 @@ def ask_llm(prompt, model=None, max_tokens=2400, retries=3, temperature=0.25):
                 timeout=150,
             )
             record_call(model, response.usage, time.monotonic() - started)
-            return response.choices[0].message.content or ""
+            text = (response.choices[0].message.content or "").split("</think>")[-1].strip()
+            if not text:
+                raise LLMError("empty reply")
+            return text
         except Exception as error:
             last_error = error
             if attempt < retries:

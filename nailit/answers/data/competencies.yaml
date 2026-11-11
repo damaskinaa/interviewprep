@@ -1,0 +1,173 @@
+# The competency map: what interviewers are actually testing, whatever words they use.
+# Every harvested question is mapped to one of these. You rehearse competencies (about 40), not thousands of
+# questions; a new wording in a real interview lands on a competency you have already practised.
+# rule: the rubric rule (library/rubric.md) that sets the answer's structure. amazon / google / meta / pfizer: the
+# company's own name for what the question tests, so answers and the interviewer can use the company's language.
+groups:
+  opening: Opening and motivation
+  people: Leading people
+  delivery: Delivery under pressure
+  influence: Stakeholders and influence
+  judgement: Improvement and judgement
+  role: Role knowledge (non-coding)
+  close: Logistics and close
+
+competencies:
+- {id: tmay, group: opening, name: "Tell me about yourself", rule: R7.1, core: true,
+   tests: "who you are in 60-80 seconds: result first, journey, why here",
+   examples: ["Tell me about yourself", "Walk me through your resume", "Tell me about your experience"]}
+- {id: why_company, group: opening, name: "Why this company", rule: R2.8, core: true, per_company: true,
+   tests: "their need first, one specific recent fact about them, your proof",
+   examples: ["Why do you want to work here?", "Why Amazon?", "What do you know about our company?"]}
+- {id: why_role, group: opening, name: "Why this role and where you're going", rule: R2.8, core: true,
+   tests: "fit between the role and your direction; realistic ambition",
+   examples: ["Why this role?", "Where do you see yourself in five years?", "What do you want in your next role?"]}
+- {id: why_leaving, group: opening, name: "Why you left, gaps and changes", rule: R2.8, core: true,
+   tests: "a calm, true, forward-looking account; no blame",
+   examples: ["Why did you leave your last job?", "Why is there a gap on your CV?", "Why are you changing careers?"]}
+- {id: why_you, group: opening, name: "Why you, strengths", rule: R2.8, core: true,
+   tests: "their problem, your proof, what changes if they hire you",
+   examples: ["Why should we hire you?", "What are your strengths?", "What can you contribute?"]}
+- {id: weakness, group: opening, name: "Weakness", rule: R2.5, core: true,
+   tests: "a real weakness, the action already taken, evidence it's improving",
+   examples: ["What is your biggest weakness?", "What would your manager say you need to improve?"]}
+- {id: self_awareness, group: opening, name: "Feedback and self-awareness", rule: R2.10,
+   amazon: [Earn Trust, Learn and Be Curious], google: [Googleyness],
+   tests: "hard feedback received and what changed; a sober self-rating",
+   examples: ["Tell me about feedback that was hard to hear", "How do you handle criticism?", "What would others say about you?"]}
+
+- {id: conflict_peer, group: people, name: "Conflict in or with the team", rule: R2.1, core: true,
+   amazon: [Earn Trust], google: [Leadership, Googleyness], meta: [Resolving conflict], pfizer: [Equity],
+   tests: "you addressed it directly, heard the other side, and the relationship survived",
+   examples: ["How do you handle conflicts within your team?", "Tell me about a conflict with a coworker", "When were you the reason for a conflict?"]}
+- {id: disagree_up, group: people, name: "Disagreeing with a manager or executive", rule: R4.11, core: true,
+   amazon: ["Have Backbone; Disagree and Commit"], google: [Leadership], pfizer: [Courage],
+   tests: "disagreement with evidence, then full commitment to the decision",
+   examples: ["Tell me about a time you disagreed with your manager", "Describe a time you said no to a senior stakeholder", "Tell me about a challenging manager"]}
+- {id: underperformance, group: people, name: "Underperformance and hard feedback", rule: R2.1, core: true,
+   amazon: [Hire and Develop the Best, Insist on the Highest Standards], google: [Leadership],
+   tests: "clear standard, specific feedback, support, a decision with a date",
+   examples: ["How do you handle underperforming team members?", "Tell me about a hire you got wrong", "How do you deliver difficult feedback?"]}
+- {id: develop_people, group: people, name: "Developing, motivating and hiring people", rule: R2.1, core: true,
+   amazon: [Hire and Develop the Best], google: [Leadership], pfizer: [Joy, Equity],
+   tests: "a named person or team that grew because of what you did",
+   examples: ["How do you motivate your team?", "How have you developed or mentored team members?", "How do you assess team performance?"]}
+- {id: leadership_style, group: people, name: "Leadership style and culture", rule: R2.8,
+   amazon: [Strive to be Earth's Best Employer], google: [Leadership], meta: [Empowering people],
+   tests: "a principle you actually run by, shown through one decision",
+   examples: ["What is your management style?", "What's the difference between leadership and management?", "What culture do you build?"]}
+- {id: delegation_trust, group: people, name: "Delegation, trust and accountability", rule: R2.1,
+   amazon: [Earn Trust, Ownership], google: [Leadership],
+   tests: "what you let go of, how you kept accountability without micromanaging",
+   examples: ["How do you delegate?", "How do you earn trust with a team?", "How do you ensure accountability?"]}
+
+- {id: prioritisation, group: delivery, name: "Prioritising and saying no", rule: R2.6, core: true,
+   amazon: [Deliver Results, Bias for Action], google: [General cognitive ability], meta: [Driving results],
+   tests: "what you deliberately did NOT do, and who you told",
+   examples: ["How do you prioritize when everything is urgent?", "How do you manage multiple projects?", "How do you handle competing priorities across teams?"]}
+- {id: deadline_pressure, group: delivery, name: "Deadlines and pressure", rule: R2.1, core: true,
+   amazon: [Deliver Results, Bias for Action], meta: [Driving results], pfizer: [Excellence],
+   tests: "the options you had when the date was at risk, and the one you chose",
+   examples: ["Tell me about a tight deadline", "How do you handle a project that is behind schedule?", "How do you handle pressure?"]}
+- {id: recovery_crisis, group: delivery, name: "Crisis, incident and recovery", rule: R2.1, core: true,
+   amazon: [Ownership, Dive Deep, Deliver Results], google: [Leadership], pfizer: [Courage],
+   tests: "first hour, communication, root cause, what changed afterwards",
+   examples: ["Tell me about a time you handled a crisis", "Describe a program you had to recover", "Describe a major incident you managed end to end"]}
+- {id: failure, group: delivery, name: "Failure and mistakes", rule: R2.4, core: true,
+   amazon: [Ownership, Learn and Be Curious, Earn Trust], google: [Googleyness], meta: [Growing continuously],
+   tests: "a real failure that was yours, its cost, the fix, the system change",
+   examples: ["Tell me about a time you failed", "What is the biggest mistake you've made?", "Tell me about a decision that turned out wrong"]}
+- {id: ambiguity, group: delivery, name: "Ambiguity and incomplete information", rule: R4.10, core: true,
+   amazon: ["Are Right, A Lot", Bias for Action], google: [General cognitive ability, Googleyness], meta: [Embracing ambiguity],
+   tests: "how you decided what was enough to act, and how you made it reversible",
+   examples: ["How do you handle ambiguity?", "Tell me about a decision with incomplete information", "Describe a program with significant uncertainty"]}
+- {id: risk, group: delivery, name: "Taking and managing risk", rule: R2.1,
+   amazon: [Bias for Action, Think Big], google: [General cognitive ability],
+   tests: "the risk named in advance, the mitigation, what happened",
+   examples: ["What is your approach to risk management?", "Tell me about a time you took a risk", "How do you identify risks in a program?"]}
+- {id: scope_change, group: delivery, name: "Scope change and adapting", rule: R2.9,
+   amazon: [Deliver Results], google: [Role-related knowledge],
+   tests: "impact assessed, options with trade-offs, decision owner named",
+   examples: ["How do you handle scope creep?", "How do you handle change requests?", "Tell me about a time priorities changed suddenly"]}
+
+- {id: influence, group: influence, name: "Influence without authority", rule: R2.3, core: true,
+   amazon: [Earn Trust, "Have Backbone; Disagree and Commit"], google: [Leadership], meta: [Communicating effectively], pfizer: [Courage],
+   tests: "their interest understood, the case made in their terms, resistance, the result",
+   examples: ["Tell me about a time you influenced without authority", "Give an example of driving adoption of your idea", "How do you get buy-in?"]}
+- {id: stakeholders, group: influence, name: "Stakeholders and executives", rule: R2.3, core: true,
+   amazon: [Earn Trust, Deliver Results], google: [Leadership], meta: [Communicating effectively],
+   tests: "conflicting interests named, the trade-off put to the right owner, bad news early",
+   examples: ["How do you manage stakeholders?", "Describe two stakeholders with conflicting priorities", "Describe delivering bad news to an executive"]}
+- {id: customer, group: influence, name: "Customers and clients", rule: R2.1, core: true,
+   amazon: [Customer Obsession], google: [Role-related knowledge], pfizer: [Excellence],
+   tests: "what the customer really needed, what you did beyond the ticket, what it changed",
+   examples: ["Tell me about a difficult customer", "Tell me about a time you turned down a customer request", "Tell me about making something simpler for customers"]}
+- {id: cross_functional, group: influence, name: "Working across teams and with engineers", rule: R2.3, core: true,
+   amazon: [Earn Trust, Deliver Results], google: [Leadership, Role-related knowledge], meta: [Partnership],
+   tests: "shared goal, who owned what, how disagreement between teams was settled",
+   examples: ["Give an example of working with cross-functional teams", "Tell me about a time you disagreed with engineering", "How do you communicate a technical issue to a non-technical stakeholder?"]}
+- {id: vendor_negotiation, group: influence, name: "Vendors, partners and negotiation", rule: R2.1,
+   amazon: [Frugality, Earn Trust], google: [Role-related knowledge],
+   tests: "leverage understood, terms changed, relationship intact",
+   examples: ["How do you manage vendor performance?", "Tell me about a negotiation with a critical vendor"]}
+
+- {id: process_improvement, group: judgement, name: "Process improvement and simplification", rule: R2.1, core: true,
+   amazon: [Invent and Simplify, Insist on the Highest Standards], google: [Role-related knowledge], pfizer: [Excellence],
+   tests: "the baseline, the cause you found, the change, the measured result",
+   examples: ["Describe a time you improved a process", "Tell me about something you automated", "How have you applied Lean / Six Sigma?"]}
+- {id: data_decision, group: judgement, name: "Data, metrics and root cause", rule: R1.5, core: true,
+   amazon: [Dive Deep, "Are Right, A Lot"], google: [General cognitive ability], meta: [Driving results],
+   tests: "the number you questioned, how you checked it, the decision it changed",
+   examples: ["Tell me about using analytics to make a decision", "What KPIs do you track?", "How do you run a root-cause analysis?"]}
+- {id: ownership_initiative, group: judgement, name: "Ownership and initiative", rule: R2.1, core: true,
+   amazon: [Ownership, Bias for Action], google: [Googleyness, Leadership], meta: [Driving results], pfizer: [Courage],
+   tests: "a problem nobody owned that you picked up, and what it cost you",
+   examples: ["Tell me about taking ownership of a problem outside your remit", "Tell me about a time you went above and beyond", "Give an example of a time you initiated change"]}
+- {id: innovation, group: judgement, name: "Innovation and thinking big", rule: R2.1,
+   amazon: [Think Big, Invent and Simplify, Learn and Be Curious], google: [General cognitive ability],
+   tests: "an idea that wasn't the obvious one, and how you proved it",
+   examples: ["What is the most innovative idea you've had?", "Describe a non-intuitive solution you proposed"]}
+- {id: cost_budget, group: judgement, name: "Budget, cost and resources", rule: R2.1,
+   amazon: [Frugality], google: [Role-related knowledge],
+   tests: "the money or headcount constraint, the trade-off, the payback",
+   examples: ["Do you have experience with budget management?", "Tell me about a time you reduced costs", "Explain your methods for resource allocation"]}
+- {id: quality_standards, group: judgement, name: "Quality, standards and compliance", rule: R2.1,
+   amazon: [Insist on the Highest Standards], pfizer: [Excellence, Equity],
+   tests: "the standard you refused to lower and what it cost",
+   examples: ["How do you ensure quality?", "How do you ensure compliance with regulations?", "How do you balance cost, quality and speed?"]}
+- {id: strategy_longterm, group: judgement, name: "Strategy, scale and the long term", rule: R2.8,
+   amazon: [Think Big, Ownership, Success and Scale Bring Broad Responsibility], google: [General cognitive ability], meta: [Driving results],
+   tests: "a short-term cost you accepted for a long-term gain, with the reasoning",
+   examples: ["How do you balance short-term goals with long-term planning?", "How do you build scalable processes?", "What trends will affect operations?"]}
+- {id: change_management, group: judgement, name: "Leading change and resistance", rule: R2.3, core: true,
+   amazon: [Earn Trust, Deliver Results], google: [Leadership], pfizer: [Courage],
+   tests: "who resisted and why, what you changed in the plan, adoption measured",
+   examples: ["Tell me about your experience with change management", "Tell me about a change your team resisted"]}
+- {id: biggest_achievement, group: judgement, name: "Biggest achievement and most complex work", rule: R2.1, core: true,
+   amazon: [Deliver Results, Think Big], google: [Role-related knowledge], meta: [Driving results],
+   tests: "scale, your decisions, the result of the result",
+   examples: ["What is your biggest accomplishment?", "Describe your most complex project", "Which project are you most proud of?"]}
+
+- {id: ops_knowledge, group: role, name: "Operations and service delivery knowledge", rule: R2.12,
+   google: [Role-related knowledge],
+   tests: "a correct method in plain words plus one real example: SLAs, capacity, incident, ITIL, service reviews",
+   examples: ["How do you ensure service delivery meets SLAs?", "How do you define service delivery success?", "Describe your experience with ITIL"]}
+- {id: program_knowledge, group: role, name: "Programme and project management knowledge", rule: R2.12,
+   google: [Role-related knowledge],
+   tests: "dependencies, critical path, RAID, status reporting, roadmap: method plus example",
+   examples: ["How do you manage dependencies across projects?", "How is program management different from project management?", "How do you kick off a new project?"]}
+- {id: tools_methods, group: role, name: "Tools and methodologies", rule: R2.12,
+   google: [Role-related knowledge],
+   tests: "named tools, what each was for, how you choose",
+   examples: ["What project software have you used?", "Tell me about your experience with Agile"]}
+- {id: hypothetical, group: role, name: "What would you do if…", rule: R2.9, core: true,
+   amazon: ["Are Right, A Lot"], google: [General cognitive ability],
+   tests: "clarify, options with trade-offs, a decision, when you'd escalate",
+   examples: ["What would you do if a critical dependency slipped?", "The program is over budget. What do you do?", "What will your first 90 days look like?"]}
+
+- {id: salary_logistics, group: close, name: "Salary and logistics", rule: R2.13,
+   tests: "a researched range, flexibility on the package, no pay history",
+   examples: ["What are your salary expectations?", "When could you start?", "Are you interviewing elsewhere?"]}
+- {id: questions_for_them, group: close, name: "Your questions and closing", rule: R6.1, core: true,
+   tests: "three questions that show you already think like the job holder; a closing statement",
+   examples: ["Do you have any questions for us?", "Is there anything you'd like to add?"]}

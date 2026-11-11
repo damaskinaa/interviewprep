@@ -32,12 +32,15 @@ class RehearseTest(unittest.TestCase):
         self.assertIn("Rehearse", self.client.get("/rehearse").text)
 
     def test_typed_attempt_is_scored_and_logged(self):
-        reply = json.dumps({"score": 8, "moves_hit": ["Opens with the result"], "moves_missed": ["Gives a number"],
-                            "one_fix": "Say the number.", "best_line": "I run delivery.", "verdict": "Hire"})
-        with mock.patch("nailit.answers.ai.chat", return_value=json.loads(reply)):
-            result = self.client.post("/rehearse/attempt_text", json={"card_id": "tmay", "text": "I run delivery, we like it."}).json()
-        self.assertEqual(result["score"], 8)
-        self.assertEqual(result["delivery"]["we"], 1)
+        reply = {"on_topic": True, "rules": {"R1.1": {"verdict": "pass", "evidence": "I run delivery"},
+                                              "R1.11": {"verdict": "pass", "evidence": "I run delivery"}},
+                 "moves_hit": ["Opens with the result"], "moves_missed": ["Gives a number"],
+                 "one_fix": "Say the number.", "best_line": "I run delivery."}
+        with mock.patch("nailit.answers.ai.chat", return_value=reply):
+            result = self.client.post("/rehearse/attempt_text", json={"card_id": "tmay", "text": "I run delivery, we like it. " * 6}).json()
+        self.assertEqual((result["quality"], result["fidelity"], result["score"]), (10.0, 5.0, 8))
+        self.assertEqual(result["delivery"]["we"], 6)
+        self.assertEqual([r["verdict"] for r in result["rules"]], ["pass", "pass"])
         self.assertEqual(result["moves"], DECK["cards"][0]["moves"])
         progress = self.client.get("/rehearse/progress").json()
         self.assertEqual((progress["attempts"], progress["mastered"]), (1, 1))

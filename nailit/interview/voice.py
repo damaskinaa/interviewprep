@@ -178,6 +178,24 @@ def _openai_tts(text, path, voice_name=None, instructions=None):
         response.stream_to_file(path)
 
 
+def _tensorx_tts(text, path, voice_name=None, instructions=None):
+    key = os.getenv("TENSORX_API_KEY")
+    if not key:
+        raise VoiceUnavailable("no TensorX key for TTS")
+    import httpx
+
+    reply = httpx.post((os.getenv("TENSORX_BASE_URL") or "https://api.tensorx.ai/v1") + "/audio/speech",
+                       headers={"Authorization": "Bearer " + key}, timeout=60,
+                       json={"model": os.getenv("NAILIT_TX_TTS_MODEL") or "chatterbox-turbo", "input": text,
+                             "response_format": "mp3"})
+    if reply.status_code != 200 or len(reply.content) < 1000:
+        raise VoiceUnavailable(f"TensorX TTS {reply.status_code}: {reply.text[:120]}")
+    Path(path).write_bytes(reply.content)
+
+
+_TTS_DOWN = {}  # engine -> time it last failed; a failed engine is skipped for 10 minutes instead of retried every turn
+
+
 def _say_tts(text, path, voice_name=None, instructions=None):
     if sys.platform != "darwin" or not shutil.which("say"):
         raise VoiceUnavailable("macOS `say` is not available")
@@ -192,14 +210,18 @@ def speak(text, mock_id, name, engine=None, voice_name=None, instructions=None):
     engine = engine or os.getenv("NAILIT_TTS") or "openai"
     if engine not in TTS_ENGINES:
         raise ValueError(f"unknown TTS engine {engine}")
-    order = {"openai": ["openai", "say"], "say": ["say"], "none": []}[engine]
+    order = {"openai": ["openai", "tensorx", "say"], "say": ["say"], "none": []}[engine]
+    engines = {"openai": _openai_tts, "tensorx": _tensorx_tts, "say": _say_tts}
     for choice in order:
-        path = recordings_dir(mock_id) / f"{name}.{'mp3' if choice == 'openai' else 'wav'}"
+        if choice != "say" and time.time() - _TTS_DOWN.get(choice, 0) < 600:
+            continue
+        path = recordings_dir(mock_id) / f"{name}.{'wav' if choice == 'say' else 'mp3'}"
         try:
-            (_openai_tts if choice == "openai" else _say_tts)(text, path, voice_name, instructions)
+            engines[choice](text, path, voice_name, instructions)
             return path, choice
         except Exception as error:  # noqa: BLE001 - any TTS failure falls back to the next engine, then text
-            logger.warning("TTS %s failed: %s", choice, error)
+            _TTS_DOWN[choice] = time.time()
+            logger.warning("TTS %s failed (skipping it for 10 minutes): %s", choice, error)
     return None, "none"
 
 

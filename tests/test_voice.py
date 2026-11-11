@@ -28,6 +28,7 @@ WHISPER = {
 
 class VoiceUnitTest(unittest.TestCase):
     def setUp(self):
+        voice._TTS_DOWN.clear()
         self.tmp = tempfile.mkdtemp()
         patcher = mock.patch.dict(os.environ, {"NAILIT_RECORDINGS": self.tmp})
         patcher.start()
@@ -83,6 +84,7 @@ class VoiceUnitTest(unittest.TestCase):
 
 class VoiceApiTest(unittest.TestCase):
     def setUp(self):
+        voice._TTS_DOWN.clear()
         api = importlib.import_module("nailit.api")
         self.store = importlib.import_module("nailit.store")
         self.tmp = Path(tempfile.mkdtemp())

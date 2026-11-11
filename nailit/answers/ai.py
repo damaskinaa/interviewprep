@@ -98,7 +98,7 @@ def _track(model, inp, out):
     u[1] += out or 0
 
 
-def chat(model, prompt, json_mode=False, effort="medium", max_tokens=16000, retries=3, thinking=True):
+def chat(model, prompt, json_mode=False, effort="medium", max_tokens=16000, retries=3, thinking=True, timeout=None):
     """One request. JSON mode asks for a single JSON object and parses it ({} on failure).
 
     thinking=False switches thinking off where the model allows it (Haiku 5.5: disabled; Sonnet 5.5: between_tools);
@@ -114,7 +114,8 @@ def chat(model, prompt, json_mode=False, effort="medium", max_tokens=16000, retr
             if model.startswith("tx:"):
                 kwargs = {"response_format": {"type": "json_object"}} if json_mode else {}
                 resp = _tx().chat.completions.create(model=model[3:], messages=[{"role": "user", "content": prompt}],
-                                                     max_tokens=max_tokens, **kwargs)
+                                                     max_tokens=max_tokens, **kwargs,
+                                                     **({"timeout": timeout} if timeout else {}))
                 _track(model, resp.usage.prompt_tokens, resp.usage.completion_tokens)
                 text = (resp.choices[0].message.content or "").strip()
                 text = text.split("</think>")[-1].strip()  # reasoning models may inline their thinking

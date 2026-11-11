@@ -25,7 +25,9 @@ SPEAK_STYLE = {
     "answer": "A confident, calm senior candidate answering in an interview. Warm, measured, clear; land the results "
               "with a falling tone and a short pause after numbers. Not salesy.",
 }
-SCORER = os.getenv("NAILIT_SCORER") or "tx:z-ai/glm-5.3"
+# Chosen by nailit.answers.calibrate (Nov 2026): DeepSeek V4.1 Flash keeps strong, weak and off-topic attempts in
+# the right order in about 3.5 s; GLM 5.3 took 20-50 s and MiniMax M3.1 Flash gave unstable scores.
+SCORER = os.getenv("NAILIT_SCORER") or "tx:deepseek/deepseek-v4.1-flash-1017"
 FILLERS = re.compile(r"\b(um+|uh+|er+|erm|like|you know|basically|sort of|kind of|actually)\b", re.I)
 
 
@@ -49,7 +51,8 @@ def card(card_id):
             items = c.get("followups") or []
             if follow.isdigit() and int(follow) < len(items):
                 f = items[int(follow)]
-                return {"id": card_id, "question": f["q"], "answer": f["a"], "moves": [], "type": "followup"}
+                return {"id": card_id, "question": f["q"], "answer": f["a"], "moves": [], "type": "followup",
+                        "competency": c.get("competency")}
     raise HTTPException(status_code=404, detail="Card not found")
 
 
@@ -86,7 +89,7 @@ def deck(kind: str = "", limit: int = 400):
                 variants.append(v)
         c["variants"] = variants
     cards = [{k: c.get(k) for k in ("id", "question", "answer", "moves", "hook", "frequency", "type", "why_it_won", "followups", "variants",
-                                     "roles", "companies", "win_rate", "candidates", "origin")} | {"best_score": best.get(c["id"])}
+                                     "roles", "companies", "win_rate", "candidates", "origin", "competency")} | {"best_score": best.get(c["id"])}
              for c in data["cards"] if not kind or c.get("type") == kind]
     return {"cards": cards[:limit], "built": data.get("built"), "total": len(data["cards"]),
             "types": sorted({c.get("type") for c in data["cards"] if c.get("type")})}
@@ -124,22 +127,6 @@ def audio(name: str):
     return FileResponse(path)
 
 
-SCORE_PROMPT = """You are a strict but encouraging interview coach. The learner is rehearsing a MODEL answer to build
-confidence; they are allowed to paraphrase. Score how well their spoken attempt reproduces the model answer's
-strength (not word-for-word recall).
-
-Question: {question}
-Model answer: {answer}
-Key moves to reproduce: {moves}
-Learner's attempt (speech-to-text, {seconds}s): {attempt}
-
-Score 0-10: 9-10 = all key moves, answer-first, confident and concise; 7-8 = most moves, minor gaps; 5-6 = the gist
-but missing important moves (trade-off, number, result); 3-4 = vague or rambling; 0-2 = off-topic or nearly empty.
-Reply JSON: {{"score": int, "moves_hit": [..exact strings from key moves..], "moves_missed": [..],
-"one_fix": "the single most valuable change for the next attempt, as an instruction",
-"best_line": "the learner's strongest sentence, quoted", "verdict": "Strong Hire|Hire|Lean No Hire|No Hire"}}"""
-
-
 @router.post("/rehearse/attempt")
 def attempt(card_id: str = Form(...), audio: UploadFile = File(...), take: str = Form(""), test: bool = Form(False)):
     c = card(card_id)
@@ -165,14 +152,13 @@ def attempt_text(req: TypedAttempt):
 
 
 def _score(c, text, seconds, filled_pauses, audio_name=None, log=True):
-    from nailit.answers import ai
+    from nailit import scoring
     words = len(text.split())
     try:
-        result = ai.chat(SCORER, SCORE_PROMPT.format(question=c["question"], answer=c["answer"], moves=c.get("moves"),
-                                                     attempt=text, seconds=seconds or "typed"), json_mode=True, effort="low") or {}
+        result = scoring.score(c, text, level=1)
     except Exception as error:  # noqa: BLE001
         raise HTTPException(status_code=502, detail=f"Scoring failed: {error}") from error
-    score = max(0, min(10, int(result.get("score") or 0)))
+    score = result["score"]
     delivery = {
         "seconds": seconds, "words": words,
         "wpm": round(words / seconds * 60) if seconds else None,
@@ -182,11 +168,14 @@ def _score(c, text, seconds, filled_pauses, audio_name=None, log=True):
     }
     row = {"at": time.strftime("%Y-%m-%d %H:%M:%S"), "card_id": c["id"], "score": score, "verdict": result.get("verdict"),
            "moves_hit": result.get("moves_hit") or [], "moves_missed": result.get("moves_missed") or [],
+           "quality": result["quality"], "fidelity": result["fidelity"], "competency": c.get("competency"),
+           "rules_failed": [r["id"] for r in result["rules"] if r["verdict"] == "fail"],
            "delivery": delivery, "audio": audio_name}
     if log:  # simulated-candidate test runs don't count towards your progress
         with open(progress_path(), "a") as handle:
             handle.write(json.dumps(row) + "\n")
     return {**row, "transcript": text, "one_fix": result.get("one_fix"), "best_line": result.get("best_line"),
+            "rules": result["rules"],
             "model_answer": c["answer"], "moves": c.get("moves") or []}
 
 

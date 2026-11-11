@@ -205,6 +205,8 @@ def report(results, extra):
 
 
 def main():
+    from nailit.config import load_secrets
+    load_secrets()
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--round", default="recruiter")
     parser.add_argument("--persona", default="strong", choices=sorted(PERSONAS))

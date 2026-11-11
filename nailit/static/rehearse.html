@@ -72,6 +72,11 @@
   .move { font-size: .85rem; border-radius: 10px; padding: 7px 11px; background: var(--indigo-soft); color: var(--indigo); }
   .move.hit { background: var(--green-soft); color: var(--green); }
   .move.miss { background: var(--amber-soft); color: var(--amber); }
+  .rules { display: grid; gap: 6px; margin-top: 8px; }
+  .rule { display: grid; grid-template-columns: 22px 1fr; gap: 8px; align-items: baseline; font-size: .95rem; }
+  .rule .mark { font-weight: 700; }
+  .rule.pass .mark { color: var(--green); } .rule.partial .mark { color: var(--indigo); } .rule.fail .mark { color: var(--amber); }
+  .rule small { display: block; color: var(--soft); font-size: .85rem; }
   .bar { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-top: 20px; }
 
   .mic-zone { display: none; flex-direction: column; align-items: center; gap: 14px; padding: 26px 0 6px; }
@@ -189,7 +194,12 @@
         </div>
         <div class="fix" id="fix"><b>Next time</b><span></span></div>
         <div class="best" id="best"></div>
-        <div class="moves" id="resMoves"></div>
+        <div id="rulesBox" style="display:none">
+          <p class="label" style="margin-top:22px">How you answered <span id="qualNote"></span></p>
+          <div class="rules" id="resRules"></div>
+        </div>
+        <p class="label" id="movesLabel" style="margin-top:22px">What you reproduced from the best answer <span id="fidNote"></span></p>
+        <div class="moves" id="resMoves" style="margin-top:8px"></div>
         <div class="compare"><div><p class="label">What you said</p><span id="yours"></span></div><div><p class="label">Best answer</p><span id="theirs"></span></div></div>
         <div id="fups" style="display:none;margin-top:22px"><p class="label">Bar Raiser follow-ups for this answer</p><div id="fupList"></div></div>
         <div class="bar"><button class="btn ghost" id="again">Try again</button><button class="btn ghost" id="drillFups" style="display:none">Practise the follow-ups</button><button class="btn" id="next">Next question</button></div>
@@ -393,6 +403,19 @@ function showResult(r) {
   $("fix").style.display = r.one_fix ? "block" : "none";
   const bl = (r.best_line || "").replace(/^["“'\s]+|["”'\s]+$/g, "");
   $("best").textContent = bl ? "Your strongest line: “" + bl + "”" : ""; $("best").style.display = bl ? "block" : "none";
+  const rules = r.rules || [];
+  $("rulesBox").style.display = rules.length ? "block" : "none";
+  $("qualNote").textContent = r.quality != null ? `· ${r.quality}/10` : "";
+  $("fidNote").textContent = r.fidelity != null ? `· ${r.fidelity}/10` : "";
+  $("movesLabel").style.display = (r.moves || []).length ? "block" : "none";
+  $("resRules").innerHTML = "";
+  for (const x of rules) {
+    const row = document.createElement("div"); row.className = "rule " + x.verdict;
+    const mark = document.createElement("span"); mark.className = "mark"; mark.textContent = x.verdict === "pass" ? "✓" : x.verdict === "partial" ? "◐" : "○";
+    const body = document.createElement("span"); body.textContent = x.name;
+    if (x.evidence) { const ev = document.createElement("small"); ev.textContent = (x.verdict === "fail" ? "" : "“") + x.evidence + (x.verdict === "fail" ? "" : "”"); body.appendChild(ev); }
+    row.append(mark, body); $("resRules").appendChild(row);
+  }
   $("resMoves").innerHTML = "";
   for (const m of r.moves) { const s = document.createElement("span"); s.className = "move " + ((r.moves_hit || []).includes(m) ? "hit" : "miss"); s.textContent = ((r.moves_hit || []).includes(m) ? "✓ " : "○ ") + m; $("resMoves").appendChild(s); }
   $("yours").textContent = r.transcript; $("theirs").textContent = r.model_answer;
