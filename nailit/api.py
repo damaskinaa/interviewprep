@@ -279,7 +279,9 @@ def _measure_turn(mock_id, index, question_type, audio=None):
         lib = _library()
         with _mock_lock(mock_id):
             turn = load_mock(mock_id)["turns"][index]
-        result = detectors.run(lib, words=turn.get("words"), text=turn["say"], audio=audio,
+        if not turn.get("words") and not turn.get("say"):
+            return
+        result = detectors.run(lib, words=turn.get("words"), text=turn.get("say"), audio=audio,
                                question_type=question_type, pre_answer_silence_s=turn.get("pre_answer_silence_s"),
                                people=library.people_map())
         with _mock_lock(mock_id):

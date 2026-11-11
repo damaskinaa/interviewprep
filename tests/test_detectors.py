@@ -68,7 +68,8 @@ class MeasuredRulesTest(unittest.TestCase):
         self.assertIsNone(detectors.evaluate_rule("> 120", None))
 
     def test_unsafe_or_unknown_rules_are_library_errors(self):
-        for rule in ("> __import__('os')", "> open", "value", "> 'x'"):
+        for rule in ("> __import__('os')", "> open", "value", "> 'x'", "baseline < 5", "> 3 or baseline > 2",
+                     "> value.real", "> [1][0]"):
             with self.subTest(rule=rule), self.assertRaises(ValueError):
                 detectors.compile_rule(rule)
         errors = detectors.library_errors({"measured_detectors": [

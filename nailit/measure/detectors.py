@@ -1,5 +1,6 @@
 """Detector runner: phrase and measured detectors, driven entirely by library/detectors.yaml."""
 import ast
+import operator
 import re
 
 from nailit.measure import vox
@@ -76,9 +77,35 @@ def _expression(rule):
     return " ".join(f"value {p}" if OPS.match(p) else p for p in parts)
 
 
+BIN = {ast.Add: operator.add, ast.Sub: operator.sub, ast.Mult: operator.mul, ast.Div: operator.truediv}
+CMP = {ast.Gt: operator.gt, ast.GtE: operator.ge, ast.Lt: operator.lt, ast.LtE: operator.le,
+       ast.Eq: operator.eq, ast.NotEq: operator.ne}
 ALLOWED = (ast.Expression, ast.BoolOp, ast.And, ast.Or, ast.Compare, ast.BinOp, ast.UnaryOp, ast.USub,
-           ast.Add, ast.Sub, ast.Mult, ast.Div, ast.Gt, ast.GtE, ast.Lt, ast.LtE, ast.Eq, ast.NotEq,
-           ast.Name, ast.Load, ast.Constant)
+           ast.Name, ast.Load, ast.Constant, *BIN, *CMP)
+
+
+def _eval(node, names):
+    """Interpret a whitelisted rule tree; never calls python's eval."""
+    if isinstance(node, ast.Expression):
+        return _eval(node.body, names)
+    if isinstance(node, ast.Constant):
+        return node.value
+    if isinstance(node, ast.Name):
+        return names[node.id]
+    if isinstance(node, ast.UnaryOp):
+        return -_eval(node.operand, names)
+    if isinstance(node, ast.BinOp):
+        return BIN[type(node.op)](_eval(node.left, names), _eval(node.right, names))
+    if isinstance(node, ast.BoolOp):
+        values = (_eval(v, names) for v in node.values)
+        return all(values) if isinstance(node.op, ast.And) else any(values)
+    left = _eval(node.left, names)
+    for op, right_node in zip(node.ops, node.comparators):
+        right = _eval(right_node, names)
+        if not CMP[type(op)](left, right):
+            return False
+        left = right
+    return True
 
 
 def compile_rule(rule):
@@ -94,15 +121,22 @@ def compile_rule(rule):
             raise ValueError(f"rule {rule!r}: only numbers are allowed")
     if not isinstance(tree.body, (ast.Compare, ast.BoolOp)):
         raise ValueError(f"rule {rule!r}: must be a comparison")
-    return compile(tree, "<rule>", "eval"), "baseline" in {n.id for n in ast.walk(tree) if isinstance(n, ast.Name)}
+    clauses = tree.body.values if isinstance(tree.body, ast.BoolOp) else [tree.body]
+    for clause in clauses:
+        if "value" not in {n.id for n in ast.walk(clause) if isinstance(n, ast.Name)}:
+            raise ValueError(f"rule {rule!r}: every clause must compare the metric")
+    return tree, "baseline" in {n.id for n in ast.walk(tree) if isinstance(n, ast.Name)}
 
 
 def evaluate_rule(rule, value, baseline=None):
     """True/False, or None when the metric or a needed baseline is missing."""
-    code, needs_baseline = compile_rule(rule)
+    tree, needs_baseline = compile_rule(rule)
     if value is None or (needs_baseline and baseline is None):
         return None
-    return bool(eval(code, {"__builtins__": {}}, {"value": value, "baseline": baseline}))
+    try:
+        return bool(_eval(tree, {"value": value, "baseline": baseline}))
+    except ZeroDivisionError:
+        return None
 
 
 def measured_hits(detectors, measurement):
