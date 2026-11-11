@@ -6,8 +6,9 @@ rewrite it or add facts.
 
 Question type: {question_type}
 Question: {question}
-Answer:
-\"\"\"{answer}\"\"\"
+<answer>
+{answer}
+</answer>
 
 Rules:
 {rules}
@@ -28,7 +29,7 @@ def check(lib, answer, question_type=None, question="", ask=None):
     rubric = {r["id"]: r["text"] for r in lib["rubric"]["rules"]}
     rules = "\n".join(f"- {c['id']} ({c['rubric_rule']}): {rubric.get(c['rubric_rule'], c['label'])}" for c in checks)
     result = (ask or llm.ask_json)(PROMPT.format(question_type=question_type or "unknown", question=question,
-                                                 answer=answer, rules=rules), max_tokens=800)
+                                                 answer=answer.replace("</answer>", ""), rules=rules), max_tokens=800)
     verdicts = result.get("checks") if isinstance(result, dict) else None
     verdicts = verdicts if isinstance(verdicts, dict) else {}
     hits = []

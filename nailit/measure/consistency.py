@@ -10,7 +10,7 @@ CHECKS = {
     "story_reused": ("Story used twice in one loop", "warn"),
 }
 WORDS = {"two": 2, "three": 3, "four": 4, "five": 5, "six": 6, "seven": 7, "eight": 8, "nine": 9, "ten": 10,
-         "eleven": 11, "twelve": 12, "fifteen": 15, "twenty": 20, "thirty": 30, "fifty": 50, "hundred": 100}
+         "eleven": 11, "twelve": 12, "fifteen": 15, "twenty": 20, "thirty": 30, "fifty": 50}
 NUMBER = re.compile(r"(?<![\w.])(\d+(?:[.,]\d+)?|" + "|".join(WORDS) + r")(?![\w])", re.I)
 STOP = {"of", "the", "a", "an", "to", "and", "or", "per", "in", "on", "at", "about", "around", "roughly", "my", "our",
         "from", "by", "with", "than", "more", "less", "over", "under", "nearly", "almost", "some", "i", "we"}
@@ -47,7 +47,7 @@ def numbers(text):
     return out
 
 
-def _fact_values(me):
+def _fact_values(me):  # matching is by exact value: "4" and "four" match, "40%" and "0.4" do not
     values = {}
     for fid, fact in ((me.get("stories") or {}).get("facts") or {}).items():
         for value, _ in numbers(fact["text"]):

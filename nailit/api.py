@@ -320,11 +320,16 @@ def interview_get(mock_id: str):
     state = load_mock(mock_id)
     if not state:
         raise HTTPException(status_code=404, detail="Mock not found")
-    return {**interviewer.summary(state), "turns": state["turns"], "consistency": _consistency(state)}
+    if state["phase"] == "done" and "consistency" not in state:
+        with _mock_lock(mock_id):
+            state = load_mock(mock_id)
+            state["consistency"] = _consistency(state)
+            save_mock(state)
+    return {**interviewer.summary(state), "turns": state["turns"], "consistency": state.get("consistency")}
 
 
 def _consistency(state):
-    """Numbers and stories across this mock's answers, checked against stories.md (code only, no LLM)."""
+    """Numbers and stories across a finished mock's answers vs stories.md (code only); computed once, for the debrief."""
     try:
         me = library.load_me()
     except library.LibraryError:
@@ -333,7 +338,7 @@ def _consistency(state):
     for turn in state["turns"]:
         current = turn.get("question_id", current)
         if turn.get("role") == "candidate":
-            answers.append({"text": turn["say"], "question_id": current})
+            answers.append({"text": turn.get("say") or "", "question_id": current})
     cv = library.home() / "me" / "cv.md"
     return consistency.check(answers, me, _library(), cv.read_text(encoding="utf8") if cv.exists() else "",
                              state.get("stories_used"))
