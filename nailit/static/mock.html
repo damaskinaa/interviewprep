@@ -356,6 +356,11 @@ function startRecording() {
   clearTimeout(S.limitId);
   if (S.turnLimit && $("input").value !== "vad") S.limitId = setTimeout(() => stopRecording("cut"), S.turnLimit * 1000);
 }
+function discardRecording() {
+  if (!S.rec || S.rec.state !== "recording") return;
+  clearTimeout(S.limitId); stopTimer(); stopPreview(); pauseVad();
+  S.rec.onstop = null; S.rec.stop(); S.chunks = []; mic("off");
+}
 function stopRecording(reason) {
   if (!S.rec || S.rec.state !== "recording") return;
   clearTimeout(S.limitId); stopTimer(); stopPreview();
@@ -425,12 +430,13 @@ async function sendAnswer(blob) {
 }
 
 /* hands-free (optional, loads the voice-detection model on demand) */
-function loadScript(src) { return new Promise((ok, bad) => { const s = document.createElement("script"); s.src = src; s.onload = ok; s.onerror = bad; document.head.appendChild(s); }); }
+function loadScript(src, integrity) { return new Promise((ok, bad) => { const s = document.createElement("script"); s.src = src; s.integrity = integrity; s.crossOrigin = "anonymous"; s.onload = ok; s.onerror = bad; document.head.appendChild(s); }); }
 async function setupVad() {
-  await loadScript("https://cdn.jsdelivr.net/npm/onnxruntime-web@1.14.0/dist/ort.js");
-  await loadScript("https://cdn.jsdelivr.net/npm/@ricky0123/vad-web@0.0.22/dist/bundle.min.js");
+  await loadScript("https://cdn.jsdelivr.net/npm/onnxruntime-web@1.14.0/dist/ort.js", "sha384-YB7Ynb2TmOBZfu4qIxuRnlzsDVIyakAdDB1JnVIClmtUrbi1a/Q7SdNWxHpbjVWA");
+  await loadScript("https://cdn.jsdelivr.net/npm/@ricky0123/vad-web@0.0.22/dist/bundle.min.js", "sha384-eQY2FfQpZAp/4mWh6WX4spiMrjORGPbyX/d+gm5oup5a1eJAz5IfROCUey4AoQI0");
   S.vad = await vad.MicVAD.new({ stream: S.stream, redemptionFrames: Math.round(parseFloat($("endSilence").value) / 0.096),
-    onSpeechStart: () => setState("Recording…", "It stops when you pause."),
+    onSpeechStart: () => { setState("Recording…", "It stops when you pause.");
+      clearTimeout(S.limitId); if (S.turnLimit) S.limitId = setTimeout(() => { pauseVad(); stopRecording("cut"); }, S.turnLimit * 1000); },
     onSpeechEnd: () => { S.vad.pause(); stopRecording(); } });
 }
 function pauseVad() { if (S.vad) S.vad.pause(); }
@@ -438,7 +444,14 @@ function pauseVad() { if (S.vad) S.vad.pause(); }
 /* typing */
 function showTyping(on) { $("textBox").style.display = on ? "block" : "none"; $("micBtn").style.display = on ? "none" : "grid";
   for (const el of [document.querySelector(".timer"), $("liveLevel").parentElement, $("caption")]) el.style.display = on ? "none" : ""; $("switchType").textContent = on ? "Talk instead" : "Type instead"; if (on) $("text").focus(); }
-$("switchType").onclick = () => { const typing = $("textBox").style.display !== "block"; if (S.rec && S.rec.state === "recording") stopRecording(); $("input").value = typing ? "text" : "click"; showTyping(typing); if (!typing) readyToAnswer(); };
+$("switchType").onclick = async () => {
+  const typing = $("textBox").style.display !== "block";
+  discardRecording();  // switching input replaces this take; it is never sent
+  if (!typing) {
+    try { await getMic(); } catch (e) { showErr("roomErr", "No microphone: " + e.message + ". Keep typing."); return; }
+  }
+  $("input").value = typing ? "text" : "click"; showTyping(typing); if (!typing) readyToAnswer();
+};
 $("sendText").onclick = async () => {
   const text = $("text").value.trim(); if (!text) return;
   $("text").value = ""; log("c", text); setState("Interviewer is thinking…"); $("sendText").disabled = true;

@@ -16,6 +16,11 @@ jobs:
       - run: uv sync --extra dev
       - run: uvx ruff check --select F nailit tests
       - run: uv run pytest tests -q
+      - name: Simulated candidate (fake STT/TTS/LLM)
+        run: |
+          set -o pipefail
+          uv run python -m nailit.sim_candidate --all --fake | tee sim_report.md
+          cat sim_report.md >> "$GITHUB_STEP_SUMMARY"
 
   frontend:
     runs-on: ubuntu-latest

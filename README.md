@@ -62,14 +62,22 @@ per-question scores, the stories you used, repeated errors and the pressure even
 
 On the Mac: `brew install ffmpeg`, then `uv sync --extra voice` (installs mlx-whisper; Apple silicon only), then
 `uv run nailit` and open http://127.0.0.1:8000/mock in Chrome.
-- **Input:** push-to-talk (hold Space), hands-free (Silero VAD in the page; it stops recording after the set
+- **Input:** click Answer or press Space to start and again to stop, hands-free (Silero VAD in the page; it stops recording after the set
   seconds of silence), or text.
 - **Transcription:** runs locally with mlx-whisper (`NAILIT_WHISPER_MODEL`, default
-  `mlx-community/whisper-large-v3-turbo`). It keeps word timestamps, and its prompt keeps fillers (um/uh/like).
+  `mlx-community/whisper-small.en-mlx`). It keeps word timestamps, and its prompt keeps fillers (um/uh/like).
 - **Interviewer voice:** OpenAI TTS (`OPENAI_TTS_API_KEY` in the Keychain, or `OPENAI_API_KEY`;
   `NAILIT_TTS_VOICE`, default `alloy`), macOS `say` (`NAILIT_SAY_VOICE`), or none. If OpenAI fails, it uses
   `say`, then text.
 - **Saved files:** answers, interviewer audio and the optional webcam video go to `~/NailIt/recordings/<mock_id>/`.
 - **Latency:** the time from your last word to the interviewer's audio starting is logged per turn;
   `GET /voice/latency` shows it with the median.
-- **Needs internet:** the VAD script loads from jsDelivr, and OpenAI TTS is online.
+- **Needs internet:** the VAD script loads from jsDelivr (pinned with SRI hashes), and OpenAI TTS is online.
+- **Uploads:** capped at 50 MB each.
+
+### Simulated candidate
+
+`uv run python -m nailit.sim_candidate --all` (app running, on the Mac) plays strong, nervous and minimal
+candidates through full voice mocks with `say` + local Whisper and reports template leaks, repeated questions,
+missing hints, transcription errors, slow turns and early endings. `--fake` runs the same checks in-process with
+fake STT/TTS/LLM against the example library; CI runs it and fails on any problem.

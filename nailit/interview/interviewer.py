@@ -321,7 +321,7 @@ def _ask_question(state, lib, item, lead=""):
 def _strong_finish_question(state, lib, me):
     asked = {s["question_id"] for s in state["scores"]}
     story_answers = {a for s in (me.get("stories") or {}).get("stories") or [] for a in s.get("answers") or []}
-    pool = [q for q in library._questions(lib["questions"])[0] if q["id"] not in asked]
+    pool = [q for q in library._questions(lib["questions"])[0] if q["id"] not in asked and q.get("type") != "closing"]
     pool.sort(key=lambda q: (q["id"] not in story_answers, bool(q.get("hard"))))
     return pool[0] if pool else None
 

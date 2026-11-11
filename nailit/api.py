@@ -1,6 +1,5 @@
 import logging
 import os
-import shutil
 import statistics
 import threading
 import uuid
@@ -334,6 +333,8 @@ def interview_end(req: MockEndRequest):
 @app.post("/voice/preview")
 def voice_preview(mock_id: str = Form(...), audio: UploadFile = File(...), take: str = Form("")):
     """Live caption while you speak; also transcribes finished chunks early so the final answer is fast."""
+    if not load_mock(mock_id):
+        raise HTTPException(status_code=404, detail="Mock not found")
     try:
         path = voice.save_upload(mock_id, "preview_live.webm", audio.file.read())
         return {"text": voice.live_update(mock_id, take or "default", path)}
@@ -421,8 +422,11 @@ def voice_video(mock_id: str = Form(...), video: UploadFile = File(...)):
     if not load_mock(mock_id):
         raise HTTPException(status_code=404, detail="Mock not found")
     path = voice.recordings_dir(mock_id) / "webcam.webm"
+    data = video.file.read(voice.MAX_UPLOAD_BYTES + 1)
+    if len(data) > voice.MAX_UPLOAD_BYTES:
+        raise HTTPException(status_code=413, detail="Video chunk too large")
     with path.open("ab") as out:
-        shutil.copyfileobj(video.file, out)
+        out.write(data)
     return {"saved": str(path)}
 
 

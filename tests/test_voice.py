@@ -53,6 +53,33 @@ class VoiceUnitTest(unittest.TestCase):
         self.assertFalse(calls["condition_on_previous_text"])
         self.assertEqual(result["duration_s"], 4.0)
 
+    def test_text_without_word_timings_is_kept(self):
+        fake = types.ModuleType("mlx_whisper")
+        fake.transcribe = lambda audio, **kwargs: {"text": " I led the migration.", "segments": [{"words": []}]}
+        audio_mod = types.ModuleType("mlx_whisper.audio")
+        audio_mod.load_audio = lambda path: [0.0] * (voice.SAMPLE_RATE * 4)
+        with mock.patch.dict(sys.modules, {"mlx_whisper": fake, "mlx_whisper.audio": audio_mod}), \
+                mock.patch.object(voice.shutil, "which", return_value="/usr/bin/ffmpeg"):
+            result = voice.transcribe("x.webm")
+        self.assertEqual(result["text"], "I led the migration.")
+        self.assertIsNone(result["first_word_s"])
+
+    def test_estimated_tail_keeps_the_measured_start(self):
+        result = voice.words_result({"segments": [{"words": [{"word": "I", "start": 3.5, "end": 3.7},
+                                                             {"word": "led", "start": 4.0, "end": 4.5, "estimated": True}]}]}, 5.0)
+        self.assertEqual(result["first_word_s"], 3.5)
+
+    def test_oversized_upload_is_rejected(self):
+        with mock.patch.object(voice, "MAX_UPLOAD_BYTES", 10), self.assertRaises(ValueError):
+            voice.save_upload("m1", "answer_001.webm", b"x" * 11)
+
+    def test_strong_finish_never_picks_a_closing_question(self):
+        from nailit.interview import interviewer
+        questions = [{"id": "close_q", "type": "closing"}, {"id": "story_q", "type": "behavioural"}]
+        with mock.patch.object(interviewer.library, "_questions", return_value=(questions, [])):
+            picked = interviewer._strong_finish_question({"scores": []}, {"questions": []}, {})
+        self.assertEqual(picked["id"], "story_q")
+
     def test_transcribe_without_mlx_is_unavailable(self):
         with mock.patch.dict(sys.modules, {"mlx_whisper": None}):
             with self.assertRaises(voice.VoiceUnavailable):
@@ -118,6 +145,10 @@ class VoiceApiTest(unittest.TestCase):
         self.client.post("/voice/latency", json={"mock_id": mock_id, "turn": reply["turn_index"], "latency_s": 1.2})
         self.assertEqual(self.client.get("/voice/latency", params={"mock_id": mock_id}).json()["median_s"], 1.2)
         self.assertEqual(self.client.get(f"/voice/audio/{mock_id}/..%2Ft.db").status_code, 404)
+
+    def test_preview_needs_a_real_mock(self):
+        r = self.client.post("/voice/preview", data={"mock_id": "nope"}, files={"audio": ("p.webm", b"x", "audio/webm")})
+        self.assertEqual(r.status_code, 404)
 
 
 if __name__ == "__main__":

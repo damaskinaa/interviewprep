@@ -40,9 +40,14 @@ def recordings_dir(mock_id):
     return path
 
 
+MAX_UPLOAD_BYTES = 50 * 1024 * 1024  # about 50 minutes of opus audio, or one 10 s webcam chunk with lots of room
+
+
 def save_upload(mock_id, name, data):
     if not SAFE_NAME.match(name):
         raise ValueError("bad file name")
+    if len(data) > MAX_UPLOAD_BYTES:
+        raise ValueError("upload too large")
     path = recordings_dir(mock_id) / name
     path.write_bytes(data)
     return path
@@ -57,13 +62,15 @@ def words_result(result, duration_s):
         if w.get("word", "").strip()
     ]
     text = " ".join(w["word"] for w in words) if words else (result.get("text") or "").strip()
+    raw = [w for segment in result.get("segments") or [] for w in segment.get("words") or [] if w.get("word", "").strip()]
+    estimated = bool(raw) and raw[0].get("estimated")  # only an estimated first word makes the start unknown
     filled = [w for w in words if re.sub(r"[^a-z]", "", w["word"].lower()) in FILLED_PAUSES]
     return {
         "text": text,
         "words": words,
         "language": result.get("language"),
         "duration_s": round(duration_s, 2),
-        "first_word_s": words[0]["start"] if words else None,
+        "first_word_s": None if not words or estimated else words[0]["start"],  # no invented pre-answer silence
         "speech_s": round(words[-1]["end"] - words[0]["start"], 2) if words else 0.0,
         "trailing_silence_s": round(max(0.0, duration_s - words[-1]["end"]), 2) if words else round(duration_s, 2),
         "filled_pauses": len(filled),
@@ -105,6 +112,11 @@ def _words(audio, offset_s=0.0, model=None):
         words = [{"word": w["word"].strip(), "start": round(float(w["start"]) + offset_s, 2),
                   "end": round(float(w["end"]) + offset_s, 2)}
                  for segment in result.get("segments") or [] for w in segment.get("words") or [] if w.get("word", "").strip()]
+        text = (result.get("text") or "").split()
+        if not words and text:  # recognised but not aligned: spread the words evenly so the answer isn't lost
+            step = seconds / len(text)
+            words = [{"word": w, "start": round(offset_s + i * step, 2), "end": round(offset_s + (i + 1) * step, 2),
+                      "estimated": True} for i, w in enumerate(text)]
         if not _looks_broken(words, seconds):
             return words
         logger.info("transcript looked broken (%d words in %.1fs); retrying without the filler prompt", len(words), seconds)
@@ -155,7 +167,7 @@ def transcribe(path, model=None, mock_id=None, take=None):
         words = state["words"] + _words(audio[int(start * SAMPLE_RATE):], start, model)
     else:
         words = _words(audio, 0.0, model)
-    return words_result({"segments": [{"words": [{"word": w["word"], "start": w["start"], "end": w["end"]} for w in words]}]},
+    return words_result({"segments": [{"words": [{**w} for w in words]}]},
                         duration)
 
 
