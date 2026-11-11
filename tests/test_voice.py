@@ -64,6 +64,11 @@ class VoiceUnitTest(unittest.TestCase):
         self.assertEqual(result["text"], "I led the migration.")
         self.assertIsNone(result["first_word_s"])
 
+    def test_estimated_tail_keeps_the_measured_start(self):
+        result = voice.words_result({"segments": [{"words": [{"word": "I", "start": 3.5, "end": 3.7},
+                                                             {"word": "led", "start": 4.0, "end": 4.5, "estimated": True}]}]}, 5.0)
+        self.assertEqual(result["first_word_s"], 3.5)
+
     def test_oversized_upload_is_rejected(self):
         with mock.patch.object(voice, "MAX_UPLOAD_BYTES", 10), self.assertRaises(ValueError):
             voice.save_upload("m1", "answer_001.webm", b"x" * 11)

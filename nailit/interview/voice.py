@@ -62,14 +62,15 @@ def words_result(result, duration_s):
         if w.get("word", "").strip()
     ]
     text = " ".join(w["word"] for w in words) if words else (result.get("text") or "").strip()
-    estimated = any(w.get("estimated") for segment in result.get("segments") or [] for w in segment.get("words") or [])
+    raw = [w for segment in result.get("segments") or [] for w in segment.get("words") or [] if w.get("word", "").strip()]
+    estimated = bool(raw) and raw[0].get("estimated")  # only an estimated first word makes the start unknown
     filled = [w for w in words if re.sub(r"[^a-z]", "", w["word"].lower()) in FILLED_PAUSES]
     return {
         "text": text,
         "words": words,
         "language": result.get("language"),
         "duration_s": round(duration_s, 2),
-        "first_word_s": words[0]["start"] if words and not estimated else None,  # no invented pre-answer silence
+        "first_word_s": None if not words or estimated else words[0]["start"],  # no invented pre-answer silence
         "speech_s": round(words[-1]["end"] - words[0]["start"], 2) if words else 0.0,
         "trailing_silence_s": round(max(0.0, duration_s - words[-1]["end"]), 2) if words else round(duration_s, 2),
         "filled_pauses": len(filled),
