@@ -70,6 +70,10 @@ class E8ConsistencyTest(unittest.TestCase):
         by_number = {h["number"]: h["id"] for h in hits if "number" in h}
         self.assertEqual(by_number, {3.0: "unconfirmed_fact", 40.0: "number_not_in_facts"})
 
+    def test_same_number_about_another_thing_is_not_a_fact(self):
+        hits = consistency.check([{"text": "I grew revenue to 4 million."}], self.me)
+        self.assertEqual([(h["id"], h["thing"]) for h in hits], [("number_not_in_facts", "million")])
+
     def test_cv_number_missing_from_stories(self):
         hits = consistency.check([], self.me, cv_text="Grew the platform team to 12 engineers. Team of 4 on billing.")
         missing = [h for h in hits if h["id"] == "cv_number_missing"]

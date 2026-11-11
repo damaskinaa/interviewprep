@@ -51,8 +51,13 @@ def _fact_values(me):  # matching is by exact value: "4" and "four" match, "40%"
     values = {}
     for fid, fact in ((me.get("stories") or {}).get("facts") or {}).items():
         for value, _ in numbers(fact["text"]):
-            values.setdefault(value, []).append((fid, fact["status"]))
+            values.setdefault(value, []).append((fid, fact["status"], fact["text"].lower()))
     return values
+
+
+def _matching(facts, value, thing):
+    """Facts with this number about the same thing: "4 engineers" matches "Team of 4 engineers", "4 million" doesn't."""
+    return [s for s in facts.get(value, []) if not thing or thing in s[2] or (thing == "percent" and "%" in s[2])]
 
 
 def _hit(check_id, overrides, **extra):
@@ -70,11 +75,11 @@ def check(answers, me, lib=None, cv_text="", stories_used=None):
     for index, answer in enumerate(answers):
         for value, thing in numbers(answer.get("text")):
             where = {"answer": index, "question_id": answer.get("question_id"), "number": value, "thing": thing}
-            sources = facts.get(value)
+            sources = _matching(facts, value, thing)
             if not sources:
                 hits.append(_hit("number_not_in_facts", overrides, **where))
-            elif all(status != "confirmed" for _, status in sources):
-                hits.append(_hit("unconfirmed_fact", overrides, facts=[f for f, _ in sources], **where))
+            elif all(status != "confirmed" for _, status, _ in sources):
+                hits.append(_hit("unconfirmed_fact", overrides, facts=[f for f, _, _ in sources], **where))
             if thing and thing != "percent":
                 seen.setdefault(thing, {}).setdefault(index, set()).add(value)
     for thing, by_answer in seen.items():
@@ -86,7 +91,7 @@ def check(answers, me, lib=None, cv_text="", stories_used=None):
     profile = (me.get("profile") or {}).get("sections") or {}
     cv = "\n".join([cv_text or ""] + [text for name, text in profile.items() if name not in SECTION_SKIP])
     for value, thing in numbers(cv):
-        if value not in facts:
+        if not _matching(facts, value, thing):
             hits.append(_hit("cv_number_missing", overrides, number=value, thing=thing))
     for story, questions in (stories_used or {}).items():
         if len(questions) > 1:
