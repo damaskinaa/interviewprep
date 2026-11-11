@@ -5,6 +5,7 @@
 details the debrief shows (result sentences with their final pitch slope, pauses, filled pauses).
 All times are seconds on the answer recording's clock; a metric that cannot be measured is None.
 """
+import logging
 import math
 import re
 import shutil
@@ -15,6 +16,7 @@ from pathlib import Path
 
 import numpy as np
 
+logger = logging.getLogger(__name__)
 FILLED_PAUSES = {"um", "umm", "uh", "uhh", "er", "erm", "hmm", "mm", "ah"}
 NUMBER_WORDS = ("one two three four five six seven eight nine ten eleven twelve fifteen twenty thirty forty fifty "
                 "sixty seventy eighty ninety hundred thousand million billion percent half double twice triple")
@@ -147,7 +149,8 @@ def speech_segments(samples, sample_rate, frame_s=0.02, floor_db=-30.0, min_gap_
         return []
     rms = np.sqrt(np.mean(samples[: frames * hop].reshape(frames, hop) ** 2, axis=1) + 1e-12)
     db = 20 * np.log10(rms)
-    voiced = db > max(db.max() + floor_db, -60.0)
+    noise = np.percentile(db, 10)
+    voiced = db > max(db.max() + floor_db, noise + 10.0)  # relative to the peak and above the room's noise floor
     segments, start = [], None
     for i, on in enumerate(voiced):
         if on and start is None:
@@ -182,12 +185,12 @@ def _since(t, words, segments):
     return None if resumed is None else round(max(0.0, resumed - t), 2)
 
 
-def overlap_user_over_tts_s(tts_end_s, words=None, segments=None):
-    """Barge-in: how long you spoke over the interviewer's audio (0 if you waited)."""
+def overlap_user_over_tts_s(tts_end_s, words=None, segments=None, tts_start_s=0.0):
+    """Barge-in: how long you spoke over the interviewer's audio (0 if you waited); onsets before it began don't count."""
     if tts_end_s is None:
         return None
-    first = speech_after(0.0, words, segments)
-    return None if first is None else round(max(0.0, tts_end_s - first), 2)
+    first = speech_after(tts_start_s or 0.0, words, segments)
+    return None if first is None else round(max(0.0, tts_end_s - max(first, tts_start_s or 0.0)), 2)
 
 
 # ---- audio: pitch and loudness ----
@@ -269,10 +272,14 @@ def _ratio(value, base):
 def measure_answer(words, audio=None, sample_rate=16000, baseline=None, question_type=None,
                    pre_answer_silence_s=None, bridges=(), events=None):
     """All N4 delivery metrics for one answer. `events` (answer-clock seconds, all optional):
-    tts_end_s (interviewer audio still playing until), silence_start_s (interviewer went deliberately quiet),
+    tts_start_s / tts_end_s (interviewer audio playing), silence_start_s (interviewer went deliberately quiet),
     freeze_cue_s, trigger_s (flash-card shown)."""
     baseline, events = baseline or {}, events or {}
-    sound = as_sound(audio, sample_rate)
+    try:
+        sound = as_sound(audio, sample_rate)
+    except Exception as error:  # unreadable audio: keep the timestamp metrics
+        logger.warning("audio not measured: %s", error)
+        sound = None
     track = pitch_track(sound) if sound is not None else None
     segments = speech_segments(sound.values[0], sound.sampling_frequency) if sound is not None else None
     timer_words = words or None
@@ -303,7 +310,8 @@ def measure_answer(words, audio=None, sample_rate=16000, baseline=None, question
         "answer_seconds": length,
         "answer_seconds_tmay": length if question_type in TMAY_TYPES else None,
         "answer_seconds_behavioural": length if question_type in BEHAVIOURAL_TYPES else None,
-        "overlap_user_over_tts_s": overlap_user_over_tts_s(events.get("tts_end_s"), timer_words, segments),
+        "overlap_user_over_tts_s": overlap_user_over_tts_s(events.get("tts_end_s"), timer_words, segments,
+                                                           events.get("tts_start_s", 0.0)),
         "gap_after_interviewer_silence_s": _since(events.get("silence_start_s"), timer_words, segments),
         "freeze_recovery_s": _since(events.get("freeze_cue_s"), timer_words, segments),
         "trigger_recall_s": _since(events.get("trigger_s"), timer_words, segments),

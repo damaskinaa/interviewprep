@@ -119,6 +119,15 @@ class TimerTest(unittest.TestCase):
                 self.assertIsNotNone(got)
                 self.assertLessEqual(abs(got - truth), 0.3, (metric, got, truth))
 
+    def test_barge_in_ignores_sound_before_the_interviewer_speaks(self):
+        words = _words("hm", 0.1) + _words("Sorry, can I add something?", 2.6)
+        self.assertEqual(vox.overlap_user_over_tts_s(3.0, words, tts_start_s=1.0), 0.4)
+
+    def test_unreadable_audio_keeps_timestamp_metrics(self):
+        result = vox.measure_answer(_words("I cut costs by 20 percent.", 0.0), audio="/nonexistent.webm")
+        self.assertEqual(result["metrics"]["answer_seconds"], 1.75)
+        self.assertIsNone(result["metrics"]["final_pitch_slope_result_sentences"])
+
     def test_timers_prefer_words_and_ignore_filled_pauses(self):
         words = _words("um", 5.2) + _words("So I would start with the data.", 6.4)
         got = vox.measure_answer(words, events={"freeze_cue_s": 5.0})["metrics"]["freeze_recovery_s"]
