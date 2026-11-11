@@ -1,0 +1,25 @@
+# E7: synthetic raw answers trigger each phrase detector in examples/NailIt; polished versions trigger none.
+hedge_words:
+  type: behavioural
+  raw: "I kind of rebuilt the queue. It sort of worked and cut waiting time by 30 percent."
+  polished: "I rebuilt the queue. Waiting time fell by 30 percent in six weeks."
+we_without_i:
+  type: behavioural
+  raw: "The backlog was large. In the end we decided to cut 20 percent of the scope."
+  polished: "The backlog was large. I decided to cut 20 percent of the scope and told the team why."
+named_colleague:
+  type: behavioural
+  raw: "Alex Sample asked me to fix the release process, so I wrote a new checklist."
+  polished: "My engineering manager asked me to fix the release process, so I wrote a new checklist."
+apology_opening:
+  type: opening
+  raw: "Sorry, let me think. I run a small platform team and I care about reliability."
+  polished: "I run a small platform team and I make reliability measurable."
+trailing_off:
+  type: behavioural
+  raw: "I moved the checks earlier in the pipeline. Incidents dropped by half. So yeah."
+  polished: "I moved the checks earlier in the pipeline. Incidents dropped by half within a quarter."
+blame_in_failure:
+  type: failure
+  raw: "The launch slipped by two weeks. The other team didn't deliver their part on time."
+  polished: "The launch slipped by two weeks. I hadn't confirmed the other team's dates early enough."

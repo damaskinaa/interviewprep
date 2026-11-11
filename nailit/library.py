@@ -263,6 +263,9 @@ def _cross_reference_errors(lib):
     company_ids, bank_ids, drill_ids = set(_ids(personas["companies"])), set(_ids(banks)), set(_ids(drills))
     question_types = {q["type"] for q in questions}
 
+    from nailit.measure.detectors import library_errors
+
+    errors += library_errors(detectors)
     for check in detectors["structure_checks"]:
         if check["rubric_rule"] not in rubric:
             errors.append(f"detectors.yaml: {check['id']}: unknown rubric rule {check['rubric_rule']}")
