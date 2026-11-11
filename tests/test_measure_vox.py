@@ -76,6 +76,7 @@ class TimestampMetricsTest(unittest.TestCase):
         self.assertFalse(vox.is_answering("Let me take a moment.", bridge))
         self.assertFalse(vox.is_answering("Let me take a moment to think about that, let me take a moment.", bridge))
         self.assertTrue(vox.is_answering("Let me take a moment. I would start with the data.", bridge))
+        self.assertTrue(vox.is_answering("That's a great performance improvement.", ["That's a great question"]))
 
     def test_tmay_and_facts_per_minute(self):
         words = _words("I run ops for 12 markets and 3 teams.", 0.0, step=1.0)

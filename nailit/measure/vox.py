@@ -116,7 +116,7 @@ def _norm(text):
 
 
 def _without_bridges(words, bridges=()):
-    """The sentence's content words with fillers and every bridge removed (also a bridge cut short after 3+ words)."""
+    """Content words with fillers and every bridge removed; a bridge cut short (3+ words) only when it ends the sentence."""
     ws = [w for w in words if _bare(w["word"]) and _bare(w["word"]) not in FILLED_PAUSES]
     toks = [_bare(w["word"]) for w in ws]
     pats = [p for p in (_norm(b).split() for b in bridges) if p]
@@ -127,7 +127,7 @@ def _without_bridges(words, bridges=()):
             n = 0
             while n < len(p) and i + n < len(toks) and toks[i + n] == p[n]:
                 n += 1
-            if n == len(p) or n >= 3:
+            if n == len(p) or (n >= 3 and i + n == len(toks)):
                 skip = max(skip, n)
         if skip:
             i += skip
