@@ -205,6 +205,15 @@ def _say_tts(text, path, voice_name=None, instructions=None):
     subprocess.run(command + ["--", text], check=True, timeout=60, capture_output=True)
 
 
+def _describe(error):
+    """An error for the log without the spoken text: subprocess errors repeat the whole command line, text included."""
+    if isinstance(error, subprocess.CalledProcessError):
+        return f"{Path(str(error.cmd[0])).name} exited with status {error.returncode}"
+    if isinstance(error, subprocess.TimeoutExpired):
+        return f"{Path(str(error.cmd[0])).name} timed out after {error.timeout}s"
+    return f"{type(error).__name__}: {str(error)[:160]}"
+
+
 def speak(text, mock_id, name, engine=None, voice_name=None, instructions=None):
     """Write the interviewer's line as audio. Returns (path or None, engine used); None means text only."""
     engine = engine or os.getenv("NAILIT_TTS") or "openai"
@@ -221,7 +230,7 @@ def speak(text, mock_id, name, engine=None, voice_name=None, instructions=None):
             return path, choice
         except Exception as error:  # noqa: BLE001 - any TTS failure falls back to the next engine, then text
             _TTS_DOWN[choice] = time.time()
-            logger.warning("TTS %s failed (skipping it for 10 minutes): %s", choice, error)
+            logger.warning("TTS %s failed (skipping it for 10 minutes): %s", choice, _describe(error))
     return None, "none"
 
 

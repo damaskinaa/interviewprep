@@ -119,3 +119,22 @@ class PathTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class LogLeakTest(unittest.TestCase):
+    def test_failed_say_does_not_log_the_spoken_text(self):
+        import subprocess
+        secret = "My synthetic story about Project Bluebird"
+        tmp = tempfile.mkdtemp()
+
+        def fail(*args, **kwargs):
+            raise subprocess.CalledProcessError(1, ["say", "-v", "Daniel", "--", secret])
+
+        with mock.patch.dict("os.environ", {"NAILIT_RECORDINGS": tmp}), mock.patch("subprocess.run", side_effect=fail), \
+                mock.patch("shutil.which", return_value="/usr/bin/say"), mock.patch.object(voice.sys, "platform", "darwin"), \
+                self.assertLogs("nailit.voice", "WARNING") as logs:
+            self.assertEqual(voice.speak(secret, "m1", "line", engine="say"), (None, "none"))
+        self.assertTrue(logs.output)
+        self.assertNotIn("Bluebird", "\n".join(logs.output))
+        timeout = voice._describe(subprocess.TimeoutExpired(["say", "--", secret], 60))
+        self.assertEqual(timeout, "say timed out after 60s")
