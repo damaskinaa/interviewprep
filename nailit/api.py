@@ -37,9 +37,10 @@ from nailit.coach import (
 from pydantic import BaseModel, Field
 
 app = FastAPI(title="NailIt")
-from nailit import call, rehearse  # noqa: E402
+from nailit import call, manuals, rehearse  # noqa: E402
 app.include_router(rehearse.router)
 app.include_router(call.router)
+app.include_router(manuals.router)
 
 app.add_middleware(
     CORSMiddleware,
@@ -49,6 +50,7 @@ app.add_middleware(
 )
 
 
+MAX_UPLOAD = 200 * 1024 * 1024  # one request; a long spoken answer is a few megabytes
 LOCAL_HOSTS = {"127.0.0.1", "localhost", "[::1]", "testserver"}
 
 
@@ -60,6 +62,9 @@ async def local_only(request, call_next):
         else (request.headers.get("host") or "").split("]")[0] + "]"
     if host not in LOCAL_HOSTS:
         return JSONResponse(status_code=403, content={"error": "NailIt only answers on this computer.", "status_code": 403})
+    length = request.headers.get("content-length") or "0"
+    if not length.isdigit() or int(length) > MAX_UPLOAD:
+        return JSONResponse(status_code=413, content={"error": "That upload is too large.", "status_code": 413})
     origin = request.headers.get("origin")
     if request.method not in ("GET", "HEAD", "OPTIONS") and origin:
         origin_host = origin.split("://", 1)[-1].rsplit(":", 1)[0] if not origin.split("://", 1)[-1].startswith("[") \

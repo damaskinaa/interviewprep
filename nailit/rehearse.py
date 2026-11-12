@@ -177,6 +177,9 @@ def _score(c, text, seconds, filled_pauses, audio_name=None, log=True):
         "we": len(re.findall(r"\bwe\b", text, re.I)), "i": len(re.findall(r"\bI\b", text)),
         "length_flag": ("long" if seconds and seconds > 120 else "short" if seconds and seconds < 30 else None),
     }
+    from nailit import manuals
+    past = [r["delivery"]["wpm"] for r in history() if (r.get("delivery") or {}).get("wpm")]
+    delivery["notes"] = manuals.delivery_notes(seconds, delivery["wpm"], c, past)
     row = {"at": time.strftime("%Y-%m-%d %H:%M:%S"), "card_id": c["id"], "score": score, "verdict": result.get("verdict"),
            "moves_hit": result.get("moves_hit") or [], "moves_missed": result.get("moves_missed") or [],
            "quality": result["quality"], "fidelity": result["fidelity"], "competency": c.get("competency"),
@@ -186,7 +189,7 @@ def _score(c, text, seconds, filled_pauses, audio_name=None, log=True):
         with open(progress_path(), "a") as handle:
             handle.write(json.dumps(row) + "\n")
     return {**row, "transcript": text, "one_fix": result.get("one_fix"), "best_line": result.get("best_line"),
-            "rules": result["rules"],
+            "rules": result["rules"], "phrases": result.get("phrases") or [],
             "model_answer": c["answer"], "moves": c.get("moves") or []}
 
 

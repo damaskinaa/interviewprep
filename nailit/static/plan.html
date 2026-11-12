@@ -1,0 +1,103 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>NailIt · Plan</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,650&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #f5f2ea; --paper: #fffdf8; --ink: #191917; --soft: #5f5d57; --faint: #8f8c84; --line: #e7e2d6;
+    --indigo: #2b3fd6; --indigo-soft: #eceffe; --green: #17804b; --green-soft: #e3f4ea; --amber: #a3630c; --amber-soft: #fdf1dc;
+    --shadow: 0 1px 2px rgba(25,25,23,.04), 0 8px 28px rgba(25,25,23,.06);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg: #121211; --paper: #1b1b19; --ink: #f3f1ea; --soft: #b6b3aa; --faint: #8c8980; --line: #2e2d29;
+      --indigo: #8c9bff; --indigo-soft: #222849; --green: #5fd197; --green-soft: #15301f; --amber: #f4b75e; --amber-soft: #36280f; --shadow: none; }
+  }
+  * { box-sizing: border-box; }
+  html { font-size: 18px; }
+  body { margin: 0; background: var(--bg); color: var(--ink); font: 1rem/1.6 Inter, -apple-system, system-ui, sans-serif; -webkit-font-smoothing: antialiased; }
+  .wrap { max-width: 980px; margin: 0 auto; padding: 26px 16px 90px; }
+  header { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 30px; flex-wrap: wrap; }
+  .brand { font: 650 1.3rem/1 Fraunces, Georgia, serif; }
+  .brand em { font-style: normal; color: var(--indigo); }
+  nav a { color: var(--indigo); text-decoration: none; font-size: .85rem; margin-left: 14px; }
+  h1 { font: 650 2.3rem/1.1 Fraunces, Georgia, serif; letter-spacing: -.02em; margin: 0 0 10px; }
+  h2 { font: 650 1.35rem/1.2 Fraunces, Georgia, serif; margin: 0 0 6px; }
+  .sub { color: var(--soft); max-width: 680px; margin: 0 0 26px; }
+  .panel { background: var(--paper); border: 1px solid var(--line); border-radius: 22px; padding: 26px; box-shadow: var(--shadow); margin-bottom: 22px; }
+  .label { font-size: .75rem; letter-spacing: .09em; text-transform: uppercase; color: var(--faint); font-weight: 600; margin: 18px 0 8px; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 12px; }
+  .opt { text-align: left; font: inherit; background: var(--paper); color: var(--ink); border: 1px solid var(--line); border-radius: 16px; padding: 14px 16px; cursor: pointer; }
+  .opt[aria-pressed="true"] { border-color: var(--indigo); box-shadow: inset 0 0 0 1px var(--indigo); }
+  .opt b { display: block; }
+  .opt small { display: block; color: var(--soft); font-size: .82rem; line-height: 1.4; margin-top: 4px; }
+  .tag { display: inline-block; font-size: .72rem; border-radius: 999px; padding: 2px 9px; margin-left: 6px; vertical-align: 2px; }
+  .tag.ok { background: var(--green-soft); color: var(--green); } .tag.no { background: var(--amber-soft); color: var(--amber); }
+  .chips { display: flex; flex-wrap: wrap; gap: 8px; }
+  .chip { font: inherit; font-size: .88rem; border: 1px solid var(--line); background: var(--paper); color: var(--ink); padding: 8px 14px; border-radius: 999px; cursor: pointer; }
+  .chip[aria-pressed="true"] { background: var(--ink); color: var(--paper); border-color: var(--ink); }
+  .btn { font: inherit; font-weight: 600; border: 0; border-radius: 14px; padding: 13px 22px; cursor: pointer; background: var(--indigo); color: #fff; }
+  .btn.ghost { background: transparent; color: var(--ink); border: 1px solid var(--line); font-weight: 500; }
+  .btn:disabled { opacity: .45; cursor: not-allowed; }
+  .bar { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 16px; align-items: center; }
+  textarea, pre { width: 100%; font: .85rem/1.5 ui-monospace, Menlo, monospace; background: var(--bg); color: var(--ink); border: 1px solid var(--line); border-radius: 14px; padding: 14px; }
+  pre { white-space: pre-wrap; max-height: 320px; overflow: auto; margin: 10px 0 0; }
+  textarea { min-height: 180px; resize: vertical; }
+  .msg { font-size: .9rem; color: var(--soft); }
+  .msg.err { color: var(--amber); }
+  .how { background: var(--indigo-soft); color: var(--indigo); border-radius: 14px; padding: 12px 16px; font-size: .92rem; margin-top: 12px; }
+  .big { font: 650 2.6rem/1 Fraunces, Georgia, serif; }
+  .ans { border-top: 1px solid var(--line); padding: 16px 0; }
+  .ans h3 { font: 600 1.05rem/1.35 Inter, sans-serif; margin: 0 0 6px; }
+  .score { display: inline-block; min-width: 34px; text-align: center; border-radius: 10px; padding: 2px 8px; font-weight: 700; background: var(--indigo-soft); color: var(--indigo); margin-right: 8px; }
+  .rule { display: grid; grid-template-columns: 22px 1fr; gap: 8px; font-size: .9rem; }
+  .rule.pass .m { color: var(--green); } .rule.partial .m { color: var(--indigo); } .rule.fail .m { color: var(--amber); }
+  .rule small { display: block; color: var(--soft); font-size: .82rem; }
+  .fix { background: var(--amber-soft); color: var(--amber); border-radius: 12px; padding: 10px 14px; font-size: .92rem; margin: 8px 0; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header><div class="brand">Nail<em>It</em> · Plan</div><nav><a href="/">Home</a><a href="/rehearse">Rehearse</a><a href="/mock">Mock interview</a></nav></header>
+  <h1>Plan, drills and checklists</h1>
+  <p class="sub">Everything here comes from your manuals. Start with the checklist if the interview is tomorrow.</p>
+  <div id="out"><p class="msg">Loading…</p></div>
+</div>
+<script>
+const out = document.getElementById("out");
+const el = (tag, cls, text) => { const e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; };
+const panel = (title, note) => { const p = el("div", "panel"); p.appendChild(el("h2", "", title)); if (note) p.appendChild(el("p", "msg", note)); out.appendChild(p); return p; };
+const list = (parent, items) => { const ul = el("ul"); for (const i of items || []) ul.appendChild(el("li", "", typeof i === "string" ? i : i.text || i.title || JSON.stringify(i))); parent.appendChild(ul); };
+const fold = (parent, title) => { const d = el("details"); d.style.cssText = "border-top:1px solid var(--line);padding:10px 0"; const s = el("summary", "", title); s.style.cursor = "pointer"; d.appendChild(s); parent.appendChild(d); return d; };
+(async () => {
+  let d;
+  try { const r = await fetch("/plan/data"); d = await r.json(); if (!r.ok) throw new Error(d.error); } catch (e) { out.textContent = "Couldn't load the plan: " + e.message; return; }
+  out.textContent = "";
+  const c = d.checklist || {}, names = { night_before: "The night before", day_of: "On the day", during: "During the interview", after_24h: "Within 24 hours after" };
+  const cp = panel("Interview checklist");
+  for (const k of Object.keys(names)) if ((c[k] || []).length) { cp.appendChild(el("p", "label", names[k])); list(cp, c[k]); }
+  if ((d.bridges || []).length) { const b = panel("Bridge phrases", "Say one when you freeze or need a moment."); for (const x of d.bridges) { const row = el("div", "ans"); row.appendChild(el("div", "", x.text)); if (x.use_when) row.appendChild(el("small", "msg", x.use_when)); b.appendChild(row); } }
+  if ((d.swaps || []).length) { const s = panel("Say this, not that"); for (const x of d.swaps) { const row = el("div", "ans"); row.appendChild(el("div", "msg", "Weak: " + x.weak)); row.appendChild(el("div", "", "Strong: " + x.strong)); s.appendChild(row); } }
+  if ((d.anchors || []).length) { const a = panel("Lines that land", "Short closing lines for your stories."); list(a, d.anchors); }
+  for (const p of d.programmes || []) {
+    const pp = panel(p.name, (p.rules || []).join(" "));
+    for (const day of p.schedule || []) {
+      const f = fold(pp, `Day ${day.day}` + (day.phase ? ` · ${day.phase}` : "") + (day.minutes ? ` · ${day.minutes} min` : ""));
+      if (day.objective) f.appendChild(el("p", "", day.objective));
+      if ((day.drills || []).length) f.appendChild(el("p", "msg", "Drills: " + day.drills.join(", ")));
+      if ((day.questions || []).length) f.appendChild(el("p", "msg", "Questions: " + day.questions.join(", ")));
+      if ((day.checklist || []).length) list(f, day.checklist);
+    }
+  }
+  for (const [key, title] of [["core", "Interview drills"], ["voice", "Voice warm-up, day by day"]]) {
+    const items = (d.drills || {})[key] || []; if (!items.length) continue;
+    const dp = panel(title);
+    for (const x of items) { const f = fold(dp, (x.id ? x.id + " · " : "") + (x.title || x.name || "") + (x.minutes ? ` · ${x.minutes} min` : "")); list(f, x.steps || []); if (x.note) f.appendChild(el("p", "msg", x.note)); }
+  }
+})();
+</script>
+</body>
+</html>

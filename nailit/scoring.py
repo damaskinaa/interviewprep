@@ -99,6 +99,14 @@ Reply JSON {{"on_topic": true or false (does it answer this question at all?),
 "one_fix": "the single most valuable change for the next attempt, as a spoken-coach instruction of at most 25 words"}}"""
 
 
+def _phrases(text, card):
+    try:
+        from nailit import manuals
+        return manuals.phrase_hits(text, card)
+    except Exception:  # noqa: BLE001  a broken library file must not stop scoring
+        return []
+
+
 def score(card, text, level=1, judge=None, timeout=40):
     """Returns {score, quality, fidelity, rules[], moves_hit, moves_missed, one_fix, best_line, verdict, on_topic}."""
     from nailit.answers import ai
@@ -139,5 +147,5 @@ def score(card, text, level=1, judge=None, timeout=40):
     final = max(0, min(10, round(raw)))
     return {"score": final, "quality": round(quality, 1), "fidelity": None if fidelity is None else round(fidelity, 1),
             "rules": results, "moves_hit": hit, "moves_missed": missed, "on_topic": on_topic,
-            "one_fix": reply.get("one_fix"), "best_line": reply.get("best_line"),
+            "one_fix": reply.get("one_fix"), "best_line": reply.get("best_line"), "phrases": _phrases(text, card),
             "verdict": "Strong Hire" if final >= 9 else "Hire" if final >= 7 else "Lean No Hire" if final >= 5 else "No Hire"}

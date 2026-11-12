@@ -50,7 +50,7 @@ class Budget:
 
 
 def _cache(kind, key):
-    path = OUT / "raw" / kind / (hashlib.sha1(key.encode()).hexdigest()[:16] + ".json")
+    path = OUT / "raw" / kind / (hashlib.sha1(key.encode(), usedforsecurity=False).hexdigest()[:16] + ".json")
     path.parent.mkdir(parents=True, exist_ok=True)
     return path
 
@@ -281,7 +281,7 @@ def cached_docs():
             doc = json.loads(path.read_text())
             if not doc or len(doc.get("text", "")) <= 500:
                 continue
-            key = hashlib.sha1(re.sub(r"\W+", " ", doc["text"].lower())[:3000].encode()).hexdigest()
+            key = hashlib.sha1(re.sub(r"\W+", " ", doc["text"].lower())[:3000].encode(), usedforsecurity=False).hexdigest()
             if doc["url"] in seen_url or key in seen_text:
                 continue
             seen_url.add(doc["url"])

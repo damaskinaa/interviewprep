@@ -429,6 +429,14 @@ function showResult(r) {
     if (x.evidence) { const ev = document.createElement("small"); ev.textContent = (x.verdict === "fail" ? "" : "“") + x.evidence + (x.verdict === "fail" ? "" : "”"); body.appendChild(ev); }
     row.append(mark, body); $("resRules").appendChild(row);
   }
+  for (const x of [...(r.phrases || []), ...((r.delivery || {}).notes || [])]) {  // phrase and delivery checks from the manuals
+    const row = document.createElement("div"); row.className = "rule " + (x.severity === "fail" ? "fail" : "partial");
+    const mark = document.createElement("span"); mark.className = "mark"; mark.textContent = "✂";
+    const body = document.createElement("span"); body.textContent = x.label + (x.quote ? ": “" + x.quote + "”" + (x.count > 1 ? " ×" + x.count : "") : "");
+    if (x.fix) { const ev = document.createElement("small"); ev.textContent = x.fix; body.appendChild(ev); }
+    row.append(mark, body); $("resRules").appendChild(row);
+  }
+  if ((r.phrases || []).length || ((r.delivery || {}).notes || []).length) $("rulesBox").style.display = "block";
   $("resMoves").innerHTML = "";
   for (const m of r.moves) { const s = document.createElement("span"); s.className = "move " + ((r.moves_hit || []).includes(m) ? "hit" : "miss"); s.textContent = ((r.moves_hit || []).includes(m) ? "✓ " : "○ ") + m; $("resMoves").appendChild(s); }
   $("yours").textContent = r.transcript; $("theirs").textContent = r.model_answer;

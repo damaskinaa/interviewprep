@@ -39,6 +39,8 @@ class JourneyTest(unittest.TestCase):
                                    headers={"origin": "https://evil.example"})
         self.assertEqual(crossed.status_code, 403)
         self.assertEqual(self.client.get("/health", headers={"host": "localhost:8000"}).status_code, 200)
+        huge = self.client.post("/rehearse/attempt_text", content=b"{}", headers={"content-length": str(api.MAX_UPLOAD + 1)})
+        self.assertEqual(huge.status_code, 413)
         self.assertEqual(self.client.get("/health", headers={"host": "127.0.0.1.evil.example"}).status_code, 403)
 
     def test_two_cards_never_share_an_id(self):
@@ -90,3 +92,44 @@ class JourneyTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class ManualsTest(unittest.TestCase):
+    """The manuals' plain checks run in code: phrases to cut, length and pace."""
+
+    def setUp(self):
+        self.tmp = Path(tempfile.mkdtemp())
+        (self.tmp / "library").mkdir()
+        (self.tmp / "library" / "detectors.yaml").write_text(json.dumps({
+            "phrase_detectors": [
+                {"id": "involved", "label": "Participation", "kind": "phrase", "patterns": ["I was involved in"], "scope": "all",
+                 "severity": "warn", "fix": "Name what you owned.", "except_context": ["layoff"]},
+                {"id": "hedge_result", "label": "Hedge in a result", "kind": "phrase", "patterns": ["roughly"],
+                 "scope": "result_sentences", "severity": "fail", "fix": "Say the number."},
+                {"id": "fillers", "label": "Fillers", "kind": "phrase", "patterns": ["basically"], "scope": "all", "threshold": 2,
+                 "severity": "info"},
+                {"id": "bad", "label": "Broken", "kind": "regex", "patterns": ["("], "scope": "all", "severity": "warn"}],
+            "measured_detectors": [{"id": "too_long", "label": "Too long", "fix": "Cut context."},
+                                   {"id": "pace_fast", "label": "Fast", "fix": "Slow down."}]}))
+        patcher = mock.patch("nailit.library.home", return_value=self.tmp)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
+    def test_phrases_respect_scope_threshold_and_exceptions(self):
+        from nailit import manuals
+        hits = manuals.phrase_hits("I was involved in the migration, basically. We cut cost by roughly 20 percent.")
+        self.assertEqual([h["id"] for h in hits], ["hedge_result", "involved"])  # worst first; one filler is under its threshold
+        self.assertEqual(manuals.phrase_hits("It was roughly fine. I was involved in the layoff."), [])
+
+    def test_length_and_pace_follow_the_manuals_limits(self):
+        from nailit import manuals
+        self.assertEqual([n["id"] for n in manuals.delivery_notes(130, 150, {"type": "behavioural"})], ["too_long"])
+        self.assertEqual(manuals.delivery_notes(130, 150, {"competency": "tmay"}), [])
+        self.assertEqual(manuals.delivery_notes(80, 190, {}, past_wpm=[150, 150]), [])  # no baseline yet
+        self.assertEqual([n["id"] for n in manuals.delivery_notes(80, 190, {}, past_wpm=[150, 150, 150])], ["pace_fast"])
+
+    def test_plan_page_data_survives_a_missing_library(self):
+        client = TestClient(api.app)
+        data = client.get("/plan/data").json()
+        self.assertEqual((data["checklist"], data["programmes"]), ({}, []))
+        self.assertIn("checklist", client.get("/plan").text.lower())

@@ -168,6 +168,7 @@ $("scoreIt").onclick = async () => {
       h.appendChild(document.createTextNode(a.question)); box.appendChild(h);
       if (a.error) { box.appendChild(el("p", "msg err", "Couldn't score this answer: " + a.error)); $("results").appendChild(box); continue; }
       if (a.one_fix) box.appendChild(el("div", "fix", "Next time: " + a.one_fix));
+      if ((a.phrases || []).length) box.appendChild(el("div", "msg", "Cut: " + a.phrases.map((x) => "“" + x.quote + "” (" + x.label.toLowerCase() + ")").join(" · ")));
       for (const x of a.rules) {
         const row = el("div", "rule " + x.verdict); const body = el("span", null, x.name);
         if (x.evidence) body.appendChild(el("small", null, x.evidence));
