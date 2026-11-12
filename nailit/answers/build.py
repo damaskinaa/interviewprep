@@ -23,7 +23,7 @@ from concurrent.futures import ThreadPoolExecutor
 
 import yaml
 
-from nailit import guards, scoring
+from nailit import guards, library, scoring
 from nailit.answers import competencies as comp_mod
 from nailit.answers.generate import (DECK, DRAFTER, HELPER, ML, PERSONA, TELLS, WRITER, attach_samples, chat, direct_rule,
                                      key_moves, story_bank)
@@ -113,7 +113,29 @@ def angles(comp, items, k, existing=()):
                     "frequency": sum(q["frequency"] for q in items)}]
 
 
-def make_plan(only=None, legacy=False):
+def manual_questions(deck_cards, planned):
+    """Questions from the user's own manuals (library/questions.yaml) that no card or planned card covers yet, each
+    with the manual's direction for the answer."""
+    import yaml
+    path = library.home() / "library" / "questions.yaml"
+    if not path.exists():
+        return []
+    data = yaml.safe_load(path.read_text())
+    items = data if isinstance(data, list) else data.get("questions") or []
+    same = lambda q: re.sub(r"[^a-z0-9]+", " ", q.lower()).strip()
+    have = {same(c["question"]) for c in deck_cards} | {same(v) for c in deck_cards for v in c.get("variants") or []}
+    have |= {same(q) for q in planned}
+    out = []
+    for q in items:
+        wordings = [q["text"], *(q.get("variants") or [])]
+        if q.get("type") == "closing" or any(same(w) in have for w in wordings):
+            continue
+        out.append({"question": q["text"], "variants": q.get("variants") or [], "frequency": 50, "manual": q["id"],
+                    "direction": q.get("best_direction") or "", "must_show": q.get("tests_for") or []})
+    return out
+
+
+def make_plan(only=None, legacy=False, manual=False):
     """Angles for every competency (extending what an earlier run planned, never redoing it), then stories."""
     comps, _ = comp_mod.load()
     canon = json.loads((ML / "harvest" / "canonical.json").read_text())
@@ -151,6 +173,18 @@ def make_plan(only=None, legacy=False):
                 plan.setdefault(old["competency"], []).append({"question": old["question"], "variants": old.get("variants") or [],
                                                                "frequency": old.get("frequency", 1), "legacy": True})
         PLAN.write_text(json.dumps(plan, indent=1, ensure_ascii=False))
+    if manual:  # the user's own manual questions come with the manual's direction for the answer
+        deck_cards = json.loads(DECK.read_text())["cards"] if DECK.exists() else []
+        planned = [a["question"] for found in plan.values() for a in found] + \
+                  [v for found in plan.values() for a in found for v in a.get("variants") or []]
+        extra = manual_questions(deck_cards, planned)
+        if extra:
+            ids = {c["id"] for c in comps}
+            where = comp_mod.classify([q["question"] for q in extra], comps)
+            for q in extra:
+                if where.get(q["question"]) in ids:
+                    plan.setdefault(where[q["question"]], []).append(q)
+            PLAN.write_text(json.dumps(plan, indent=1, ensure_ascii=False))
     need = [{**a, "competency": cid} for cid, found in plan.items() for a in found if "stories" not in a]
     if need:
         used = {}
@@ -215,6 +249,10 @@ def brief(card, comp, story, index):
         parts.append("No company is named, so write the reusable shell: sentence one states the kind of need this employer has "
                      "(mark the place for a company fact with the words 'I noticed that' and a typical example), then proof, "
                      "then who you are.")
+    if card.get("direction") or card.get("must_show"):
+        parts.append("The candidate's own interview manual says this about the question. Follow it.\nDirection: "
+                     + (card.get("direction") or "(none given)") + "\nThe answer must show: "
+                     + "; ".join(card.get("must_show") or []))
     special = direct_rule(card["question"])
     if special:
         parts.append("Specific instructions for this question: " + special)
@@ -259,7 +297,7 @@ def _score(card, text, model, timeout):
 
 def gate_numbers(card, text, story):
     extra = invented(text, story or "", PERSONA + PERSONA_FACTS, COMPANIES.get(card.get("company") or "", {}).get("fact", ""),
-                     direct_rule(card["question"]) or "")
+                     direct_rule(card["question"]) or "", card["question"])
     if not extra:
         return text, []
     fixed = chat(DRAFTER, "This spoken interview answer contains numbers that are not in its source story: "
@@ -267,7 +305,7 @@ def gate_numbers(card, text, story):
                           "from the story, or with no number. Change nothing else.\n\nStory:\n" + (story or "(none)") +
                           "\n\nAnswer:\n" + text) or text
     return fixed, invented(fixed, story or "", PERSONA + PERSONA_FACTS,
-                           COMPANIES.get(card.get("company") or "", {}).get("fact", ""), direct_rule(card["question"]) or "")
+                           COMPANIES.get(card.get("company") or "", {}).get("fact", ""), direct_rule(card["question"]) or "", card["question"])
 
 
 def build_card(card, comps, stories, index):
@@ -312,7 +350,8 @@ def build_card(card, comps, stories, index):
             "frequency": card.get("frequency", 1), "competency": card["competency"], "company": card.get("company"),
             "type": {"opening": "opening", "close": "closing"}.get(comp["group"], "behavioural")
             if "R1.4" in scoring.rule_set(card) or comp["group"] in ("opening", "close") else "hard_skills",
-            "answer": answer, "story": best["story"], "origin": "generated", "generation": 2,
+            "answer": answer, "story": best["story"], "origin": "manual" if card.get("manual") else "generated",
+            "manual": card.get("manual"), "generation": 2,
             "quality": result["quality"], "rules": result["rules"], "gate_numbers": leftover,
             "win_rate": 1.0, "why_it_won": [], "candidates": len(drafts), "runner_up": drafts[1]["text"] if len(drafts) > 1 else None,
             "moves": moves, "hook": hook, "followups": (final.get("followups") or [])[:3],
@@ -342,9 +381,10 @@ def main():
     parser.add_argument("--plan", action="store_true", help="show the plan and stop")
     parser.add_argument("--redo", action="store_true", help="rebuild cards that already exist as generation 2")
     parser.add_argument("--legacy", action="store_true", help="also rebuild older cards that no new angle covers")
+    parser.add_argument("--manual", action="store_true", help="also build cards for questions from your manuals that have none")
     args = parser.parse_args()
     only = {x.strip() for x in args.only.split(",") if x.strip()} or None
-    cards = make_plan(only, args.legacy)
+    cards = make_plan(only, args.legacy, args.manual)
     comps = {c["id"]: c for c in comp_mod.load()[0]}
     stories = story_bank()
     if args.plan:

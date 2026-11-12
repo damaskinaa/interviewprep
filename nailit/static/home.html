@@ -82,13 +82,21 @@ const $ = (id) => document.getElementById(id);
   let d;
   try { const r = await fetch("/rehearse/readiness"); d = await r.json(); if (!r.ok) throw new Error(d.error); }
   catch (e) { $("lead").textContent = "Couldn't load your readiness: " + (e.message || "the deck is missing"); return; }
-  $("lead").textContent = `${d.core_ready} of ${d.core_total} core topics ready, ${d.core_tried} tried so far. ${d.cards} answers in the deck.`;
+  $("lead").textContent = `${d.core_ready} of ${d.core_total} core topics ready, ${d.core_ready_unaided} of them without hearing the answer first. ${d.core_tried} tried so far. ${d.due_today} card${d.due_today === 1 ? "" : "s"} due again today. ${d.cards} answers in the deck.`;
+  if ((d.misses || []).length) {
+    const box = document.createElement("div"); box.className = "panel";
+    const h = document.createElement("h2"); h.textContent = "What you keep missing"; box.appendChild(h);
+    const note = document.createElement("p"); note.className = "msg"; note.textContent = "Rules from your manuals that your last 40 answers failed most often."; box.appendChild(note);
+    for (const m of d.misses) { const row = document.createElement("div"); row.className = "ans"; row.style.cssText = "display:flex;justify-content:space-between;padding:8px 0";
+      const a = document.createElement("span"); a.textContent = m.name; const b = document.createElement("span"); b.className = "tag no"; b.textContent = m.count + "×"; row.append(a, b); box.appendChild(row); }
+    $("rows").parentElement.before(box);
+  }
   const rows = d.competencies.filter((c) => c.cards).sort((a, b) => (b.core - a.core) || ((a.best ?? -1) - (b.best ?? -1)));
   for (const c of rows) {
     const row = document.createElement("div"); row.className = "ans"; row.style.cssText = "display:flex;justify-content:space-between;gap:12px;padding:10px 0";
     const name = document.createElement("span"); name.textContent = c.name + (c.core ? "" : " (role-specific)");
     const mark = document.createElement("span"); mark.className = "tag " + ((c.best ?? 0) >= 7 ? "ok" : "no");
-    mark.textContent = c.best === null ? "not tried" : c.best + " / 10"; 
+    mark.textContent = c.best === null ? "not tried" : c.best + " / 10" + (c.unaided != null ? " · unaided " + c.unaided : ""); 
     row.append(name, mark); $("rows").appendChild(row);
   }
 })();

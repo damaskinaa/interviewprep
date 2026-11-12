@@ -133,3 +133,45 @@ class ManualsTest(unittest.TestCase):
         data = client.get("/plan/data").json()
         self.assertEqual((data["checklist"], data["programmes"]), ({}, []))
         self.assertIn("checklist", client.get("/plan").text.lower())
+
+
+class LearningChecksTest(unittest.TestCase):
+    """From the guide's education playbook: unaided recall is counted separately, weak cards come back sooner,
+    and repeated misses are logged."""
+
+    def setUp(self):
+        self.tmp = Path(tempfile.mkdtemp())
+        (self.tmp / "library" / "model_level").mkdir(parents=True)
+        (self.tmp / "library" / "model_level" / "deck.json").write_text(json.dumps(DECK))
+        patcher = mock.patch("nailit.library.home", return_value=self.tmp)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+        self.client = TestClient(api.app)
+
+    def test_a_weak_card_is_due_tomorrow_and_good_ones_wait_longer(self):
+        import time
+        at = lambda days: time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(time.time() - days * 86400))
+        rows = [{"card_id": "weak", "score": 4, "at": at(1.2)}, {"card_id": "fresh", "score": 4, "at": at(0.2)},
+                {"card_id": "good", "score": 8, "at": at(5)}, {"card_id": "good", "score": 9, "at": at(3)},
+                {"card_id": "slipped", "score": 9, "at": at(9)}, {"card_id": "slipped", "score": 3, "at": at(1.5)}]
+        plan = rehearse.schedule(rows)
+        self.assertEqual({k: v["due"] for k, v in plan.items()}, {"weak": True, "fresh": False, "good": False, "slipped": True})
+        self.assertEqual((plan["good"]["days"], plan["slipped"]["days"]), (4, 1))
+
+    def test_readiness_separates_unaided_answers_and_lists_repeated_misses(self):
+        row = lambda **kw: json.dumps({"at": "2026-11-12 10:00:00", **kw})
+        rehearse.progress_path().write_text("\n".join([
+            row(card_id="fail", score=9, rules_failed=["R1.1"]),                      # after hearing the model answer
+            row(card_id="fail", score=6, unaided=True, rules_failed=["R1.1", "R1.3"]),
+            row(card_id="mock:q", score=8, competency="tmay", source="mock")]) + "\n")
+        got = self.client.get("/rehearse/readiness").json()
+        comps = {c["id"]: c for c in got["competencies"]}
+        self.assertEqual((comps["failure"]["best"], comps["failure"]["unaided"], comps["tmay"]["unaided"]), (9, 6, 8))
+        self.assertEqual(got["misses"][0]["id"], "R1.1")
+        self.assertEqual(got["misses"][0]["count"], 2)
+
+    def test_an_attempt_records_whether_it_was_unaided(self):
+        result = {"score": 7, "quality": 7.0, "fidelity": None, "verdict": "Hire", "rules": [], "one_fix": None}
+        with mock.patch("nailit.scoring.score", return_value=result):
+            self.client.post("/rehearse/attempt_text", json={"card_id": "fail", "text": "an answer", "unaided": True})
+        self.assertTrue(json.loads(rehearse.progress_path().read_text().splitlines()[-1])["unaided"])

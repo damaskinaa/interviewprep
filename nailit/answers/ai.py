@@ -10,7 +10,7 @@ import time
 from nailit.llm import parse_json_object
 
 USAGE = {}
-PRICES = {"claude-opus-5-5": (4, 20), "claude-sonnet-5-5": (2, 10), "claude-haiku-5-5": (0.10, 0.50)}  # $/M tokens
+PRICES = {"claude-fable-5-2": (8, 40), "claude-opus-5-5": (4, 20), "claude-sonnet-5-5": (2, 10), "claude-haiku-5-5": (0.10, 0.50)}  # $/M tokens
 CAP_USD = float(os.getenv("NAILIT_BUDGET_USD") or 0)  # 0 = no cap; set per run with set_cap()
 EMBED_MODEL = os.getenv("NAILIT_EMBED_MODEL") or "BAAI/bge-small-en-v1.5"
 _anthropic = None
@@ -60,7 +60,9 @@ def _gpt():
     return _openai
 
 
-CLI_MODELS = {"claude-haiku-5-5": "haiku", "claude-sonnet-5-5": "sonnet", "claude-opus-5-5": "opus"}
+# Fable 5.2 thinks on every request (it cannot be switched off) and takes no temperature; effort is its only dial.
+# Fable goes by its exact id: on Claude Code 2.1.311 the alias "fable" was served by claude-fable-5-1 (checked 12 Nov 2026).
+CLI_MODELS = {"claude-fable-5-2": "claude-fable-5-2", "claude-haiku-5-5": "haiku", "claude-sonnet-5-5": "sonnet", "claude-opus-5-5": "opus"}
 BACKEND = os.getenv("NAILIT_LLM_BACKEND") or "cli"  # "cli" = Claude Code on your Claude plan (no API key); "api" = SDK
 
 
@@ -86,6 +88,9 @@ def _cli(model, prompt, effort):
         if any(w in message.lower() for w in ("authenticate", "login", "limit", "credit")):
             raise PermissionError(f"claude -p: {message}")  # not retried: sign in, or wait for the usage limit to reset
         raise CLIError(f"claude -p: {message}")
+    served = list((data.get("modelUsage") or {}).keys())
+    if model.startswith("claude-fable") and served and model not in served:
+        raise CLIError(f"asked for {model} but {', '.join(served)} answered; update Claude Code or use the exact model id")
     usage = data.get("usage") or {}
     _track("cli:" + CLI_MODELS.get(model, model), usage.get("input_tokens", 0) + usage.get("cache_read_input_tokens", 0)
            + usage.get("cache_creation_input_tokens", 0), usage.get("output_tokens", 0))

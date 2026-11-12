@@ -73,6 +73,24 @@ def history():
     return [json.loads(line) for line in path.read_text().splitlines() if line.strip()]
 
 
+def schedule(rows, now=None):
+    """Spaced practice from your own history: {card_id: {"due": bool, "last": score, "days": interval}}.
+    A weak answer comes back the next day; each good one in a row doubles the gap (2, 4, 8 days, at most 16)."""
+    now = now or time.time()
+    by_card = {}
+    for row in rows:
+        by_card.setdefault(row["card_id"].split("__f")[0], []).append(row)
+    out = {}
+    for cid, items in by_card.items():
+        streak = 0
+        for row in items:
+            streak = streak + 1 if row["score"] >= 7 else 0
+        days = 1 if streak == 0 else min(2 ** streak, 16)
+        last_at = time.mktime(time.strptime(items[-1]["at"], "%Y-%m-%d %H:%M:%S"))
+        out[cid] = {"due": now >= last_at + days * 86400 - 3600, "last": items[-1]["score"], "days": days}
+    return out
+
+
 @router.get("/rehearse", response_class=HTMLResponse)
 def page():
     return (STATIC / "rehearse.html").read_text(encoding="utf8")
@@ -82,8 +100,10 @@ def page():
 def deck(kind: str = "", limit: int = 400):
     data = load_deck()
     best = {}
-    for row in history():
+    rows = history()
+    for row in rows:
         best[row["card_id"]] = max(best.get(row["card_id"], 0), row["score"])
+    plan = schedule(rows)
     TYPE_FIX = {"behavioral": "behavioural"}
     norm = lambda q: re.sub(r"[^a-z0-9]+", " ", q.lower().replace("résumé", "resume")).replace(" us ", " me ").strip()
     for c in data["cards"]:
@@ -96,7 +116,8 @@ def deck(kind: str = "", limit: int = 400):
         c["variants"] = variants
     cards = [{k: c.get(k) for k in ("id", "question", "answer", "moves", "hook", "frequency", "type", "why_it_won", "followups", "variants",
                                      "roles", "companies", "win_rate", "candidates", "origin", "competency", "company")}
-             | {"best_score": best.get(c["id"]), "core": bool((scoring_comp(c.get("competency")) or {}).get("core"))}
+             | {"best_score": best.get(c["id"]), "due": (plan.get(c["id"]) or {}).get("due"),
+                "last_score": (plan.get(c["id"]) or {}).get("last"), "core": bool((scoring_comp(c.get("competency")) or {}).get("core"))}
              for c in data["cards"] if not kind or c.get("type") == kind]
     return {"cards": cards[:limit], "built": data.get("built"), "total": len(data["cards"]),
             "types": sorted({c.get("type") for c in data["cards"] if c.get("type")})}
@@ -135,7 +156,8 @@ def audio(name: str):
 
 
 @router.post("/rehearse/attempt")
-def attempt(card_id: str = Form(...), audio: UploadFile = File(...), take: str = Form(""), test: bool = Form(False)):
+def attempt(card_id: str = Form(...), audio: UploadFile = File(...), take: str = Form(""), test: bool = Form(False),
+            unaided: bool = Form(False)):
     c = card(card_id)
     name = f"attempt_{re.sub(r'[^A-Za-z0-9_]', '_', card_id)[:60]}_{int(time.time())}.webm"
     try:
@@ -145,13 +167,15 @@ def attempt(card_id: str = Form(...), audio: UploadFile = File(...), take: str =
         raise HTTPException(status_code=503, detail=str(error)) from error
     if not transcript["text"].strip():
         raise HTTPException(status_code=422, detail="No speech found in the recording")
-    return _score(c, transcript["text"], transcript["speech_s"], transcript["filled_pauses"], audio_name=name, log=not test)
+    return _score(c, transcript["text"], transcript["speech_s"], transcript["filled_pauses"], audio_name=name, log=not test,
+                  unaided=unaided)
 
 
 class TypedAttempt(BaseModel):
     card_id: str = Field(min_length=1, max_length=120)
     text: str = Field(min_length=1, max_length=8000)
     seconds: float | None = Field(default=None, ge=1, le=1800)  # set when the text was dictated (Wispr Flow etc.)
+    unaided: bool = False  # true when you answered before hearing the model answer
 
 
 @router.post("/rehearse/attempt_text")
@@ -159,10 +183,10 @@ def attempt_text(req: TypedAttempt):
     words = len(req.text.split())
     # Dictation arrives in bursts, so timing is only trusted when it gives a plausible speaking pace.
     seconds = req.seconds if req.seconds and 60 <= words / req.seconds * 60 <= 260 else None
-    return _score(card(req.card_id), req.text, seconds, 0)
+    return _score(card(req.card_id), req.text, seconds, 0, unaided=req.unaided)
 
 
-def _score(c, text, seconds, filled_pauses, audio_name=None, log=True):
+def _score(c, text, seconds, filled_pauses, audio_name=None, log=True, unaided=False):
     from nailit import scoring
     words = len(text.split())
     try:
@@ -184,7 +208,7 @@ def _score(c, text, seconds, filled_pauses, audio_name=None, log=True):
            "moves_hit": result.get("moves_hit") or [], "moves_missed": result.get("moves_missed") or [],
            "quality": result["quality"], "fidelity": result["fidelity"], "competency": c.get("competency"),
            "rules_failed": [r["id"] for r in result["rules"] if r["verdict"] == "fail"],
-           "delivery": delivery, "audio": audio_name}
+           "delivery": delivery, "audio": audio_name, "unaided": bool(unaided)}
     if log:  # simulated-candidate test runs don't count towards your progress
         with open(progress_path(), "a") as handle:
             handle.write(json.dumps(row) + "\n")
@@ -205,20 +229,33 @@ def readiness():
     comps = competencies.load()[0]
     cards = load_deck()["cards"]
     by_card = {c["id"]: c.get("competency") for c in cards}
-    best, tries = {}, {}
-    for row in history():
+    from nailit import scoring
+    best, tries, alone, missed = {}, {}, {}, {}
+    rows = history()
+    for row in rows:
         comp = row.get("competency") or by_card.get(row["card_id"].split("__f")[0])
         if comp:
             best[comp] = max(best.get(comp, 0), row["score"])
             tries[comp] = tries.get(comp, 0) + 1
+            # an interview answer, or a card answered before hearing the model, shows what you can do unaided
+            if row.get("unaided") or str(row.get("source") or "").startswith(("mock", "call")):
+                alone[comp] = max(alone.get(comp, 0), row["score"])
+    for row in rows[-40:]:  # error log: the rules you keep missing lately
+        for rid in row.get("rules_failed") or []:
+            missed[rid] = missed.get(rid, 0) + 1
     count = {}
     for c in cards:
         count[c.get("competency")] = count.get(c.get("competency"), 0) + 1
-    rows = [{"id": c["id"], "name": c["name"], "core": bool(c.get("core")), "cards": count.get(c["id"], 0),
-             "best": best.get(c["id"]), "attempts": tries.get(c["id"], 0)} for c in comps]
-    core = [r for r in rows if r["core"]]
-    return {"competencies": rows, "core_total": len(core), "core_ready": sum((r["best"] or 0) >= 7 for r in core),
-            "core_tried": sum(r["best"] is not None for r in core), "cards": len(cards)}
+    out = [{"id": c["id"], "name": c["name"], "core": bool(c.get("core")), "cards": count.get(c["id"], 0),
+             "best": best.get(c["id"]), "unaided": alone.get(c["id"]), "attempts": tries.get(c["id"], 0)} for c in comps]
+    core = [r for r in out if r["core"]]
+    plan = schedule(rows)
+    return {"competencies": out, "core_total": len(core), "core_ready": sum((r["best"] or 0) >= 7 for r in core),
+            "core_ready_unaided": sum((r["unaided"] or 0) >= 7 for r in core),
+            "core_tried": sum(r["best"] is not None for r in core), "cards": len(cards),
+            "due_today": sum(1 for cid, p in plan.items() if p["due"] and cid in by_card),
+            "misses": [{"id": rid, "name": scoring.SHORT.get(rid, rid), "count": n}
+                       for rid, n in sorted(missed.items(), key=lambda kv: -kv[1])[:5]]}
 
 
 @router.get("/rehearse/progress")

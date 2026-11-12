@@ -259,7 +259,7 @@ async function init() {
     chips($("types"), [["", "Everything"], ...d.types.map((t) => [t, TYPE_NAMES[t] || t])], () => S.type, (v) => (S.type = v));
   } catch (e) { err("startErr", e.message); $("go").disabled = true; }
   chips($("lengths"), [[5, "5 questions"], [10, "10"], [20, "20"]], () => S.len, (v) => (S.len = v));
-  chips($("orders"), [["frequent", "Most asked first"], ["topics", "One per topic"], ["weak", "My weakest first"], ["random", "Shuffle"]], () => S.order, (v) => (S.order = v));
+  chips($("orders"), [["due", "Due today"], ["frequent", "Most asked first"], ["topics", "One per topic"], ["weak", "My weakest first"], ["random", "Shuffle"]], () => S.order, (v) => (S.order = v));
   chips($("companies"), [["", "Any"], ["amazon", "Amazon"], ["aws", "AWS"], ["google", "Google"], ["meta", "Meta"], ["pfizer", "Pfizer"]], () => S.company, (v) => (S.company = v));
   chips($("styles"), [["hear", "Hear it, then say it"], ["recall", "Try first, then hear it"]], () => S.style, (v) => (S.style = v));
   loadStats();
@@ -273,6 +273,10 @@ $("go").onclick = async () => {
     for (const c of pool) if (!top[c.competency] || (c.frequency || 0) > (top[c.competency].frequency || 0)) top[c.competency] = c;
     pool = Object.values(top).sort((a, b) => (b.core - a.core) || ((a.best_score ?? -1) - (b.best_score ?? -1)) || ((b.frequency || 0) - (a.frequency || 0)));
     if (S.company) pool.sort((a, b) => (b.company === S.company) - (a.company === S.company));
+  }
+  if (S.order === "due") {  // spaced practice: what is due again (weakest first), then core cards never tried
+    const rank = (c) => (c.due ? 0 : c.last_score == null ? 1 : 2);
+    pool.sort((a, b) => rank(a) - rank(b) || (rank(a) === 0 ? a.last_score - b.last_score : (b.core - a.core) || ((b.frequency || 0) - (a.frequency || 0))));
   }
   if (S.order === "frequent") pool.sort((a, b) => (b.frequency || 0) - (a.frequency || 0));
   if (S.order === "weak") pool.sort((a, b) => (a.best_score ?? -1) - (b.best_score ?? -1));
@@ -302,7 +306,7 @@ async function voiceFor(card, part) { try { return (await api("/rehearse/speak",
 
 async function showCard() {
   const c = S.cards[S.i];
-  err("err"); dots(); steps(1); S.phase = "question";
+  err("err"); dots(); steps(1); S.phase = "question"; S.heard = false;  // heard = the model answer was shown for this card
   $("result").style.display = "none"; $("micZone").style.display = "none"; $("listenBar").style.display = "flex";
   $("modelBlock").style.display = "block";
   $("typed").style.display = "none"; $("sendTyped").style.display = "none";
@@ -325,7 +329,7 @@ async function showCard() {
   await hearAnswer(parts);
 }
 async function hearAnswer(parts) {
-  const c = S.cards[S.i]; steps(2); S.phase = "answer";
+  const c = S.cards[S.i]; steps(2); S.phase = "answer"; S.heard = true;
   parts = parts || [...$("model").children].map((s) => s.textContent);
   $("model").classList.remove("hidden"); $("moves").style.visibility = "visible";
   $("spk").querySelector(".orb").className = "orb m"; $("spk").querySelector(".orb").textContent = "MC";
@@ -384,7 +388,7 @@ function stopRec() {
   clearInterval(S.timer); clearInterval(S.preview);
   const rec = S.rec;
   rec.onstop = async () => {
-    const f = new FormData(); f.append("card_id", S.cards[S.i].id); f.append("take", S.take);
+    const f = new FormData(); f.append("card_id", S.cards[S.i].id); f.append("take", S.take); f.append("unaided", S.style === "recall" && !S.heard ? "true" : "false");
     f.append("audio", new Blob(S.chunks, { type: rec.mimeType }), rec.mimeType.includes("mp4") ? "a.mp4" : "a.webm");
     try { showResult(await api("/rehearse/attempt", f, true)); }
     catch (e) { $("micState").textContent = e.status === 422 ? "I didn't hear anything. Check your mic and try again." : "Couldn't score that: " + e.message; $("micLabel").textContent = "Record"; $("mic").classList.remove("rec"); }
@@ -397,7 +401,7 @@ $("sendTyped").onclick = async () => {
   const text = $("typed").value.trim(); if (!text) return;
   $("micState").textContent = "Scoring your answer…";
   try { const secs = S.dictStart && S.dictEnd ? Math.round((S.dictEnd - S.dictStart) / 1000) : null;
-    showResult(await api("/rehearse/attempt_text", { card_id: S.cards[S.i].id, text, seconds: secs && secs >= 5 ? secs : null })); } catch (e) { err("err", e.message); }
+    showResult(await api("/rehearse/attempt_text", { card_id: S.cards[S.i].id, text, seconds: secs && secs >= 5 ? secs : null, unaided: S.style === "recall" && !S.heard })); } catch (e) { err("err", e.message); }
 };
 
 function showResult(r) {
