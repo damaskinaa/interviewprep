@@ -90,7 +90,7 @@ class CallTest(unittest.TestCase):
                 self.assertIn(text, chat.call_args.args[1])
 
     def test_a_sentence_split_across_labelled_turns_still_counts(self):
-        text = ("Them: Tell me about a time you failed.\nMe: I missed a launch date because I\nMe: did not check the vendor plan.\n"
+        text = ("Them: Tell me about a time you failed.\nMe: I missed a launch date because I\n\nMe: did not check the vendor plan.\n"
                 "[00:01:12] Pat Example (10:04): Next time I\n[00:01:15] Pat Example (10:04): would ask on day one.")
         items = [{"question": "Tell me about a time you failed.", "competency": "failure",
                   "answer": "I missed a launch date because I did not check the vendor plan. Next time I would ask on day one."}]

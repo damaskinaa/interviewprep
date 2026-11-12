@@ -171,6 +171,8 @@ def _turns(transcript):
     while one speaker can never finish another's sentence."""
     turns, last = [], object()
     for line in transcript.splitlines():
+        if not line.strip():
+            continue
         match = _LABEL.match(line)
         who = (match.group("who") or "").strip().lower() or None
         text = line[match.end():]
