@@ -8,6 +8,7 @@ Two ways to practise a live interview:
 """
 import json
 import random
+import re
 import time
 from pathlib import Path
 
@@ -160,13 +161,24 @@ Transcript:
 {text}"""
 
 
+def _verbatim(item, transcript):
+    """Keep only the sentences of the candidate's answer that are really in the transcript. The splitter is a model
+    reading pasted text, so it can be steered into writing a better answer than the one given; scores must only ever
+    be about words that were said. Drops the item when under 80% of its words survive."""
+    sentences = [s for s in re.split(r"(?<=[.!?…])\s+|\n+", str(item["answer"])) if s.strip()]
+    kept = [s for s in sentences if scoring.quoted(s, transcript)]
+    if sum(len(s.split()) for s in kept) < 0.8 * len(str(item["answer"]).split()):
+        return None
+    return {**item, "answer": " ".join(kept)}
+
+
 @router.post("/call/import")
 def import_transcript(req: Transcript):
     """Score an interview held in another tool: split it into question/answer pairs, score each against the rubric."""
     from concurrent.futures import ThreadPoolExecutor
 
     from nailit.answers import ai, competencies
-    from nailit.rehearse import SCORER, progress_path
+    from nailit.rehearse import SCORER, append_progress
     comps = competencies.load()[0]
     listing = "\n".join(f"{c['id']}: {c['name']}" for c in comps)
     try:
@@ -177,6 +189,10 @@ def import_transcript(req: Transcript):
     if not items:
         raise HTTPException(status_code=422, detail="No question-and-answer pairs found. Paste the transcript with "
                                                     "INTERVIEWER: and CANDIDATE: lines.")
+    items = [kept for kept in (_verbatim(i, req.text) for i in items) if kept]
+    if not items:
+        raise HTTPException(status_code=422, detail="The answers read back from the transcript weren't in it. Paste the "
+                                                    "transcript with INTERVIEWER: and CANDIDATE: lines.")
     valid = {c["id"] for c in comps}
 
     def one(item):
@@ -199,12 +215,10 @@ def import_transcript(req: Transcript):
                 failed[rule["name"]] = failed.get(rule["name"], 0) + 1
     overall = round(sum(r["score"] for r in scored) / len(scored), 1) if scored else None
     stamp = time.strftime("%Y-%m-%d %H:%M:%S")
-    with open(progress_path(), "a") as handle:
-        for r in scored:
-            handle.write(json.dumps({"at": stamp, "card_id": "call:" + (r["competency"] or "other"), "score": r["score"],
-                                     "verdict": r["verdict"], "quality": r["quality"], "fidelity": None,
-                                     "competency": r["competency"], "source": "call:" + (req.tool or "outside"),
-                                     "rules_failed": [x["id"] for x in r["rules"] if x["verdict"] == "fail"]}) + "\n")
+    append_progress([{"at": stamp, "card_id": "call:" + (r["competency"] or "other"), "score": r["score"],
+                      "verdict": r["verdict"], "quality": r["quality"], "fidelity": None,
+                      "competency": r["competency"], "source": "call:" + (req.tool or "outside"),
+                      "rules_failed": [x["id"] for x in r["rules"] if x["verdict"] == "fail"]} for r in scored])
     return {"overall": overall, "answers": results, "count": len(scored),
             "verdict": None if overall is None else "Strong Hire" if overall >= 9 else "Hire" if overall >= 7
             else "Lean No Hire" if overall >= 5 else "No Hire",
