@@ -144,11 +144,15 @@ def attempt(card_id: str = Form(...), audio: UploadFile = File(...), take: str =
 class TypedAttempt(BaseModel):
     card_id: str = Field(min_length=1, max_length=120)
     text: str = Field(min_length=1, max_length=8000)
+    seconds: float | None = Field(default=None, ge=1, le=1800)  # set when the text was dictated (Wispr Flow etc.)
 
 
 @router.post("/rehearse/attempt_text")
 def attempt_text(req: TypedAttempt):
-    return _score(card(req.card_id), req.text, None, 0)
+    words = len(req.text.split())
+    # Dictation arrives in bursts, so timing is only trusted when it gives a plausible speaking pace.
+    seconds = req.seconds if req.seconds and 60 <= words / req.seconds * 60 <= 260 else None
+    return _score(card(req.card_id), req.text, seconds, 0)
 
 
 def _score(c, text, seconds, filled_pauses, audio_name=None, log=True):

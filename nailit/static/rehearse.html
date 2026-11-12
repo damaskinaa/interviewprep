@@ -182,8 +182,8 @@
         <button id="mic" aria-label="Start recording"><span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/></svg><span id="micLabel">Record</span></span></button>
         <div class="timeline"><div class="track"><i id="tbar"></i></div><div class="lbl"><span id="tnow">0:00</span><span>aim for 1:15 – 1:30</span></div></div>
         <div id="caption"></div>
-        <div class="bar"><button class="btn quiet" id="peek">Peek at the answer</button><button class="btn quiet" id="typeIt">Type instead</button></div>
-        <textarea id="typed" style="display:none;width:100%;min-height:140px;font:inherit;padding:14px;border-radius:14px;border:1px solid var(--line);background:var(--paper);color:var(--ink)" placeholder="Type your version…"></textarea>
+        <div class="bar"><button class="btn quiet" id="peek">Peek at the answer</button><button class="btn quiet" id="typeIt">Dictate or type instead</button></div>
+        <textarea id="typed" style="display:none;width:100%;min-height:140px;font:inherit;padding:14px;border-radius:14px;border:1px solid var(--line);background:var(--paper);color:var(--ink)" placeholder="Click here, then dictate with Wispr Flow (or any dictation tool), or type. Timing starts with your first word."></textarea>
         <button class="btn" id="sendTyped" style="display:none">Score it</button>
       </div>
 
@@ -344,7 +344,9 @@ function myTurn() {
   $("mic").classList.remove("rec"); $("micLabel").textContent = "Record";
 }
 $("peek").onclick = () => { $("model").classList.toggle("hidden"); $("moves").style.visibility = $("model").classList.contains("hidden") ? "hidden" : "visible"; };
-$("typeIt").onclick = () => { $("typed").style.display = "block"; $("sendTyped").style.display = "inline-block"; $("typed").focus(); };
+$("typeIt").onclick = () => { $("typed").style.display = "block"; $("sendTyped").style.display = "inline-block"; $("typed").value = ""; S.dictStart = S.dictEnd = null; $("typed").focus(); };
+// Dictation tools (Wispr Flow and others) insert text into the focused box; first and last insertion time the answer.
+$("typed").addEventListener("input", () => { const now = performance.now(); if (!S.dictStart || !$("typed").value.trim()) S.dictStart = now; S.dictEnd = now; });
 
 /* recording */
 async function getMic() {
@@ -384,7 +386,8 @@ $("mic").onclick = () => (S.rec && S.rec.state === "recording" ? stopRec() : sta
 $("sendTyped").onclick = async () => {
   const text = $("typed").value.trim(); if (!text) return;
   $("micState").textContent = "Scoring your answer…";
-  try { showResult(await api("/rehearse/attempt_text", { card_id: S.cards[S.i].id, text })); } catch (e) { err("err", e.message); }
+  try { const secs = S.dictStart && S.dictEnd ? Math.round((S.dictEnd - S.dictStart) / 1000) : null;
+    showResult(await api("/rehearse/attempt_text", { card_id: S.cards[S.i].id, text, seconds: secs && secs >= 5 ? secs : null })); } catch (e) { err("err", e.message); }
 };
 
 function showResult(r) {

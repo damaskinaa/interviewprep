@@ -30,6 +30,10 @@ OUTSIDE_TOOLS = {
     "gemini": {"label": "Gemini Live", "cost": "Free",
                "how": "Gems don't work in Live, so paste the brief as the first message in a normal Gemini chat, then tap "
                       "the Live button in that chat and say “Start”."},
+    "granola": {"label": "Any call, recorded with Granola", "cost": "Granola's free plan covers a limited number of meetings",
+                "how": "Run the call in any tool above (or with a friend) while Granola records it. Afterwards copy Granola's "
+                       "transcript and paste it below; speaker labels like “Me” and “Them” are fine. You don't need to "
+                       "ask the tool to print the transcript."},
     "lua": {"label": "Lua voice agent", "cost": "Lua credits",
             "how": "In your Lua workspace, paste the brief as the agent's persona (or run `lua persona` in the agent's "
                    "folder), publish, and start a voice chat with the agent in the web widget."},
@@ -145,7 +149,8 @@ class Transcript(BaseModel):
 
 
 SPLIT_PROMPT = """Below is the transcript of a mock job interview. Group it into the interviewer's MAIN questions, each
-with everything the candidate said in reply to it and to its follow-ups (join the candidate's turns in order). Skip
+with everything the candidate said in reply to it and to its follow-ups (join the candidate's turns in order). Speaker
+labels vary by tool: INTERVIEWER / CANDIDATE, Them / Me, a name, or none at all; work out who is who from the content. Skip
 greetings and the part where the candidate asks questions. For each, pick the competency it tests from this list:
 {comps}
 
