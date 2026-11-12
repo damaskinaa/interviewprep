@@ -330,7 +330,9 @@ def save(deck, card):
     replaced = [c for c in deck["cards"] if same(c["question"]) == same(card["question"]) and c.get("company") == card.get("company")]
     deck["retired"] = (deck.get("retired") or []) + [c for c in replaced if c.get("answer") != card.get("answer")]
     deck["cards"] = [c for c in deck["cards"] if c not in replaced] + [card]
-    DECK.write_text(json.dumps(deck, indent=1, ensure_ascii=False))
+    tmp = DECK.with_name(DECK.name + ".tmp")  # write then rename: a killed build can't leave half a deck
+    tmp.write_text(json.dumps(deck, indent=1, ensure_ascii=False))
+    tmp.replace(DECK)
 
 
 def main():

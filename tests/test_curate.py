@@ -24,5 +24,29 @@ class CurateTest(unittest.TestCase):
         self.assertIn("Dublin", generate.direct_rule("What are your salary expectations?"))
 
 
+class BuildSaveTest(unittest.TestCase):
+    def test_save_replaces_same_question_and_retires_the_old_answer(self):
+        import json
+        import tempfile
+        from pathlib import Path
+        from unittest import mock
+
+        from nailit.answers import build
+        deck_file = Path(tempfile.mkdtemp()) / "deck.json"
+        old = {"id": "fail1", "question": "Tell me about a time you failed.", "answer": "Old answer.", "company": None}
+        same = {"id": "fail2", "question": "Tell me about a time you failed", "answer": "Same answer.", "company": None}
+        other_company = {"id": "fail3", "question": "Tell me about a time you failed.", "answer": "Amazon answer.", "company": "amazon"}
+        deck = {"cards": [old, other_company], "retired": [{"id": "older"}]}
+        new = {"id": "fail9", "question": "Tell me about a time you FAILED…", "answer": "New answer.", "company": None}
+        with mock.patch.object(build, "DECK", deck_file):
+            build.save(deck, new)
+            self.assertEqual([c["id"] for c in deck["cards"]], ["fail3", "fail9"])
+            self.assertEqual([c["id"] for c in deck["retired"]], ["older", "fail1"])  # kept, not lost
+            self.assertEqual(json.loads(deck_file.read_text()), deck)
+            build.save(deck, {**same, "answer": "New answer."})  # identical answer: nothing new to retire
+            self.assertEqual([c["id"] for c in deck["retired"]], ["older", "fail1"])
+        self.assertEqual(sorted(p.name for p in deck_file.parent.iterdir()), ["deck.json"])
+
+
 if __name__ == "__main__":
     unittest.main()
