@@ -52,7 +52,7 @@ app.add_middleware(
 
 
 MAX_UPLOAD = 200 * 1024 * 1024  # one request; a long spoken answer is a few megabytes
-MAX_VIDEO = 4 * 1024 ** 3  # one mock's webcam file: about two hours of browser webm
+MAX_VIDEO = 4 * 1024 ** 3  # one mock's webcam file across all its chunks; each request is still capped by MAX_UPLOAD
 LOCAL_HOSTS = {"127.0.0.1", "localhost", "::1"}
 
 
