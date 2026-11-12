@@ -39,7 +39,13 @@ def load_deck():
     path = deck_path()
     if not path.exists():
         raise HTTPException(status_code=404, detail="No rehearsal deck yet. Run: uv run python -m nailit.answers.generate")
-    return json.loads(path.read_text())
+    data = json.loads(path.read_text())
+    seen = {}
+    for c in data["cards"]:  # two cards must never share an id, or their scores and audio would mix
+        n = seen[c["id"]] = seen.get(c["id"], 0) + 1
+        if n > 1:
+            c["id"] = f"{c['id']}_{n}"
+    return data
 
 
 def card(card_id):
@@ -89,7 +95,8 @@ def deck(kind: str = "", limit: int = 400):
                 variants.append(v)
         c["variants"] = variants
     cards = [{k: c.get(k) for k in ("id", "question", "answer", "moves", "hook", "frequency", "type", "why_it_won", "followups", "variants",
-                                     "roles", "companies", "win_rate", "candidates", "origin", "competency")} | {"best_score": best.get(c["id"])}
+                                     "roles", "companies", "win_rate", "candidates", "origin", "competency", "company")}
+             | {"best_score": best.get(c["id"]), "core": bool((scoring_comp(c.get("competency")) or {}).get("core"))}
              for c in data["cards"] if not kind or c.get("type") == kind]
     return {"cards": cards[:limit], "built": data.get("built"), "total": len(data["cards"]),
             "types": sorted({c.get("type") for c in data["cards"] if c.get("type")})}
@@ -181,6 +188,34 @@ def _score(c, text, seconds, filled_pauses, audio_name=None, log=True):
     return {**row, "transcript": text, "one_fix": result.get("one_fix"), "best_line": result.get("best_line"),
             "rules": result["rules"],
             "model_answer": c["answer"], "moves": c.get("moves") or []}
+
+
+def scoring_comp(comp_id):
+    from nailit import scoring
+    return scoring.competency(comp_id)
+
+
+@router.get("/rehearse/readiness")
+def readiness():
+    """Where you stand per competency: your best score on any card or interview answer that tests it."""
+    from nailit.answers import competencies
+    comps = competencies.load()[0]
+    cards = load_deck()["cards"]
+    by_card = {c["id"]: c.get("competency") for c in cards}
+    best, tries = {}, {}
+    for row in history():
+        comp = row.get("competency") or by_card.get(row["card_id"].split("__f")[0])
+        if comp:
+            best[comp] = max(best.get(comp, 0), row["score"])
+            tries[comp] = tries.get(comp, 0) + 1
+    count = {}
+    for c in cards:
+        count[c.get("competency")] = count.get(c.get("competency"), 0) + 1
+    rows = [{"id": c["id"], "name": c["name"], "core": bool(c.get("core")), "cards": count.get(c["id"], 0),
+             "best": best.get(c["id"]), "attempts": tries.get(c["id"], 0)} for c in comps]
+    core = [r for r in rows if r["core"]]
+    return {"competencies": rows, "core_total": len(core), "core_ready": sum((r["best"] or 0) >= 7 for r in core),
+            "core_tried": sum(r["best"] is not None for r in core), "cards": len(cards)}
 
 
 @router.get("/rehearse/progress")

@@ -49,6 +49,26 @@ app.add_middleware(
 )
 
 
+LOCAL_HOSTS = {"127.0.0.1", "localhost", "[::1]", "testserver"}
+
+
+@app.middleware("http")
+async def local_only(request, call_next):
+    """The app has no login because it only serves this Mac. Refuse requests that reach it under another host name
+    (DNS rebinding) and writes sent by another website's page (cross-site form posts)."""
+    host = (request.headers.get("host") or "").rsplit(":", 1)[0] if not (request.headers.get("host") or "").startswith("[") \
+        else (request.headers.get("host") or "").split("]")[0] + "]"
+    if host not in LOCAL_HOSTS:
+        return JSONResponse(status_code=403, content={"error": "NailIt only answers on this computer.", "status_code": 403})
+    origin = request.headers.get("origin")
+    if request.method not in ("GET", "HEAD", "OPTIONS") and origin:
+        origin_host = origin.split("://", 1)[-1].rsplit(":", 1)[0] if not origin.split("://", 1)[-1].startswith("[") \
+            else origin.split("://", 1)[-1].split("]")[0] + "]"
+        if origin_host not in LOCAL_HOSTS:
+            return JSONResponse(status_code=403, content={"error": "Cross-site request refused.", "status_code": 403})
+    return await call_next(request)
+
+
 @app.exception_handler(HTTPException)
 async def http_exception_handler(request, exc):
     return JSONResponse(status_code=exc.status_code, content={"error": exc.detail, "status_code": exc.status_code})
@@ -104,8 +124,13 @@ def _require_session(session_id, include_raw=False):
     return session
 
 
-@app.get("/")
+@app.get("/", response_class=HTMLResponse)
 def home():
+    return (Path(__file__).resolve().parent / "static" / "home.html").read_text(encoding="utf8")
+
+
+@app.get("/health")
+def health():
     return {"status": "running", "app": "nailit"}
 
 
@@ -290,6 +315,80 @@ def interview_get(mock_id: str):
     if not state:
         raise HTTPException(status_code=404, detail="Mock not found")
     return {**interviewer.summary(state), "turns": state["turns"]}
+
+
+def mock_pairs(state):
+    """Each main question of a mock with everything the candidate said to it and its follow-ups."""
+    pairs = []
+    for turn in state["turns"]:
+        if turn.get("role") == "interviewer":
+            if turn.get("kind") == "question":
+                pairs.append({"question_id": turn.get("question_id"), "question": turn.get("question_text") or turn["say"],
+                              "followups": [], "answers": []})
+            elif turn.get("kind") == "followup" and pairs:
+                pairs[-1]["followups"].append(turn["say"])
+            elif turn.get("kind") in ("candidate_questions", "closing", "answer", "end"):
+                break
+        elif turn.get("role") == "candidate" and pairs:
+            pairs[-1]["answers"].append(turn.get("say") or "")
+    return [p for p in pairs if " ".join(p["answers"]).strip()]
+
+
+@app.get("/interview/debrief")
+def interview_debrief(mock_id: str):
+    """Score a finished mock against the rubric from the manuals, the same scorer rehearsal uses. The live 1-5 marks
+    only steer follow-ups (they are keyword checks); this is the mark to trust."""
+    import json as _json
+    import time as _time
+    from concurrent.futures import ThreadPoolExecutor
+
+    from nailit import scoring
+    state = load_mock(mock_id)
+    if not state:
+        raise HTTPException(status_code=404, detail="Mock not found")
+    if state.get("debrief"):
+        return state["debrief"]
+    types = {q["id"]: q.get("type") for q in library._questions(_library()["questions"])[0]}
+
+    def one(pair):
+        text = " ".join(pair["answers"])
+        qtype = types.get(pair["question_id"]) or "behavioural"
+        card = {"question": pair["question"], "type": "behavioural" if qtype in interviewer.STORY_TYPES else qtype,
+                "competency": None, "answer": "", "moves": []}
+        try:
+            result = scoring.score(card, text, level=2)
+        except Exception as error:  # noqa: BLE001
+            return {"question": pair["question"], "error": str(error)[:200]}
+        return {"question": pair["question"], "question_id": pair["question_id"], "followups": pair["followups"],
+                "words": len(text.split()), **result}
+
+    with ThreadPoolExecutor(4) as pool:
+        answers = list(pool.map(one, mock_pairs(state)[:20]))
+    scored = [a for a in answers if "score" in a]
+    misses = {}
+    for a in scored:
+        for rule in a["rules"]:
+            if rule["verdict"] == "fail":
+                misses[rule["name"]] = misses.get(rule["name"], 0) + 1
+    overall = round(sum(a["score"] for a in scored) / len(scored), 1) if scored else None
+    debrief = {"overall": overall, "answers": answers, "count": len(scored),
+               "verdict": None if overall is None else "Strong Hire" if overall >= 9 else "Hire" if overall >= 7
+               else "Lean No Hire" if overall >= 5 else "No Hire",
+               "repeat_misses": sorted(misses.items(), key=lambda kv: -kv[1])[:3]}
+    if scored and state["phase"] == "done":
+        with _mock_lock(mock_id):
+            state = load_mock(mock_id)
+            state["debrief"] = debrief
+            save_mock(state)
+        from nailit.rehearse import progress_path
+        stamp = _time.strftime("%Y-%m-%d %H:%M:%S")
+        with open(progress_path(), "a") as handle:
+            for a in scored:
+                handle.write(_json.dumps({"at": stamp, "card_id": "mock:" + (a["question_id"] or "other"), "score": a["score"],
+                                          "verdict": a["verdict"], "quality": a["quality"], "fidelity": None,
+                                          "competency": None, "source": "mock",
+                                          "rules_failed": [r["id"] for r in a["rules"] if r["verdict"] == "fail"]}) + "\n")
+    return debrief
 
 
 STATIC = Path(__file__).resolve().parent / "static"

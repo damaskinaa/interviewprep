@@ -478,7 +478,7 @@ async function finish() {
   $("room").style.display = "none"; $("results").style.display = "block"; $("sessionPill").textContent = "Finished";
   const scores = sum.scores || [];
   const avg = scores.length ? (scores.reduce((a, s) => a + s.score, 0) / scores.length) : 0;
-  $("resLead").textContent = scores.length ? `${scores.length} question${scores.length > 1 ? "s" : ""} scored · average ${avg.toFixed(1)} / 5${sum.ended_early ? " · ended early" : ""}. The full debrief arrives in the next build step.` : "No answers were scored this time.";
+  $("resLead").textContent = scores.length ? `${scores.length} question${scores.length > 1 ? "s" : ""} scored · average ${avg.toFixed(1)} / 5${sum.ended_early ? " · ended early" : ""}. Marking each answer against your manuals' rules…` : "No answers were scored this time.";
   const qText = {}; for (const t of sum.turns) if (t.kind === "question" && t.question_id && !qText[t.question_id]) qText[t.question_id] = t.question_text || t.say;
   const GAP = { missing_ownership: "say what YOU did", missing_number: "add a number", missing_result: "say the result", missing_tradeoff: "name the trade-off", missing_resistance: "name who pushed back", vague: "be more specific", over_90s: "keep it under 90 seconds", ic_level_answer: "say what you decided" };
   $("resCard").innerHTML = scores.length ? "" : "<p>Answer at least one question to get scores.</p>";
@@ -489,6 +489,26 @@ async function finish() {
     if (s.gaps && s.gaps.length) { const g = document.createElement("div"); g.className = "gaps"; g.textContent = "Next time: " + s.gaps.map((x) => GAP[x] || x.replace(/_/g, " ")).join(" · "); left.appendChild(g); }
     const dots = document.createElement("div"); dots.className = "dots"; for (let i = 1; i <= 5; i++) { const d = document.createElement("i"); if (i <= s.score) d.className = "on"; dots.appendChild(d); }
     row.append(left, dots); $("resCard").appendChild(row);
+  }
+  if (scores.length) debrief(sum.id || S.mockId);
+}
+async function debrief(mockId) {
+  let d;
+  try { const r = await fetch("/interview/debrief?mock_id=" + encodeURIComponent(mockId)); d = await r.json(); if (!r.ok) throw new Error(d.error || "failed"); }
+  catch (e) { $("resLead").textContent = "The quick marks are below. The rule-by-rule debrief didn't load: " + e.message; return; }
+  if (d.overall === null) { $("resLead").textContent = "The quick marks are below. The rule-by-rule debrief couldn't score these answers."; return; }
+  $("resLead").textContent = `${d.verdict} · ${d.overall} / 10 across ${d.count} answer${d.count > 1 ? "s" : ""}, marked against your manuals' rules.` +
+    (d.repeat_misses.length ? " Missed most: " + d.repeat_misses.map((m) => `${m[0]} (${m[1]}×)`).join(", ") + "." : "");
+  $("resCard").innerHTML = "";
+  const add = (parent, tag, text, style) => { const el = document.createElement(tag); el.textContent = text; if (style) el.style.cssText = style; parent.appendChild(el); return el; };
+  for (const a of d.answers) {
+    const box = document.createElement("div"); box.style.cssText = "padding:14px 0;border-top:1px solid var(--line)";
+    add(box, "div", (a.score === undefined ? "–" : a.score + " / 10") + " · " + a.question, "font-weight:600");
+    if (a.error) add(box, "div", "Couldn't score this one: " + a.error, "font-size:.9rem;opacity:.75");
+    if (a.one_fix) add(box, "div", "Fix first: " + a.one_fix, "margin:6px 0;font-size:.95rem");
+    const missed = (a.rules || []).filter((r) => r.verdict !== "pass");
+    if (missed.length) add(box, "div", "Not yet: " + missed.map((r) => r.name + (r.verdict === "partial" ? " (partly)" : "")).join(" · "), "font-size:.88rem;opacity:.75");
+    $("resCard").appendChild(box);
   }
 }
 $("again").onclick = () => location.reload();

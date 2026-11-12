@@ -48,7 +48,7 @@ class InterviewerTest(unittest.TestCase):
         self.assertEqual(turn["kind"], "question")
         self.assertEqual(turn["question_id"], "tell_me_about_yourself")
         self.assertTrue(turn["say"].startswith("Hi, thanks for making the time"))
-        self.assertIn("LLM LINE", turn["say"])
+        self.assertNotIn("LLM LINE", turn["say"])  # round notes are never spoken: they came out as a second question
         self.assertNotIn("This one is a", turn["say"])  # the question type is an on-screen hint, never spoken
         self.assertEqual(turn["hint"]["type"], "opening")
         self.assertEqual(turn["say"].count("?") + turn["say"].count("Tell me"), 1)

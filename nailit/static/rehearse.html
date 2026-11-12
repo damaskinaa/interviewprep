@@ -121,7 +121,7 @@
 <div class="wrap">
   <header>
     <div class="brand">Nail<em>It</em> · Rehearse</div>
-    <div class="stats"><span id="stats" class="stats"></span><a class="stat" href="/call" style="text-decoration:none;color:var(--indigo)">Interview call →</a></div>
+    <div class="stats"><span id="stats" class="stats"></span><a class="stat" href="/" style="text-decoration:none;color:var(--indigo)">Home</a><a class="stat" href="/call" style="text-decoration:none;color:var(--indigo)">Interview call →</a></div>
   </header>
 
   <!-- START -->
@@ -132,6 +132,8 @@
     <div class="panel">
       <p class="label">What to practise</p>
       <div class="chips" id="types"></div>
+      <p class="label">Company</p>
+      <div class="chips" id="companies"></div>
       <div class="row">
         <div>
           <p class="label">Session length</p>
@@ -218,7 +220,7 @@
 
 <script>
 const $ = (id) => document.getElementById(id);
-const S = { deck: [], cards: [], i: 0, results: [], type: "", len: 10, order: "frequent", style: "hear",
+const S = { deck: [], cards: [], i: 0, results: [], type: "", company: "", len: 10, order: "frequent", style: "hear",
   stream: null, rec: null, chunks: [], take: "", timer: null, preview: null, busy: false, audio: null, rate: 1, phase: "" };
 
 async function api(path, body, form) {
@@ -257,13 +259,21 @@ async function init() {
     chips($("types"), [["", "Everything"], ...d.types.map((t) => [t, TYPE_NAMES[t] || t])], () => S.type, (v) => (S.type = v));
   } catch (e) { err("startErr", e.message); $("go").disabled = true; }
   chips($("lengths"), [[5, "5 questions"], [10, "10"], [20, "20"]], () => S.len, (v) => (S.len = v));
-  chips($("orders"), [["frequent", "Most asked first"], ["weak", "My weakest first"], ["random", "Shuffle"]], () => S.order, (v) => (S.order = v));
+  chips($("orders"), [["frequent", "Most asked first"], ["topics", "One per topic"], ["weak", "My weakest first"], ["random", "Shuffle"]], () => S.order, (v) => (S.order = v));
+  chips($("companies"), [["", "Any"], ["amazon", "Amazon"], ["aws", "AWS"], ["google", "Google"], ["meta", "Meta"], ["pfizer", "Pfizer"]], () => S.company, (v) => (S.company = v));
   chips($("styles"), [["hear", "Hear it, then say it"], ["recall", "Try first, then hear it"]], () => S.style, (v) => (S.style = v));
   loadStats();
 }
 
 $("go").onclick = async () => {
-  let pool = S.deck.filter((c) => !S.type || c.type === S.type);
+  // Cards written for one company ("Why Google?") only appear when that company is chosen.
+  let pool = S.deck.filter((c) => (!S.type || c.type === S.type) && (!c.company || c.company === S.company));
+  if (S.order === "topics") {  // the most-asked card of each topic, core topics and your weakest first
+    const top = {};
+    for (const c of pool) if (!top[c.competency] || (c.frequency || 0) > (top[c.competency].frequency || 0)) top[c.competency] = c;
+    pool = Object.values(top).sort((a, b) => (b.core - a.core) || ((a.best_score ?? -1) - (b.best_score ?? -1)) || ((b.frequency || 0) - (a.frequency || 0)));
+    if (S.company) pool.sort((a, b) => (b.company === S.company) - (a.company === S.company));
+  }
   if (S.order === "frequent") pool.sort((a, b) => (b.frequency || 0) - (a.frequency || 0));
   if (S.order === "weak") pool.sort((a, b) => (a.best_score ?? -1) - (b.best_score ?? -1));
   if (S.order === "random") pool.sort(() => Math.random() - 0.5);

@@ -332,7 +332,9 @@ def _advance(state, lib, me=None, lead=""):
         item = state["queue"][state["position"]]
         state["position"] += 1
         if item["kind"] == "instruction":
-            lines.append(_say(state, f"Do this now, in your own words: {item['text']}", item["text"]))
+            # Free-text flow entries ("behavioural x4 from the JD map") are the library author's notes on how the
+            # round is filled, not lines to say. Spoken through the model they became a second, invented question.
+            continue
         elif item["kind"] == "round":
             lines.append(f"Next: the {item['label']} part.")
         elif _by_id(library._questions(lib["questions"])[0], item["id"]):

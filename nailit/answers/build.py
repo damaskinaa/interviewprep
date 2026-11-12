@@ -327,7 +327,10 @@ def build_card(card, comps, stories, index):
 def save(deck, card):
     """A generation-2 card replaces any older card with the same question; older cards of its competency are retired
     once the competency has all its new cards (done in main)."""
-    deck["cards"] = [c for c in deck["cards"] if c["question"] != card["question"]] + [card]
+    same = lambda q: re.sub(r"[^a-z0-9]+", " ", q.lower()).strip()  # "…yourself." and "…yourself" are one question
+    replaced = [c for c in deck["cards"] if same(c["question"]) == same(card["question"]) and c.get("company") == card.get("company")]
+    deck["retired"] = (deck.get("retired") or []) + [c for c in replaced if c.get("answer") != card.get("answer")]
+    deck["cards"] = [c for c in deck["cards"] if c not in replaced] + [card]
     DECK.write_text(json.dumps(deck, indent=1, ensure_ascii=False))
 
 
@@ -377,6 +380,7 @@ def main():
     variants = {v for c in deck["cards"] if c.get("generation") == 2 for v in c.get("variants") or []}
     retired = [c for c in deck["cards"] if c.get("generation") != 2 and (c["question"] in variants or c["question"] in new
                                                                           or c.get("competency") == "why_company")]
+    deck["retired"] = (deck.get("retired") or []) + retired  # nothing is deleted; replaced cards stay in the file
     deck["cards"] = [c for c in deck["cards"] if c not in retired]
     deck["cards"].sort(key=lambda c: (c.get("generation") != 2, -(c.get("frequency") or 1)))
     deck["built"] = time.strftime("%Y-%m-%d %H:%M")
