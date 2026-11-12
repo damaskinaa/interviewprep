@@ -7,7 +7,6 @@ Two ways to practise a live interview:
            scores the pasted transcript with the same rubric scorer as rehearsal.
 """
 import json
-import os
 import random
 import time
 from pathlib import Path

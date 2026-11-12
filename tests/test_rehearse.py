@@ -6,7 +6,7 @@ from unittest import mock
 
 from fastapi.testclient import TestClient
 
-from nailit import api, rehearse
+from nailit import api
 
 DECK = {"cards": [{"id": "tmay", "question": "Tell me about yourself.", "answer": "I run delivery. Repeat contacts fell a third.",
                    "moves": ["Opens with the result", "Gives a number"], "hook": "I run delivery.", "frequency": 3,

@@ -15,7 +15,6 @@ from pydantic import BaseModel, Field
 
 from nailit import library
 from nailit.interview import voice
-from nailit.llm import parse_json_object
 
 router = APIRouter()
 STATIC = Path(__file__).resolve().parent / "static"

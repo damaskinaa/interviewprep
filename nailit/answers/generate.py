@@ -19,10 +19,8 @@ import os
 import re
 import time
 from concurrent.futures import ThreadPoolExecutor
-from pathlib import Path
 
 from nailit import library
-from nailit.llm import parse_json_object
 
 WRITER = os.getenv("NAILIT_ANSWER_WRITER") or "tx:moonshotai/kimi-k3.1-pro"     # final polish of the winner + follow-ups only
 DRAFTER = os.getenv("NAILIT_DRAFTER") or "tx:deepseek/deepseek-v4-pro-0813"         # candidate drafts
