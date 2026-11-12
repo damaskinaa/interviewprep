@@ -359,7 +359,9 @@ def _load_me():
     try:
         return library.load_me()
     except library.LibraryError as error:
-        logger.warning("stories not loaded for the mock: %s", error.errors[:3])
+        # the messages quote the candidate's own lines (schema errors repeat the value), so log only where they are
+        files = sorted({e.split(":", 1)[0] for e in error.errors})
+        logger.warning("stories not loaded for the mock: %d problem(s) in %s", len(error.errors), ", ".join(files))
         return {}
 
 

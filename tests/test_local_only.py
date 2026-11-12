@@ -138,3 +138,15 @@ class LogLeakTest(unittest.TestCase):
         self.assertNotIn("Bluebird", "\n".join(logs.output))
         timeout = voice._describe(subprocess.TimeoutExpired(["say", "--", secret], 60))
         self.assertEqual(timeout, "say timed out after 60s")
+
+
+class StoryLogTest(unittest.TestCase):
+    def test_broken_stories_file_is_logged_without_the_candidates_lines(self):
+        from nailit import library
+        from nailit.interview import interviewer
+        problem = library.LibraryError(["stories.md: s1/result: 'We grew Project Bluebird revenue' is not of type 'array'",
+                                        "stories.md: malformed fact line: synthetic Bluebird fact"])
+        with mock.patch.object(library, "load_me", side_effect=problem), self.assertLogs("nailit", "WARNING") as logs:
+            self.assertEqual(interviewer._load_me(), {})
+        self.assertNotIn("Bluebird", "\n".join(logs.output))
+        self.assertIn("2 problem(s) in stories.md", "\n".join(logs.output))
