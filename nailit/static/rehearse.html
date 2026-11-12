@@ -414,8 +414,8 @@ function showResult(r) {
   $("arc").style.stroke = col; requestAnimationFrame(() => ($("arc").style.strokeDashoffset = String(352 - 352 * r.score / 10)));
   $("verdict").textContent = r.score >= 8 ? "Interview-ready on this one." : r.score >= 6 ? "Good, close to strong." : r.score >= 4 ? "The gist is there; tighten it." : "Let's go again.";
   const d = r.delivery || {};
-  $("delivery").innerHTML = [d.seconds ? `${fmt(d.seconds)} long` : null, d.wpm ? `${d.wpm} words/min` : null, `${d.fillers} fillers`, `“I” ×${d.i} · “we” ×${d.we}`, r.verdict ? `Committee: ${r.verdict}` : null]
-    .filter(Boolean).map((x) => `<span class="stat">${x}</span>`).join("");
+  $("delivery").replaceChildren(...[d.seconds ? `${fmt(d.seconds)} long` : null, d.wpm ? `${d.wpm} words/min` : null, `${d.fillers} fillers`, `“I” ×${d.i} · “we” ×${d.we}`, r.verdict ? `Committee: ${r.verdict}` : null]
+    .filter(Boolean).map((x) => { const s = document.createElement("span"); s.className = "stat"; s.textContent = x; return s; }));
   $("fix").querySelector("span").textContent = r.one_fix || "";
   $("fix").style.display = r.one_fix ? "block" : "none";
   const bl = (r.best_line || "").replace(/^["“'\s]+|["”'\s]+$/g, "");

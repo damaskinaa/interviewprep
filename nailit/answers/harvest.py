@@ -18,14 +18,11 @@ import os
 import re
 import time
 from concurrent.futures import ThreadPoolExecutor
-from pathlib import Path
 from urllib.parse import urlparse
 
 import httpx
-import yaml
 
 from nailit import library
-from nailit.llm import parse_json_object
 
 ROLES = ["Service Delivery Manager", "Operations Manager", "Senior Operations Manager", "Program Manager",
          "Technical Program Manager", "Head of Operations", "Senior Project Manager", "Business Operations Manager",

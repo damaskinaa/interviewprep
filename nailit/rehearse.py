@@ -6,6 +6,7 @@ practice-only: they're spoken by a different voice from the interviewer, and the
 import json
 import os
 import re
+import threading
 import time
 from pathlib import Path
 
@@ -15,7 +16,6 @@ from pydantic import BaseModel, Field
 
 from nailit import library
 from nailit.interview import voice
-from nailit.llm import parse_json_object
 
 router = APIRouter()
 STATIC = Path(__file__).resolve().parent / "static"
@@ -40,11 +40,15 @@ def load_deck():
     if not path.exists():
         raise HTTPException(status_code=404, detail="No rehearsal deck yet. Run: uv run python -m nailit.answers.generate")
     data = json.loads(path.read_text())
-    seen = {}
+    taken, seen = {c["id"] for c in data["cards"]}, set()
     for c in data["cards"]:  # two cards must never share an id, or their scores and audio would mix
-        n = seen[c["id"]] = seen.get(c["id"], 0) + 1
-        if n > 1:
+        if c["id"] in seen:
+            n = 2
+            while f"{c['id']}_{n}" in taken:
+                n += 1
             c["id"] = f"{c['id']}_{n}"
+            taken.add(c["id"])
+        seen.add(c["id"])
     return data
 
 
@@ -64,6 +68,21 @@ def card(card_id):
 
 def progress_path():
     return library.home() / "rehearse_progress.jsonl"
+
+
+_PROGRESS_LOCK = threading.Lock()
+
+
+def append_progress(rows):
+    """One write per call, under a lock, so concurrent scorers can't interleave half-lines in the log."""
+    data = "".join(json.dumps(row) + "\n" for row in rows)
+    with _PROGRESS_LOCK, open(progress_path(), "a") as handle:
+        try:
+            import fcntl
+            fcntl.flock(handle, fcntl.LOCK_EX)  # also keeps a second process (CLI calibrate) out
+        except (ImportError, OSError):
+            pass
+        handle.write(data)
 
 
 def history():
@@ -210,8 +229,7 @@ def _score(c, text, seconds, filled_pauses, audio_name=None, log=True, unaided=F
            "rules_failed": [r["id"] for r in result["rules"] if r["verdict"] == "fail"],
            "delivery": delivery, "audio": audio_name, "unaided": bool(unaided)}
     if log:  # simulated-candidate test runs don't count towards your progress
-        with open(progress_path(), "a") as handle:
-            handle.write(json.dumps(row) + "\n")
+        append_progress([row])
     return {**row, "transcript": text, "one_fix": result.get("one_fix"), "best_line": result.get("best_line"),
             "rules": result["rules"], "phrases": result.get("phrases") or [],
             "model_answer": c["answer"], "moves": c.get("moves") or []}

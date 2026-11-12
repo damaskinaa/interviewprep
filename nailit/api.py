@@ -12,6 +12,7 @@ from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 from pathlib import Path
+from urllib.parse import urlsplit
 from nailit import library
 from nailit.interview import interviewer, voice
 logger = logging.getLogger("nailit.api")
@@ -51,27 +52,87 @@ app.add_middleware(
 
 
 MAX_UPLOAD = 200 * 1024 * 1024  # one request; a long spoken answer is a few megabytes
-LOCAL_HOSTS = {"127.0.0.1", "localhost", "[::1]", "testserver"}
+MAX_VIDEO = 4 * 1024 ** 3  # one mock's webcam file across all its chunks; each request is still capped by MAX_UPLOAD
+LOCAL_HOSTS = {"127.0.0.1", "localhost", "::1"}
 
 
-@app.middleware("http")
-async def local_only(request, call_next):
+def _TEST_HOSTS():  # noqa: N802 - Starlette's TestClient sends `Host: testserver`; only accepted while pytest runs
+    return {"testserver"} if os.getenv("PYTEST_CURRENT_TEST") else set()
+
+
+def _hostname(value):
+    """The host name of a Host header or an Origin, lower-cased, without port or IPv6 brackets; None if malformed."""
+    value = (value or "").strip()
+    if not value or any(c in value for c in "/\\@?# ") and "://" not in value:
+        return None
+    try:
+        parts = urlsplit(value if "://" in value else "//" + value)
+        parts.port  # noqa: B018 - raises on a non-numeric port
+    except ValueError:
+        return None
+    if parts.username or parts.password or (parts.path not in ("", "/")) or parts.query or parts.fragment:
+        return None
+    return parts.hostname
+
+
+class _TooLarge(HTTPException):
+    def __init__(self):
+        super().__init__(status_code=413, detail="That upload is too large.")
+
+
+def _json_reply(status, error):
+    return JSONResponse(status_code=status, content={"error": error, "status_code": status})
+
+
+class LocalOnly:
     """The app has no login because it only serves this Mac. Refuse requests that reach it under another host name
-    (DNS rebinding) and writes sent by another website's page (cross-site form posts)."""
-    host = (request.headers.get("host") or "").rsplit(":", 1)[0] if not (request.headers.get("host") or "").startswith("[") \
-        else (request.headers.get("host") or "").split("]")[0] + "]"
-    if host not in LOCAL_HOSTS:
-        return JSONResponse(status_code=403, content={"error": "NailIt only answers on this computer.", "status_code": 403})
-    length = request.headers.get("content-length") or "0"
-    if not length.isdigit() or int(length) > MAX_UPLOAD:
-        return JSONResponse(status_code=413, content={"error": "That upload is too large.", "status_code": 413})
-    origin = request.headers.get("origin")
-    if request.method not in ("GET", "HEAD", "OPTIONS") and origin:
-        origin_host = origin.split("://", 1)[-1].rsplit(":", 1)[0] if not origin.split("://", 1)[-1].startswith("[") \
-            else origin.split("://", 1)[-1].split("]")[0] + "]"
-        if origin_host not in LOCAL_HOSTS:
-            return JSONResponse(status_code=403, content={"error": "Cross-site request refused.", "status_code": 403})
-    return await call_next(request)
+    (DNS rebinding), writes sent by another website's page (cross-site form posts), and bodies over MAX_UPLOAD, whether
+    or not they declare a Content-Length (chunked uploads are counted as they stream in)."""
+
+    def __init__(self, app):
+        self.app = app
+
+    async def __call__(self, scope, receive, send):
+        if scope["type"] != "http":
+            return await self.app(scope, receive, send)
+        headers = {k.decode("latin-1").lower(): v.decode("latin-1") for k, v in scope.get("headers") or []}
+        if _hostname(headers.get("host")) not in LOCAL_HOSTS | _TEST_HOSTS():
+            return await _json_reply(403, "NailIt only answers on this computer.")(scope, receive, send)
+        length = headers.get("content-length")
+        if length is not None and (not length.isdigit() or int(length) > MAX_UPLOAD):
+            return await _json_reply(413, "That upload is too large.")(scope, receive, send)
+        origin = headers.get("origin")
+        if scope["method"] not in ("GET", "HEAD", "OPTIONS") and origin is not None \
+                and _hostname(origin) not in LOCAL_HOSTS:
+            return await _json_reply(403, "Cross-site request refused.")(scope, receive, send)
+        if headers.get("sec-fetch-site") == "cross-site" and scope["method"] not in ("GET", "HEAD", "OPTIONS"):
+            return await _json_reply(403, "Cross-site request refused.")(scope, receive, send)
+        received, started = 0, False
+
+        async def counted_receive():
+            nonlocal received
+            message = await receive()
+            if message["type"] == "http.request":
+                received += len(message.get("body", b""))
+                if received > MAX_UPLOAD:
+                    raise _TooLarge
+            return message
+
+        async def tracked_send(message):
+            nonlocal started
+            started = started or message["type"] == "http.response.start"
+            await send(message)
+
+        try:
+            await self.app(scope, counted_receive, tracked_send)
+        except _TooLarge:
+            if started:  # the route already answered; nothing more can be sent on this connection
+                logger.warning("upload to %s passed the size cap after the reply had started", scope.get("path"))
+            else:
+                await _json_reply(413, "That upload is too large.")(scope, receive, send)
+
+
+app.add_middleware(LocalOnly)
 
 
 @app.exception_handler(HTTPException)
@@ -343,7 +404,6 @@ def mock_pairs(state):
 def interview_debrief(mock_id: str):
     """Score a finished mock against the rubric from the manuals, the same scorer rehearsal uses. The live 1-5 marks
     only steer follow-ups (they are keyword checks); this is the mark to trust."""
-    import json as _json
     import time as _time
     from concurrent.futures import ThreadPoolExecutor
 
@@ -383,16 +443,16 @@ def interview_debrief(mock_id: str):
     if scored and state["phase"] == "done":
         with _mock_lock(mock_id):
             state = load_mock(mock_id)
+            if state.get("debrief"):  # another request scored it while this one was waiting: keep one record, one log entry
+                return state["debrief"]
             state["debrief"] = debrief
             save_mock(state)
-        from nailit.rehearse import progress_path
+        from nailit.rehearse import append_progress
         stamp = _time.strftime("%Y-%m-%d %H:%M:%S")
-        with open(progress_path(), "a") as handle:
-            for a in scored:
-                handle.write(_json.dumps({"at": stamp, "card_id": "mock:" + (a["question_id"] or "other"), "score": a["score"],
-                                          "verdict": a["verdict"], "quality": a["quality"], "fidelity": None,
-                                          "competency": None, "source": "mock",
-                                          "rules_failed": [r["id"] for r in a["rules"] if r["verdict"] == "fail"]}) + "\n")
+        append_progress([{"at": stamp, "card_id": "mock:" + (a["question_id"] or "other"), "score": a["score"],
+                          "verdict": a["verdict"], "quality": a["quality"], "fidelity": None, "competency": None,
+                          "source": "mock", "rules_failed": [r["id"] for r in a["rules"] if r["verdict"] == "fail"]}
+                         for a in scored])
     return debrief
 
 
@@ -528,7 +588,12 @@ def voice_video(mock_id: str = Form(...), video: UploadFile = File(...)):
     if not load_mock(mock_id):
         raise HTTPException(status_code=404, detail="Mock not found")
     path = voice.recordings_dir(mock_id) / "webcam.webm"
-    with path.open("ab") as out:
+    video.file.seek(0, 2)
+    size = video.file.tell()
+    video.file.seek(0)
+    with _mock_lock(mock_id), path.open("ab") as out:
+        if out.tell() + size > MAX_VIDEO:  # whole chunks only: a cut-off webm chunk would corrupt the recording
+            raise HTTPException(status_code=413, detail="This mock's webcam recording is at its size limit.")
         shutil.copyfileobj(video.file, out)
     return {"saved": str(path)}
 

@@ -102,5 +102,49 @@ class LLMClientTest(unittest.TestCase):
             self.llm.ask_llm("q", retries=1)
 
 
+class ProviderOrderTest(unittest.TestCase):
+    def test_env_then_settings_then_tensorx_then_openai(self):
+        import json
+        import tempfile
+        from pathlib import Path
+        from unittest import mock
+
+        from nailit import llm
+        home = Path(tempfile.mkdtemp())
+        env = {"NAILIT_PROVIDER": "", "TENSORX_API_KEY": ""}
+        with mock.patch("nailit.library.home", return_value=home), mock.patch.dict(os.environ, env):
+            self.assertEqual(llm.provider(), "openai")
+            os.environ["TENSORX_API_KEY"] = "test-key"
+            self.assertEqual(llm.provider(), "tensorx")
+            (home / "settings.json").write_text("{not json")
+            self.assertEqual(llm.provider(), "tensorx")  # a broken settings file falls through
+            (home / "settings.json").write_text(json.dumps({"engine": "nonsense"}))
+            self.assertEqual(llm.provider(), "tensorx")  # unknown engine falls through
+            (home / "settings.json").write_text(json.dumps({"engine": "lua"}))
+            self.assertEqual(llm.provider(), "lua")
+            os.environ["NAILIT_PROVIDER"] = "CLAUDE"
+            self.assertEqual(llm.provider(), "claude")  # the env var wins, any case
+            os.environ["NAILIT_PROVIDER"] = "bogus"
+            self.assertEqual(llm.provider(), "lua")
+
+
 if __name__ == "__main__":
     unittest.main()
+
+
+class KeyRedactionTest(unittest.TestCase):
+    def test_a_key_echoed_by_the_provider_never_reaches_the_error_or_the_log(self):
+        from unittest import mock
+
+        from nailit import llm
+        fake = "fake-test-key-0123456789abcdef"
+        failing = mock.Mock()
+        failing.chat.completions.create.side_effect = RuntimeError(f"401 Invalid key {fake} and sk-proj-ABCDEFGHIJKLMNOPQRST")
+        with mock.patch.dict("os.environ", {"OPENAI_API_KEY": fake, "NAILIT_PROVIDER": "openai"}), \
+                mock.patch.object(llm, "client", return_value=failing), mock.patch.object(llm.time, "sleep"), \
+                self.assertRaises(llm.LLMError) as caught:
+            llm.ask_llm("synthetic prompt", retries=2)
+        message = str(caught.exception)
+        self.assertNotIn(fake, message)
+        self.assertNotIn("sk-proj-ABCDEFGHIJKLMNOPQRST", message)
+        self.assertIn("401 Invalid key [key]", message)

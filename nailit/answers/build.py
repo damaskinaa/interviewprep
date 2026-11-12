@@ -21,11 +21,10 @@ import shutil
 import time
 from concurrent.futures import ThreadPoolExecutor
 
-import yaml
 
 from nailit import guards, library, scoring
 from nailit.answers import competencies as comp_mod
-from nailit.answers.generate import (DECK, DRAFTER, HELPER, ML, PERSONA, TELLS, WRITER, attach_samples, chat, direct_rule,
+from nailit.answers.generate import (DECK, DRAFTER, ML, PERSONA, TELLS, WRITER, attach_samples, chat, direct_rule,
                                      key_moves, story_bank)
 
 PLAN = ML / "harvest" / "plan_v5.json"
@@ -370,7 +369,9 @@ def save(deck, card):
     replaced = [c for c in deck["cards"] if same(c["question"]) == same(card["question"]) and c.get("company") == card.get("company")]
     deck["retired"] = (deck.get("retired") or []) + [c for c in replaced if c.get("answer") != card.get("answer")]
     deck["cards"] = [c for c in deck["cards"] if c not in replaced] + [card]
-    DECK.write_text(json.dumps(deck, indent=1, ensure_ascii=False))
+    tmp = DECK.with_name(DECK.name + ".tmp")  # write then rename: a killed build can't leave half a deck
+    tmp.write_text(json.dumps(deck, indent=1, ensure_ascii=False))
+    tmp.replace(DECK)
 
 
 def main():

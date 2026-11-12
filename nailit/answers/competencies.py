@@ -6,7 +6,6 @@ wordings. This maps each question to the competency it tests, then reports cover
 
     uv run python -m nailit.answers.competencies            # classify (cached) and print the coverage report
 """
-import hashlib
 import json
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path

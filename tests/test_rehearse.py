@@ -48,6 +48,43 @@ class RehearseTest(unittest.TestCase):
     def test_unknown_card_is_404(self):
         self.assertEqual(self.client.post("/rehearse/attempt_text", json={"card_id": "nope", "text": "x"}).status_code, 404)
 
+    REPLY = {"on_topic": True, "rules": {"R1.1": {"verdict": "pass", "evidence": "I run delivery"},
+                                          "R1.11": {"verdict": "pass", "evidence": "I run delivery"}}}
+
+    def timed(self, words, seconds):
+        with mock.patch("nailit.answers.ai.chat", return_value=self.REPLY):
+            return self.client.post("/rehearse/attempt_text", json={"card_id": "tmay", "text": "I run delivery well. " * (words // 4),
+                                                                   "seconds": seconds})
+
+    def test_typed_timing_is_kept_only_at_a_speaking_pace(self):
+        self.assertEqual(self.timed(120, 60).json()["delivery"]["wpm"], 120)    # normal pace: kept
+        self.assertEqual(self.timed(120, 120).json()["delivery"]["wpm"], 60)    # 60 wpm: lower edge kept
+        self.assertEqual(self.timed(260, 60).json()["delivery"]["wpm"], 260)    # 260 wpm: upper edge kept
+        self.assertIsNone(self.timed(120, 600).json()["delivery"]["seconds"])   # 12 wpm: a pause in dictation
+        self.assertIsNone(self.timed(400, 60).json()["delivery"]["seconds"])    # 400 wpm: pasted, not spoken
+        self.assertEqual(self.timed(120, 0.5).status_code, 422)
+        self.assertEqual(self.timed(120, 1801).status_code, 422)
+
+    def test_duplicate_deck_ids_are_made_unique(self):
+        cards = [{**DECK["cards"][0], "id": "a"}, {**DECK["cards"][0], "id": "a"}, {**DECK["cards"][0], "id": "a_2"},
+                 {**DECK["cards"][0], "id": "a"}]
+        (self.tmp / "library" / "model_level" / "deck.json").write_text(json.dumps({"cards": cards}))
+        ids = [c["id"] for c in rehearse.load_deck()["cards"]]
+        self.assertEqual(len(set(ids)), 4, ids)
+        self.assertEqual(ids[0], "a")
+
+    def test_concurrent_progress_appends_never_interleave(self):
+        import threading
+        big = "x" * 20000  # bigger than the file buffer, so an unlocked write could be split
+        threads = [threading.Thread(target=rehearse.append_progress, args=([{"card_id": f"c{n}", "score": n, "pad": big}],))
+                   for n in range(24)]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join()
+        rows = rehearse.history()
+        self.assertEqual(sorted(r["score"] for r in rows), list(range(24)))
+
 
 if __name__ == "__main__":
     unittest.main()
