@@ -126,7 +126,9 @@ class LocalOnly:
         try:
             await self.app(scope, counted_receive, tracked_send)
         except _TooLarge:
-            if not started:
+            if started:  # the route already answered; nothing more can be sent on this connection
+                logger.warning("upload to %s passed the size cap after the reply had started", scope.get("path"))
+            else:
                 await _json_reply(413, "That upload is too large.")(scope, receive, send)
 
 
@@ -586,9 +588,12 @@ def voice_video(mock_id: str = Form(...), video: UploadFile = File(...)):
     if not load_mock(mock_id):
         raise HTTPException(status_code=404, detail="Mock not found")
     path = voice.recordings_dir(mock_id) / "webcam.webm"
-    with path.open("ab") as out:
-        if out.tell() >= MAX_VIDEO:  # chunks are appended, so cap the file, not just each request
-            raise HTTPException(status_code=413, detail="This mock's webcam recording is already at its size limit.")
+    video.file.seek(0, 2)
+    size = video.file.tell()
+    video.file.seek(0)
+    with _mock_lock(mock_id), path.open("ab") as out:
+        if out.tell() + size > MAX_VIDEO:  # whole chunks only: a cut-off webm chunk would corrupt the recording
+            raise HTTPException(status_code=413, detail="This mock's webcam recording is at its size limit.")
         shutil.copyfileobj(video.file, out)
     return {"saved": str(path)}
 

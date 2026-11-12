@@ -109,10 +109,10 @@ class PathTest(unittest.TestCase):
                 self.assertNotIn(b"not for the browser", reply.content)
 
     def test_webcam_file_is_capped_across_chunks(self):
-        with mock.patch.object(api, "load_mock", return_value={"id": "m1"}), mock.patch.object(api, "MAX_VIDEO", 10):
+        with mock.patch.object(api, "load_mock", return_value={"id": "m1"}), mock.patch.object(api, "MAX_VIDEO", 20):
             send = lambda: self.client.post("/voice/video", data={"mock_id": "m1"}, files={"video": ("v.webm", b"x" * 8, "video/webm")})
             self.assertEqual(send().status_code, 200)
-            self.assertEqual(send().status_code, 200)  # 8 bytes in: still under the cap, so this chunk lands
+            self.assertEqual(send().status_code, 200)  # 16 bytes: at most the cap
             self.assertEqual(send().status_code, 413)
         self.assertEqual((self.root / "rec" / "m1" / "webcam.webm").stat().st_size, 16)
 
