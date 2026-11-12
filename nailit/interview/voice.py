@@ -211,7 +211,8 @@ def _describe(error):
         return f"{Path(str(error.cmd[0])).name} exited with status {error.returncode}"
     if isinstance(error, subprocess.TimeoutExpired):
         return f"{Path(str(error.cmd[0])).name} timed out after {error.timeout}s"
-    return f"{type(error).__name__}: {str(error)[:160]}"
+    from nailit.llm import redact
+    return f"{type(error).__name__}: {redact(error)[:160]}"
 
 
 def speak(text, mock_id, name, engine=None, voice_name=None, instructions=None):

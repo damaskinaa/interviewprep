@@ -105,8 +105,25 @@ def _other_engine(name, prompt, max_tokens):
     raise LLMError(f"unknown engine {name}")
 
 
+KEY_NAMES = ("OPENAI_API_KEY", "TENSORX_API_KEY", "LUA_API_KEY", "GEMINI_API_KEY", "ANTHROPIC_API_KEY")
+KEY_SHAPE = re.compile(r"\b(sk-|AIza)[-_A-Za-z0-9]{16,}")
+
+
+def redact(text):
+    """Provider errors can echo the key that was sent (401 bodies, debug proxies); these messages end up in logs."""
+    text = str(text)
+    for name in KEY_NAMES:
+        value = os.getenv(name) or ""
+        if len(value) >= 8:
+            text = text.replace(value, "[key]")
+    return KEY_SHAPE.sub("[key]", text)
+
+
 class LLMError(RuntimeError):
     """Raised when the LLM call cannot produce output, so failures never leak into artifacts as text."""
+
+    def __init__(self, message=""):
+        super().__init__(redact(message))
 
 
 def client():

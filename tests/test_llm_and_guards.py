@@ -130,3 +130,21 @@ class ProviderOrderTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class KeyRedactionTest(unittest.TestCase):
+    def test_a_key_echoed_by_the_provider_never_reaches_the_error_or_the_log(self):
+        from unittest import mock
+
+        from nailit import llm
+        fake = "fake-test-key-0123456789abcdef"
+        failing = mock.Mock()
+        failing.chat.completions.create.side_effect = RuntimeError(f"401 Invalid key {fake} and sk-proj-ABCDEFGHIJKLMNOPQRST")
+        with mock.patch.dict("os.environ", {"OPENAI_API_KEY": fake, "NAILIT_PROVIDER": "openai"}), \
+                mock.patch.object(llm, "client", return_value=failing), mock.patch.object(llm.time, "sleep"), \
+                self.assertRaises(llm.LLMError) as caught:
+            llm.ask_llm("synthetic prompt", retries=2)
+        message = str(caught.exception)
+        self.assertNotIn(fake, message)
+        self.assertNotIn("sk-proj-ABCDEFGHIJKLMNOPQRST", message)
+        self.assertIn("401 Invalid key [key]", message)
