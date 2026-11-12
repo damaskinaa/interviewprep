@@ -24,7 +24,7 @@ FILLER_PROMPT = "Um, so, uh, I mean, like, we, um, we kind of, uh, started with 
 FILLED_PAUSES = {"um", "umm", "uh", "uhh", "er", "erm", "ah", "hmm", "mm"}
 TTS_ENGINES = ("openai", "say", "none")
 OPENAI_TTS_MODEL = "gpt-4o-mini-tts"
-SAFE_NAME = re.compile(r"^[A-Za-z0-9_][A-Za-z0-9_.-]*$")
+SAFE_NAME = re.compile(r"[A-Za-z0-9_][A-Za-z0-9_.-]{0,127}\Z")  # used with .match: \Z, not $, so "x\n" fails
 
 
 class VoiceUnavailable(RuntimeError):
