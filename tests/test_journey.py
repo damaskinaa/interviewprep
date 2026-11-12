@@ -78,6 +78,36 @@ class JourneyTest(unittest.TestCase):
         self.assertEqual(scorer.call_args.args[1], "I missed a deadline. I rebuilt the plan.")
         self.assertIn("mock:q1", rehearse.progress_path().read_text())
 
+    def test_two_debriefs_at_once_record_and_log_the_mock_once(self):
+        import copy
+        import threading
+        import time
+        stored = {"state": {"id": "mock_y", "phase": "done", "turns": [
+            {"role": "interviewer", "kind": "question", "say": "Tell me about a failure.", "question_text": "Tell me about a failure.",
+             "question_id": "q1"},
+            {"role": "candidate", "say": "I missed a deadline."}]}}
+        saves = []
+
+        def slow_score(*args, **kwargs):
+            time.sleep(0.3)  # both requests are scoring before either saves
+            return dict(RESULT)
+
+        with mock.patch.object(api, "load_mock", side_effect=lambda _id: copy.deepcopy(stored["state"])), \
+                mock.patch.object(api, "save_mock", side_effect=lambda st: (saves.append(1), stored.update(state=st))), \
+                mock.patch.object(api, "_library", return_value={"questions": []}), \
+                mock.patch("nailit.library._questions", return_value=([{"id": "q1", "type": "failure"}], None)), \
+                mock.patch("nailit.scoring.score", side_effect=slow_score):
+            replies = []
+            threads = [threading.Thread(target=lambda: replies.append(self.client.get("/interview/debrief?mock_id=mock_y").json()))
+                       for _ in range(2)]
+            for t in threads:
+                t.start()
+            for t in threads:
+                t.join()
+        self.assertEqual([r["overall"] for r in replies], [8.0, 8.0])
+        self.assertEqual(len(saves), 1)
+        self.assertEqual(rehearse.progress_path().read_text().count("mock:q1"), 1)
+
     def test_a_round_note_never_adds_a_second_question_to_the_opening(self):
         lib = {"questions": []}
         state = {"id": "m", "queue": [{"kind": "instruction", "text": "behavioural from the coverage gaps"}, {"kind": "question", "id": "q1"}],

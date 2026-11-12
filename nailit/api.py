@@ -402,7 +402,6 @@ def mock_pairs(state):
 def interview_debrief(mock_id: str):
     """Score a finished mock against the rubric from the manuals, the same scorer rehearsal uses. The live 1-5 marks
     only steer follow-ups (they are keyword checks); this is the mark to trust."""
-    import json as _json
     import time as _time
     from concurrent.futures import ThreadPoolExecutor
 
@@ -442,16 +441,16 @@ def interview_debrief(mock_id: str):
     if scored and state["phase"] == "done":
         with _mock_lock(mock_id):
             state = load_mock(mock_id)
+            if state.get("debrief"):  # another request scored it while this one was waiting: keep one record, one log entry
+                return state["debrief"]
             state["debrief"] = debrief
             save_mock(state)
-        from nailit.rehearse import progress_path
+        from nailit.rehearse import append_progress
         stamp = _time.strftime("%Y-%m-%d %H:%M:%S")
-        with open(progress_path(), "a") as handle:
-            for a in scored:
-                handle.write(_json.dumps({"at": stamp, "card_id": "mock:" + (a["question_id"] or "other"), "score": a["score"],
-                                          "verdict": a["verdict"], "quality": a["quality"], "fidelity": None,
-                                          "competency": None, "source": "mock",
-                                          "rules_failed": [r["id"] for r in a["rules"] if r["verdict"] == "fail"]}) + "\n")
+        append_progress([{"at": stamp, "card_id": "mock:" + (a["question_id"] or "other"), "score": a["score"],
+                          "verdict": a["verdict"], "quality": a["quality"], "fidelity": None, "competency": None,
+                          "source": "mock", "rules_failed": [r["id"] for r in a["rules"] if r["verdict"] == "fail"]}
+                         for a in scored])
     return debrief
 
 
