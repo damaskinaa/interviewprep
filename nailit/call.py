@@ -162,13 +162,24 @@ Transcript:
 
 
 _TIME = r"\[?\(?\d{1,2}:\d{2}(?::\d{2})?\)?\]?"
-_LABEL = re.compile(rf"^\s*(?:{_TIME}\s*)?(?:[^\W\d][\w .'-]{{0,40}}?\s*(?:{_TIME})?\s*(?::|\s[-–—])\s+)?(?:{_TIME}\s*)?")
+_LABEL = re.compile(rf"^\s*(?:{_TIME}\s*)?(?:(?P<who>[^\W\d][\w .'-]{{0,40}}?)\s*(?:{_TIME})?\s*(?::|\s[-–—])\s+)?(?:{_TIME}\s*)?")
 
 
-def _unlabelled(transcript):
-    """The transcript as one stream of words: speaker labels and timestamps at line starts removed, so a sentence the
-    transcriber split across two turns ("Me: I led the" / "Me: migration.") still reads as said."""
-    return " ".join(_LABEL.sub("", line, count=1) for line in transcript.splitlines())
+def _turns(transcript):
+    """Each speaker's run of consecutive lines as one stream of words, labels and timestamps removed, so a sentence the
+    transcriber split across two lines of the same speaker ("Me: I led the" / "Me: migration.") still reads as said,
+    while one speaker can never finish another's sentence."""
+    turns, last = [], object()
+    for line in transcript.splitlines():
+        match = _LABEL.match(line)
+        who = (match.group("who") or "").strip().lower() or None
+        text = line[match.end():]
+        if turns and who == last:
+            turns[-1] += " " + text
+        else:
+            turns.append(text)
+        last = who
+    return turns
 
 
 def _verbatim(item, transcript):
@@ -176,8 +187,8 @@ def _verbatim(item, transcript):
     reading pasted text, so it can be steered into writing a better answer than the one given; scores must only ever
     be about words that were said. Drops the item when under 80% of its words survive."""
     sentences = [s for s in re.split(r"(?<=[.!?…])\s+|\n+", str(item["answer"])) if s.strip()]
-    stream = _unlabelled(transcript)
-    kept = [s for s in sentences if scoring.quoted(s, transcript) or scoring.quoted(s, stream)]
+    turns = _turns(transcript)
+    kept = [s for s in sentences if scoring.quoted(s, transcript) or any(scoring.quoted(s, turn) for turn in turns)]
     if sum(len(s.split()) for s in kept) < 0.8 * len(str(item["answer"]).split()):
         return None
     return {**item, "answer": " ".join(kept)}
