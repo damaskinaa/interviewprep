@@ -102,5 +102,31 @@ class LLMClientTest(unittest.TestCase):
             self.llm.ask_llm("q", retries=1)
 
 
+class ProviderOrderTest(unittest.TestCase):
+    def test_env_then_settings_then_tensorx_then_openai(self):
+        import json
+        import tempfile
+        from pathlib import Path
+        from unittest import mock
+
+        from nailit import llm
+        home = Path(tempfile.mkdtemp())
+        env = {"NAILIT_PROVIDER": "", "TENSORX_API_KEY": ""}
+        with mock.patch("nailit.library.home", return_value=home), mock.patch.dict(os.environ, env):
+            self.assertEqual(llm.provider(), "openai")
+            os.environ["TENSORX_API_KEY"] = "test-key"
+            self.assertEqual(llm.provider(), "tensorx")
+            (home / "settings.json").write_text("{not json")
+            self.assertEqual(llm.provider(), "tensorx")  # a broken settings file falls through
+            (home / "settings.json").write_text(json.dumps({"engine": "nonsense"}))
+            self.assertEqual(llm.provider(), "tensorx")  # unknown engine falls through
+            (home / "settings.json").write_text(json.dumps({"engine": "lua"}))
+            self.assertEqual(llm.provider(), "lua")
+            os.environ["NAILIT_PROVIDER"] = "CLAUDE"
+            self.assertEqual(llm.provider(), "claude")  # the env var wins, any case
+            os.environ["NAILIT_PROVIDER"] = "bogus"
+            self.assertEqual(llm.provider(), "lua")
+
+
 if __name__ == "__main__":
     unittest.main()
