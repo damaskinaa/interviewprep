@@ -73,7 +73,8 @@ def write_jd_map(session, role_result, stories=None):
         try:
             stories = library.load_me()["stories"]["stories"]
         except library.LibraryError as error:
-            logger.warning("jd_map without stories: %s", error.errors[:3])
+            files = sorted({e.split(":", 1)[0] for e in error.errors})  # the messages quote the candidate's lines
+            logger.warning("jd_map without stories: %d problem(s) in %s", len(error.errors), ", ".join(files))
             stories = []
     lines = [f"# {session['role_name']} at {session['company_name']} — JD map", "",
              "| Requirement | Competency | Story |", "|---|---|---|"]

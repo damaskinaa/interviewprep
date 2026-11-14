@@ -1,5 +1,4 @@
 """Storage, settings, command line, voice back-ends and the LLM engines: the paths the other tests do not reach."""
-import json
 import os
 import subprocess
 import sys
@@ -100,11 +99,11 @@ class StoreTest(unittest.TestCase):
 
 class ConfigCliPathsTest(unittest.TestCase):
     def test_keychain_reads_succeed_fail_and_are_skipped_off_mac(self):
-        with mock.patch.object(config.subprocess, "run", return_value=types.SimpleNamespace(returncode=0, stdout=" secret\n")):
+        with mock.patch.object(config.sys, "platform", "darwin"), mock.patch.object(config.subprocess, "run", return_value=types.SimpleNamespace(returncode=0, stdout=" secret\n")):
             self.assertEqual(config.keychain_secret("X"), "secret")
-        with mock.patch.object(config.subprocess, "run", return_value=types.SimpleNamespace(returncode=44, stdout="")):
+        with mock.patch.object(config.sys, "platform", "darwin"), mock.patch.object(config.subprocess, "run", return_value=types.SimpleNamespace(returncode=44, stdout="")):
             self.assertEqual(config.keychain_secret("X"), "")
-        with mock.patch.object(config.subprocess, "run", side_effect=OSError("no security")):
+        with mock.patch.object(config.sys, "platform", "darwin"), mock.patch.object(config.subprocess, "run", side_effect=OSError("no security")):
             self.assertEqual(config.keychain_secret("X"), "")
         with mock.patch.object(config.sys, "platform", "linux"):
             self.assertEqual(config.keychain_secret("X"), "")

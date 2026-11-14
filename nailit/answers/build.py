@@ -272,14 +272,17 @@ def brief(card, comp, story, index):
     return "\n\n".join(parts)
 
 
-def judge(card, text):
-    """Rule-by-rule verdicts from two judges of different families; the mean quality ranks the drafts."""
+def judge(card, text, need=0):
+    """Rule-by-rule verdicts from two judges of different families; the mean quality ranks the drafts. With need=2 a
+    judge that is down raises instead of leaving the mark to one judge (or to 0.0 when both are down)."""
     results = []
     for model, timeout in ((None, 40), (SECOND_JUDGE, 240)):
         try:
             results.append(_score(card, text, model, timeout))
         except Exception:  # noqa: BLE001 - one judge failing must not lose the card
             continue
+    if len(results) < need:
+        raise RuntimeError(f"only {len(results)} of 2 judges answered; nothing changed")
     if not results:
         return 0.0, []
     failed = {}

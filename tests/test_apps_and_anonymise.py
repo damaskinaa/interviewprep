@@ -4,6 +4,7 @@ import tempfile
 import types
 import unittest
 from pathlib import Path
+from unittest import mock
 
 from nailit import library, llm
 from nailit.prep import apps
@@ -97,6 +98,15 @@ class AppFilesTest(HomeMixin, unittest.TestCase):
         (self.home / "apps").write_text("not a folder")
         with self.assertLogs("nailit.prep.apps", level="WARNING"):
             self.assertIsNone(apps.write_questions(SESSION, {"questions_by_round": []}))
+
+    def test_broken_stories_file_is_logged_without_the_candidates_lines(self):
+        problem = library.LibraryError(["stories.md: s1/result: 'We grew Project Bluebird revenue' is not of type 'array'",
+                                        "stories.md: malformed fact line: synthetic Bluebird fact"])
+        with mock.patch.object(library, "load_me", side_effect=problem), \
+                self.assertLogs("nailit.prep.apps", level="WARNING") as logs:
+            apps.write_jd_map(SESSION, {"question_seeds": []})
+        self.assertNotIn("Bluebird", "\n".join(logs.output))
+        self.assertIn("2 problem(s) in stories.md", "\n".join(logs.output))
 
 
 if __name__ == "__main__":

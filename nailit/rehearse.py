@@ -39,7 +39,12 @@ def load_deck():
     path = deck_path()
     if not path.exists():
         raise HTTPException(status_code=404, detail="No rehearsal deck yet. Run: uv run python -m nailit.answers.generate")
-    data = json.loads(path.read_text())
+    try:
+        data = json.loads(path.read_text())
+        data["cards"]
+    except (ValueError, KeyError, TypeError) as error:
+        raise HTTPException(status_code=503, detail="The rehearsal deck file is damaged or half-written. Restore the "
+                                                    "newest deck_before_*.json backup next to it, or rebuild the deck.") from error
     taken, seen = {c["id"] for c in data["cards"]}, set()
     for c in data["cards"]:  # two cards must never share an id, or their scores and audio would mix
         if c["id"] in seen:

@@ -36,6 +36,8 @@ I_DECIDED = re.compile(r"\bI (decided|chose|built|designed|created|implemented|l
                        r"proposed|introduced|fixed|changed|redesigned|analysed|analyzed|led|drove|rebuilt|mapped|set|told|put|"
                        r"asked|wrote|cut|moved|took|ran|made|stopped|kept|said|went|pushed|paused|escalated|negotiated)\b")
 
+ANSWER_TAG = re.compile(r"<\s*(/?)\s*answer\b[^>]*>", re.I)
+
 _rules = None
 _comps = None
 
@@ -135,7 +137,7 @@ def score(card, text, level=1, judge=None, timeout=40):
                   if moves else "")
     reply = ai.chat(judge or SCORER, PROMPT.format(
         question=card["question"], rules="\n".join(f"{rid}: {all_rules.get(rid, SHORT.get(rid, ''))}" for rid in chosen),
-        model_block=model_block, attempt=text.replace("</answer>", "</ answer>"), moves_keys=moves_keys), json_mode=True, effort="low", timeout=timeout) or {}
+        model_block=model_block, attempt=ANSWER_TAG.sub(r"[\1answer]", text), moves_keys=moves_keys), json_mode=True, effort="low", timeout=timeout) or {}
     if not reply.get("rules"):
         raise RuntimeError("the scoring model returned no rule verdicts")
     overrides, results, total, weight = code_checks(text, chosen), [], 0.0, 0.0
