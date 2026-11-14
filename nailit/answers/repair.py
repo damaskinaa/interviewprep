@@ -60,7 +60,7 @@ def rewrite(card, stories, writer=None, threshold=8.0):
     stored answer at the threshold (the stored mark came from one run and was noise), or None when the writer gave
     nothing usable."""
     from nailit.answers import ai
-    before, failed = judge(card, card["answer"])
+    before, failed = judge(card, card["answer"], need=2)
     if before >= threshold:
         return {"before": round(before, 1), "remarked": True}
     detail = "; ".join(f"{r['name']} ({r['verdict']}{': ' + r['evidence'][:80] if r.get('evidence') else ''})"
@@ -74,7 +74,7 @@ def rewrite(card, stories, writer=None, threshold=8.0):
     if len(answer.split()) < 60 or TELLS.search(answer):
         return None
     answer, leftover = gate_numbers(card, answer, story)
-    after, _ = judge(card, answer)
+    after, _ = judge(card, answer, need=2)
     return {"before": round(before, 1), "after": round(after, 1), "answer": answer, "leftover": leftover}
 
 

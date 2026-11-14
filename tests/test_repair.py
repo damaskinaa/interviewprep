@@ -26,6 +26,29 @@ class RepairTest(unittest.TestCase):
         fine, writer = self.run_rewrite([9.0])  # two judges already pass the stored answer: no rewrite, no Fable call
         self.assertEqual((fine, writer.called), ({"before": 9.0, "remarked": True}, False))
 
+    def test_a_judge_that_is_down_never_lets_a_rewrite_through(self):
+        from nailit.answers import build
+        marks = {None: 4.0, build.SECOND_JUDGE: 5.0}
+
+        def score(card, text, model, timeout, down):
+            if model == down:
+                raise RuntimeError("judge unavailable")
+            return {"quality": marks[model] + (4 if text == NEW.strip() else 0), "rules": []}
+
+        for down in (None, build.SECOND_JUDGE):  # the before mark or the after mark would rest on one judge, or on 0.0
+            with self.subTest(down=down), \
+                    mock.patch.object(build, "_score", side_effect=lambda c, t, m, to, d=down: score(c, t, m, to, d)), \
+                    mock.patch.object(ai, "chat", return_value={"answer": NEW}) as writer, \
+                    mock.patch.object(repair, "gate_numbers", side_effect=lambda card, text, story: (text, [])):
+                with self.assertRaisesRegex(RuntimeError, "1 of 2 judges"):
+                    repair.rewrite(dict(CARD), {"M1": "the story"})
+                self.assertFalse(writer.called)
+        with mock.patch.object(build, "_score", side_effect=lambda c, t, m, to: score(c, t, m, to, "none")), \
+                mock.patch.object(ai, "chat", return_value={"answer": NEW}), \
+                mock.patch.object(repair, "gate_numbers", side_effect=lambda card, text, story: (text, [])):
+            result = repair.rewrite(dict(CARD), {"M1": "the story"})
+            self.assertTrue(repair.accept(result), result)
+
     def test_the_replaced_answer_is_kept_in_the_deck_file(self):
         deck, card = {"cards": [dict(CARD)]}, None
         card = deck["cards"][0]
