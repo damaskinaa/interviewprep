@@ -42,6 +42,12 @@ class HostnameTest(unittest.TestCase):
                 self.assertEqual(api._hostname(value), want)
 
 
+    def test_a_malformed_origin_port_never_matches(self):
+        self.assertFalse(api._allowed_origin("http://127.0.0.1:99999", "127.0.0.1:99999"))
+        self.assertFalse(api._allowed_origin("http://127.0.0.1:abc", "127.0.0.1:abc"))
+        self.assertTrue(api._allowed_origin("http://127.0.0.1:8000", "127.0.0.1:8000"))
+
+
 class GuardTest(unittest.TestCase):
     def setUp(self):
         self.client = TestClient(api.app)

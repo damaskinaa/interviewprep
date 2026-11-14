@@ -1,4 +1,5 @@
 import logging
+from collections import Counter
 import os
 import shutil
 import statistics
@@ -84,7 +85,8 @@ def _allowed_origin(origin, host):
     port 3000; another local port (some other dev server) may not post here."""
     if _hostname(origin) not in LOCAL_HOSTS:
         return False
-    return _port(origin) in (_port(host), FRONTEND_PORT)
+    port = _port(origin)
+    return port is not None and port in (_port(host), FRONTEND_PORT)
 
 
 class _TooLarge(HTTPException):
@@ -99,7 +101,8 @@ def _json_reply(status, error):
 class LocalOnly:
     """The app has no login because it only serves this Mac. Refuse requests that reach it under another host name
     (DNS rebinding), writes sent by another website's page (cross-site form posts), and bodies over MAX_UPLOAD, whether
-    or not they declare a Content-Length (chunked uploads are counted as they stream in)."""
+    or not they declare a Content-Length (chunked uploads are counted as they stream in). WebSockets are always closed:
+    a future WebSocket route needs its own Host/Origin check here first."""
 
     def __init__(self, app):
         self.app = app
@@ -111,7 +114,8 @@ class LocalOnly:
             return await self.app(scope, receive, send)
         pairs = [(k.decode("latin-1").lower(), v.decode("latin-1")) for k, v in scope.get("headers") or []]
         headers = dict(pairs)
-        if any(sum(k == name for k, _ in pairs) > 1 for name in SINGLE_HEADERS):
+        seen = Counter(k for k, _ in pairs)
+        if any(seen[name] > 1 for name in SINGLE_HEADERS):
             return await _json_reply(400, "Repeated request header.")(scope, receive, send)
         if _hostname(headers.get("host")) not in LOCAL_HOSTS | _TEST_HOSTS():
             return await _json_reply(403, "NailIt only answers on this computer.")(scope, receive, send)
