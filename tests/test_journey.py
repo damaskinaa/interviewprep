@@ -43,6 +43,15 @@ class JourneyTest(unittest.TestCase):
         self.assertEqual(huge.status_code, 413)
         self.assertEqual(self.client.get("/health", headers={"host": "127.0.0.1.evil.example"}).status_code, 403)
 
+    def test_a_half_written_deck_is_a_clear_error_not_a_crash(self):
+        for broken in ('{"cards": [{"id": "a", "quest', "[]", '{"other": 1}'):
+            with self.subTest(broken):
+                (self.tmp / "library" / "model_level" / "deck.json").write_text(broken)
+                for path in ("/rehearse/readiness", "/rehearse/deck"):
+                    reply = self.client.get(path)
+                    self.assertEqual(reply.status_code, 503)
+                    self.assertIn("damaged or half-written", reply.json()["error"])
+
     def test_two_cards_never_share_an_id(self):
         ids = [c["id"] for c in rehearse.load_deck()["cards"]]
         self.assertEqual(len(ids), len(set(ids)))
