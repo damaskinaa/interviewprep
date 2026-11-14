@@ -1,6 +1,5 @@
 """API routes the journey tests do not reach: module jobs, coach, mock errors, debrief, voice errors, video and audio."""
 import importlib
-import io
 import os
 import tempfile
 import unittest

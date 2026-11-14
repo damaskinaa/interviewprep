@@ -1,7 +1,6 @@
 """Library parsing errors, the call routes that fail, and the scorer's guard rails."""
 import copy
 import importlib
-import json
 import tempfile
 import unittest
 from pathlib import Path
