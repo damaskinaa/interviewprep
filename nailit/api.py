@@ -47,6 +47,8 @@ app.include_router(manuals.router)
 MAX_UPLOAD = 200 * 1024 * 1024  # one request; a long spoken answer is a few megabytes
 MAX_VIDEO = 4 * 1024 ** 3  # one mock's webcam file across all its chunks; each request is still capped by MAX_UPLOAD
 LOCAL_HOSTS = {"127.0.0.1", "localhost", "::1"}
+FRONTEND_PORT = 3000
+SINGLE_HEADERS = ("host", "origin", "content-length", "transfer-encoding", "sec-fetch-site", "sec-fetch-mode")
 
 
 def _TEST_HOSTS():  # noqa: N802 - Starlette's TestClient sends `Host: testserver`; only accepted while pytest runs
@@ -68,6 +70,23 @@ def _hostname(value):
     return parts.hostname
 
 
+def _port(value):
+    """The port of a Host header or an Origin (80 when none is given); None if malformed."""
+    value = (value or "").strip()
+    try:
+        return urlsplit(value if "://" in value else "//" + value).port or 80
+    except ValueError:
+        return None
+
+
+def _allowed_origin(origin, host):
+    """A write may come from a page this server served (same loopback name and port) or from the Next.js frontend on
+    port 3000; another local port (some other dev server) may not post here."""
+    if _hostname(origin) not in LOCAL_HOSTS:
+        return False
+    return _port(origin) in (_port(host), FRONTEND_PORT)
+
+
 class _TooLarge(HTTPException):
     def __init__(self):
         super().__init__(status_code=413, detail="That upload is too large.")
@@ -86,9 +105,14 @@ class LocalOnly:
         self.app = app
 
     async def __call__(self, scope, receive, send):
+        if scope["type"] == "websocket":  # no route uses one; browsers skip CORS for them, so refuse rather than pass
+            return await send({"type": "websocket.close", "code": 1008})
         if scope["type"] != "http":
             return await self.app(scope, receive, send)
-        headers = {k.decode("latin-1").lower(): v.decode("latin-1") for k, v in scope.get("headers") or []}
+        pairs = [(k.decode("latin-1").lower(), v.decode("latin-1")) for k, v in scope.get("headers") or []]
+        headers = dict(pairs)
+        if any(sum(k == name for k, _ in pairs) > 1 for name in SINGLE_HEADERS):
+            return await _json_reply(400, "Repeated request header.")(scope, receive, send)
         if _hostname(headers.get("host")) not in LOCAL_HOSTS | _TEST_HOSTS():
             return await _json_reply(403, "NailIt only answers on this computer.")(scope, receive, send)
         length = headers.get("content-length")
@@ -96,9 +120,12 @@ class LocalOnly:
             return await _json_reply(413, "That upload is too large.")(scope, receive, send)
         origin = headers.get("origin")
         if scope["method"] not in ("GET", "HEAD", "OPTIONS") and origin is not None \
-                and _hostname(origin) not in LOCAL_HOSTS:
+                and not _allowed_origin(origin, headers.get("host")):
             return await _json_reply(403, "Cross-site request refused.")(scope, receive, send)
-        if headers.get("sec-fetch-site") == "cross-site" and scope["method"] not in ("GET", "HEAD", "OPTIONS"):
+        # Another site's page may link here (a top-level navigation), but may not make the browser fetch an API route
+        # in the background: some GETs cost model calls (/interview/debrief) even though the page can't read the reply.
+        if headers.get("sec-fetch-site") == "cross-site" and not (
+                scope["method"] in ("GET", "HEAD") and headers.get("sec-fetch-mode") == "navigate"):
             return await _json_reply(403, "Cross-site request refused.")(scope, receive, send)
         received, started = 0, False
 

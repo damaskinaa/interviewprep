@@ -1,4 +1,5 @@
 """The request guard, upload caps and file-name checks. Synthetic data only."""
+import asyncio
 import tempfile
 import unittest
 from pathlib import Path
@@ -8,6 +9,26 @@ from fastapi.testclient import TestClient
 
 from nailit import api
 from nailit.interview import voice
+
+
+async def _ok_app(scope, receive, send):
+    await send({"type": "http.response.start", "status": 200, "headers": []})
+    await send({"type": "http.response.body", "body": b""})
+
+
+def _asgi_status(app, method, raw_headers):
+    """Drive the guard with a raw header list, which TestClient can't produce (it merges repeated headers)."""
+    sent = []
+
+    async def receive():
+        return {"type": "http.request", "body": b"", "more_body": False}
+
+    async def send(message):
+        sent.append(message)
+
+    scope = {"type": "http", "method": method, "path": "/", "headers": raw_headers}
+    asyncio.run(app(scope, receive, send))
+    return sent[0]["status"]
 
 
 class HostnameTest(unittest.TestCase):
@@ -54,6 +75,38 @@ class GuardTest(unittest.TestCase):
         self.assertNotEqual(post({"origin": "http://[::1]:3000"}), 403)
         self.assertNotEqual(post({"origin": "http://localhost:3000", "sec-fetch-site": "same-site"}), 403)
         self.assertNotEqual(post({}), 403)  # curl and scripts on this Mac send no Origin
+
+    def test_other_local_ports_may_not_write(self):
+        post = lambda headers: self.status("post", "/voice/latency", json={"mock_id": "m", "turn": 0, "latency_s": 1},
+                                           headers=headers)
+        self.assertEqual(post({"host": "127.0.0.1:8000", "origin": "http://127.0.0.1:9999"}), 403)
+        self.assertEqual(post({"host": "127.0.0.1:8000", "origin": "http://localhost:8888"}), 403)
+        self.assertNotEqual(post({"host": "127.0.0.1:8000", "origin": "http://127.0.0.1:8000"}), 403)
+        self.assertNotEqual(post({"host": "localhost", "origin": "http://localhost"}), 403)
+
+    def test_cross_site_background_gets_are_refused_but_links_still_open(self):
+        background = {"sec-fetch-site": "cross-site", "sec-fetch-mode": "no-cors"}
+        self.assertEqual(self.status(path="/interview/debrief?mock_id=mock_x", headers=background), 403)
+        self.assertEqual(self.status("head", path="/rehearse/readiness", headers=background), 403)
+        self.assertEqual(self.status("options", path="/settings", headers={"sec-fetch-site": "cross-site"}), 403)
+        self.assertEqual(self.status(headers={"sec-fetch-site": "cross-site", "sec-fetch-mode": "navigate"}), 200)
+        self.assertEqual(self.status(headers={"sec-fetch-site": "same-origin", "sec-fetch-mode": "cors"}), 200)
+
+    def test_repeated_guard_headers_are_refused(self):
+        for name, value in (("origin", "http://localhost:3000"), ("sec-fetch-site", "same-origin"),
+                            ("content-length", "0"), ("host", "localhost")):
+            with self.subTest(name):
+                raw = [(b"host", b"localhost"), (name.encode(), value.encode()), (name.encode(), value.encode())]
+                self.assertEqual(_asgi_status(api.LocalOnly(_ok_app), "GET", raw), 400)
+
+    def test_websockets_are_closed(self):
+        sent = []
+
+        async def send(message):
+            sent.append(message)
+
+        asyncio.run(api.LocalOnly(_ok_app)({"type": "websocket", "headers": [(b"host", b"localhost")]}, None, send))
+        self.assertEqual(sent, [{"type": "websocket.close", "code": 1008}])
 
     def test_declared_and_chunked_bodies_are_capped(self):
         with mock.patch.object(api, "MAX_UPLOAD", 1000):
