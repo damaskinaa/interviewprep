@@ -185,7 +185,7 @@
         <div class="timeline"><div class="track"><i id="tbar"></i></div><div class="lbl"><span id="tnow">0:00</span><span>aim for 1:15 – 1:30</span></div></div>
         <div id="caption"></div>
         <div class="bar"><button class="btn quiet" id="peek">Peek at the answer</button><button class="btn quiet" id="typeIt">Dictate or type instead</button></div>
-        <textarea id="typed" style="display:none;width:100%;min-height:140px;font:inherit;padding:14px;border-radius:14px;border:1px solid var(--line);background:var(--paper);color:var(--ink)" placeholder="Click here, then dictate with Wispr Flow (or any dictation tool), or type. Timing starts with your first word."></textarea>
+        <textarea id="typed" aria-label="Your typed answer" style="display:none;width:100%;min-height:140px;font:inherit;padding:14px;border-radius:14px;border:1px solid var(--line);background:var(--paper);color:var(--ink)" placeholder="Click here, then dictate with Wispr Flow (or any dictation tool), or type. Timing starts with your first word."></textarea>
         <button class="btn" id="sendTyped" style="display:none">Score it</button>
       </div>
 
@@ -219,6 +219,23 @@
 </div>
 
 <script>
+function splitSentences(text) {  // sentences with their trailing punctuation and space; [text] when there are none
+  const out = [];
+  let start = 0;
+  for (const m of text.matchAll(/[.!?]+["']?\s*/g)) {
+    const end = m.index + m[0].length;
+    if (m.index > start) out.push(text.slice(start, end));
+    start = end;
+  }
+  if (start < text.length) out.push(text.slice(start));
+  return out.length ? out : [text];
+}
+function trimQuotes(s) {  // strips leading “ " ' and trailing ” " ' plus whitespace, without a backtracking regex
+  let a = 0, b = s.length;
+  while (a < b && (!s[a].trim() || '"“\''.includes(s[a]))) a++;
+  while (b > a && (!s[b - 1].trim() || '"”\''.includes(s[b - 1]))) b--;
+  return s.slice(a, b);
+}
 const $ = (id) => document.getElementById(id);
 const S = { deck: [], cards: [], i: 0, results: [], type: "", company: "", len: 10, order: "frequent", style: "hear",
   stream: null, rec: null, chunks: [], take: "", timer: null, preview: null, busy: false, audio: null, rate: 1, phase: "" };
@@ -292,7 +309,7 @@ function steps(n) { [1, 2, 3, 4].forEach((k) => { $("s" + k).className = "step" 
 function dots() { [...$("dots").children].forEach((d, k) => (d.className = k < S.i ? "done" : k === S.i ? "now" : "")); }
 
 function renderModel(text) {
-  const parts = text.match(/[^.!?]+[.!?]+["']?\s*|[^.!?]+$/g) || [text];
+  const parts = splitSentences(text);
   $("model").innerHTML = ""; parts.forEach((p) => { const s = document.createElement("span"); s.textContent = p; $("model").appendChild(s); });
   return parts;
 }
@@ -418,7 +435,7 @@ function showResult(r) {
     .filter(Boolean).map((x) => { const s = document.createElement("span"); s.className = "stat"; s.textContent = x; return s; }));
   $("fix").querySelector("span").textContent = r.one_fix || "";
   $("fix").style.display = r.one_fix ? "block" : "none";
-  const bl = (r.best_line || "").replace(/^["“'\s]+|["”'\s]+$/g, "");
+  const bl = trimQuotes(r.best_line || "");
   $("best").textContent = bl ? "Your strongest line: “" + bl + "”" : ""; $("best").style.display = bl ? "block" : "none";
   const rules = r.rules || [];
   $("rulesBox").style.display = rules.length ? "block" : "none";

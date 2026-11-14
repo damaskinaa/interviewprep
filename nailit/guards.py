@@ -28,10 +28,23 @@ WHY_COMPANY_GENERIC_PHRASES = [
 ]
 
 
+_SENTENCE_END = re.compile(r"[.!?](?=\s|$)")
+
+
+def sentence_end(text):
+    """Index just past the first sentence end that has text before it on its line, or None."""
+    for m in _SENTENCE_END.finditer(text):
+        if m.start() > text.rfind("\n", 0, m.start()) + 1:
+            return m.end()
+    return None
+
+
 def first_sentence(text):
     text = normalize_text(text)
-    match = re.search(r"(.+?[.!?])(\s|$)", text)
-    return match.group(1).strip() if match else text.split("\n", 1)[0].strip()
+    end = sentence_end(text)
+    if end is None:
+        return text.split("\n", 1)[0].strip()
+    return text[text.rfind("\n", 0, end) + 1:end].strip()
 
 
 def starts_with_banned_opening(answer):

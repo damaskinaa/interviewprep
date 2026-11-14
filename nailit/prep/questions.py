@@ -1,6 +1,7 @@
 import re
 
 from nailit.guards import (
+    sentence_end,
     ANSWER_BANNED_OPENINGS,
     answer_word_failures_from_strategy,
     first_sentence,
@@ -47,10 +48,10 @@ from nailit.prep.research import (
 def replace_first_sentence(answer, new_opening):
     answer = normalize_text(answer)
     new_opening = normalize_text(new_opening).rstrip(".") + "."
-    match = re.search(r"(.+?[.!?])(\s|$)", answer)
-    if not match:
+    end = sentence_end(answer)
+    if end is None:
         return normalize_text(f"{new_opening} {answer}")
-    return normalize_text(new_opening + " " + answer[match.end():])
+    return normalize_text(new_opening + " " + answer[end:])
 
 
 def repair_answer_opening(question, answer, assigned_story, session, candidate_profile):

@@ -296,9 +296,10 @@ def library_seed():
     bank = library.home() / "library" / "model_level" / "03_master_question_bank.md"
     if bank.exists():
         for line in bank.read_text().splitlines():
-            m = re.match(r"^\|\s*([^|]{12,}\?)\s*\|", line)
-            if m:
-                rows.append({"q": m.group(1).strip(), "kind": "asked", "source": "model_level_03", "company": "", "role": ""})
+            cells = line.split("|")
+            cell = cells[1].strip() if line.startswith("|") and len(cells) > 2 else ""
+            if len(cell) >= 12 and cell.endswith("?"):
+                rows.append({"q": cell, "kind": "asked", "source": "model_level_03", "company": "", "role": ""})
     return rows
 
 

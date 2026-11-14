@@ -166,7 +166,7 @@
           <div class="timer"><div class="bar"><i id="timeBar"></i></div><div class="lbl"><span id="timeNow">0:00</span><span>target 1:30 · flag at 2:00</span></div></div>
           <div class="meter" style="max-width:520px;width:100%"><i id="liveLevel"></i></div>
           <div id="caption" aria-live="polite"></div>
-          <div id="textBox"><textarea id="text" placeholder="Click here, then dictate with Wispr Flow (or any dictation tool), or type your answer…"></textarea><div class="actions" style="margin-top:10px"><button class="btn" id="sendText">Send answer</button></div></div>
+          <div id="textBox"><textarea id="text" aria-label="Your answer" placeholder="Click here, then dictate with Wispr Flow (or any dictation tool), or type your answer…"></textarea><div class="actions" style="margin-top:10px"><button class="btn" id="sendText">Send answer</button></div></div>
           <div class="actions">
             <button class="btn ghost" id="repeat">Repeat question</button>
             <button class="btn ghost" id="switchType">Dictate or type instead</button>
@@ -429,7 +429,7 @@ function loadScript(src) { return new Promise((ok, bad) => { const s = document.
 async function setupVad() {
   await loadScript("https://cdn.jsdelivr.net/npm/onnxruntime-web@1.14.0/dist/ort.js");
   await loadScript("https://cdn.jsdelivr.net/npm/@ricky0123/vad-web@0.0.22/dist/bundle.min.js");
-  S.vad = await vad.MicVAD.new({ stream: S.stream, redemptionFrames: Math.round(parseFloat($("endSilence").value) / 0.096),
+  S.vad = await vad.MicVAD.new({ stream: S.stream, redemptionFrames: Math.round(Number.parseFloat($("endSilence").value) / 0.096),
     onSpeechStart: () => setState("Recording…", "It stops when you pause."),
     onSpeechEnd: () => { S.vad.pause(); stopRecording(); } });
 }

@@ -77,7 +77,7 @@ def scrub_unconfirmed_numbers(value):
     if not isinstance(value, str):
         return value
 
-    value = re.sub(r"\b\d+%\b", "[needs confirmation]", value)
+    value = re.sub(r"\b\d+\s*%", "[needs confirmation]", value)
     value = re.sub(r"\b\d+\s*percent\b", "[needs confirmation]", value, flags=re.I)
 
     return value

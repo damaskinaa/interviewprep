@@ -43,13 +43,6 @@ app.include_router(rehearse.router)
 app.include_router(call.router)
 app.include_router(manuals.router)
 
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["http://127.0.0.1:3000", "http://localhost:3000"],
-    allow_methods=["GET", "POST"],
-    allow_headers=["Content-Type"],
-)
-
 
 MAX_UPLOAD = 200 * 1024 * 1024  # one request; a long spoken answer is a few megabytes
 MAX_VIDEO = 4 * 1024 ** 3  # one mock's webcam file across all its chunks; each request is still capped by MAX_UPLOAD
@@ -133,6 +126,12 @@ class LocalOnly:
 
 
 app.add_middleware(LocalOnly)
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["http://127.0.0.1:3000", "http://localhost:3000"],
+    allow_methods=["GET", "POST"],
+    allow_headers=["Content-Type"],
+)
 
 
 @app.exception_handler(HTTPException)
@@ -188,6 +187,11 @@ def _require_session(session_id, include_raw=False):
     if not session:
         raise HTTPException(status_code=404, detail="Session not found")
     return session
+
+
+@app.get("/site.css")
+def site_css():
+    return FileResponse(Path(__file__).resolve().parent / "static" / "site.css", media_type="text/css")
 
 
 @app.get("/", response_class=HTMLResponse)

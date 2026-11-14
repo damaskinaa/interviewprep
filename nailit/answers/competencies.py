@@ -44,11 +44,12 @@ def classify(questions, comps):
     batches = [todo[i:i + 40] for i in range(0, len(todo), 40)]
 
     def run(batch):
+        found = {}
         for _ in range(2):
             reply = (ai.chat(HELPER, _prompt(comps, batch), json_mode=True) or {}).get("map") or {}
             found = {batch[int(k)]: v for k, v in reply.items() if str(k).isdigit() and int(k) < len(batch) and v in valid}
             if len(found) >= len(batch) * 0.9:
-                return found
+                break
         return found
 
     with ThreadPoolExecutor(8) as pool:

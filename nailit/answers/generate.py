@@ -115,10 +115,10 @@ def role_answers():
         if not path.exists():
             continue
         for block in re.split(r"\n## ", path.read_text()):
-            m = re.match(r"[TH]\d+\s*·\s*\"?(.+?)\"?\s*(?:→.*)?\n", block)
+            m = re.match(r"[TH]\d+\s*·\s*([^→\n]+)", block)
             quote = "\n".join(l[1:].strip() for l in block.splitlines() if l.startswith(">"))
             if m and quote:
-                found[m.group(1).strip().strip('"')] = re.sub(r"[▼‖]", "", quote).strip()
+                found[m.group(1).strip().strip('"').strip()] = re.sub(r"[▼‖]", "", quote).strip()
     return found
 
 

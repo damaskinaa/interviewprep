@@ -16,13 +16,11 @@ ME_FILES = ("stories.md", "profile.md", "tmay.md")
 LIBRARY_YAML = ("detectors", "phrases", "questions", "followups", "personas")
 PROGRAMME_TOKENS = ("weak_list", "all_core", "shuffle")
 
-FACT_LINE = re.compile(r"^(F\d+)\s*\|\s*(.+?)\s*\|\s*(confirmed|approximate|unconfirmed)\s*\|\s*(.+?)\s*$")
-STORY_HEADING = re.compile(r"^##\s+(S\d[0-9A-Za-z_]*)\b\s*[:—-]?\s*(.*)$")
+FACT_LINE = re.compile(r"^(F\d+)\s*\|([^|]+)\|\s*(confirmed|approximate|unconfirmed)\s*\|(.+)$")
+STORY_HEADING = re.compile(r"^##\s+(S\d[0-9A-Za-z_]*)\b\s*(?:[:—-]\s*)?(\S.*|)$")
 YAML_BLOCK = re.compile(r"```ya?ml\n(.*?)```", re.S)
 FACT_REF = re.compile(r"\bF\d+\b")
-RUBRIC_RULE = re.compile(
-    r"^\s*(?:[-*]\s+)?\*\*(R(\d+)\.\d+)[.:]?\*\*[.:—–-]?\s*(.+?)\s*(?:\(src:\s*([^)]*)\))?\s*$"
-)
+RUBRIC_RULE = re.compile(r"^\s*(?:[-*]\s+)?\*\*(R(\d+)\.\d+)[.:]?\*\*[.:—–-]?\s*(\S.*)$")
 RUBRIC_LIKE = re.compile(r"^\s*(?:[-*]\s+)?\**R\d+\.\d+\b")
 SNAKE = re.compile(r"^[a-z0-9_]+$")
 
@@ -85,7 +83,7 @@ def parse_stories(text):
         stripped = line.strip()
         match = FACT_LINE.match(stripped)
         if match:
-            fid, fact, status, source = match.groups()
+            fid, fact, status, source = (g.strip() for g in match.groups())
             if fid in facts:
                 errors.append(f"stories.md: duplicate fact {fid}")
             facts[fid] = {"text": fact, "status": status, "source": source}
@@ -133,9 +131,9 @@ def parse_profile(text):
     sections = _sections(text)
     people = {}
     for line in sections.get("People", "").splitlines():
-        match = re.match(r"^\s*[-*]\s*(.+?)\s*:\s*(.+?)\s*$", line)
+        match = re.match(r"^\s*[-*]\s*([^:\s][^:]*):(.+)$", line)
         if match:
-            people[match.group(1)] = match.group(2)
+            people[match.group(1).strip()] = match.group(2).strip()
     profile = {"sections": sections, "people": people}
     if sections.get("Target line"):
         profile["target_line"] = sections["Target line"]
@@ -177,13 +175,23 @@ def people_map(root=None):
 
 # ---------- library/ ----------
 
+def _split_src(body):
+    """Split a trailing `(src: D1, D2)` off a rubric rule's text: (text, 'D1, D2' or None)."""
+    i = body.rfind("(src:")
+    tail = body[i:] if i >= 0 else ""
+    if tail.endswith(")") and tail.count(")") == 1:
+        return body[:i].strip(), tail[len("(src:"):-1].strip()
+    return body, None
+
+
 def parse_rubric(text):
     """Each rule is a line starting with a bold `R<section>.<n>`, then the text, then `(src: D..)`."""
     rules, errors = [], []
     for number, line in enumerate(text.splitlines(), 1):
         match = RUBRIC_RULE.match(line)
         if match:
-            rule_id, section, body, sources = match.groups()
+            rule_id, section, body = match.groups()
+            body, sources = _split_src(body.strip())
             rule = {"id": rule_id, "section": int(section), "text": body}
             if sources:
                 rule["src"] = [s.strip() for s in sources.split(",") if s.strip()]

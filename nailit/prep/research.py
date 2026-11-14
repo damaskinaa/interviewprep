@@ -470,8 +470,8 @@ def extract_round_reported_questions(sources):
     """
     # Patterns that match real interview questions — both ? and imperative
     patterns = [
-        re.compile(r'(?:^|\n|•|-|\d+[\).]\s*)([A-Z][^.!?\n]{15,200}\?)', re.M),
-        re.compile(r'(?:^|\n|•|-|\d+[\).]\s*)((?:Tell|Describe|Walk|Give|Share|Explain|Talk|Think|What would|How would|What did|How did)[^.!?\n]{15,200})', re.M | re.I),
+        re.compile(r'(?:^|\n|•|-|\d+[\).])\s*([A-Z][^.!?\n]{15,200}\?)', re.M),
+        re.compile(r'(?:^|\n|•|-|\d+[\).])\s*((?:Tell|Describe|Walk|Give|Share|Explain|Talk|Think|What would|How would|What did|How did)[^.!?\n]{15,200})', re.M | re.I),
     ]
     seen = set()
     results = []
